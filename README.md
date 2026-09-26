@@ -61,7 +61,23 @@ npm run schema                   # idempotente — pode rodar de novo
 npm test                         # regras de dinheiro, sessão e banco
 ```
 
-Ou cole o conteúdo de `schema.sql` no SQL Editor do Neon e clique em **Run**.
+Ou, sem puxar as variáveis para a máquina, aplique pelo próprio site publicado
+(a rota usa a sessão da loja, a mesma de `LOJA_EMAIL`/`LOJA_SENHA`):
+
+```bash
+# 1) abre a sessão (mesmas credenciais do login da loja)
+TOKEN=$(curl -s -X POST https://SEU-DOMINIO/api/login -H 'content-type: application/json' \
+  -d '{"email":"SEU-EMAIL","senha":"SUA-SENHA"}' | node -e "process.stdin.on('data',d=>process.stdout.write(JSON.parse(d).token))")
+
+# 2) aplica o schema (idempotente) e confere as regras do banco
+curl -X POST https://SEU-DOMINIO/api/admin/banco -H "authorization: Bearer $TOKEN" \
+  -H 'content-type: application/json' -d '{"acao":"aplicar"}'
+curl -X POST https://SEU-DOMINIO/api/admin/banco -H "authorization: Bearer $TOKEN" \
+  -H 'content-type: application/json' -d '{"acao":"conferir"}'
+```
+
+`conferir` roda lock otimista, imutabilidade do histórico, fotos e assinaturas
+dentro de uma transação **descartada**: não deixa dado para trás.
 
 ## 3. Credenciais da loja
 
@@ -134,6 +150,7 @@ npm test
 | `/api/fotos` | GET/POST | ✓ | Grava vistoria e emite link temporário assinado (6 h). |
 | `/api/assinaturas` | POST | ✓ | Publica o contrato congelado para o celular do cliente. |
 | `/api/assinaturas/{token}` | GET/POST | token | Contrato para leitura e gravação da assinatura. |
+| `/api/admin/banco` | POST | ✓ | Manutenção: `aplicar` (schema), `conferir` (regras, transação descartada), `limpar` (só artefatos de teste). |
 
 ---
 

@@ -6,6 +6,7 @@
    C. Banco de dados — lock otimista, imutabilidade do histórico, fotos e
       assinaturas. Roda dentro de uma transação que é DESCARTADA ao final:
       nada do que os testes escrevem sobrevive.
+   D. schema.sql e lib/schema-sql.js em sincronia (fonte única).
 
    Uso:  npm test
 */
@@ -131,6 +132,17 @@ function testarSessao(){
      'senha errada não abre sessão');
 }
 
+/* ------------------------------------------------------------------ D */
+function testarSchemaEmbutido(){
+  console.log('\nD. SQL embutido em lib/schema-sql.js (fonte única)');
+  const origem = fs.readFileSync(path.join(__dirname, '..', 'schema.sql'), 'utf8');
+  const embutido = require('../lib/schema-sql');
+  ok(embutido === origem, 'lib/schema-sql.js está em dia com schema.sql',
+     'rode `npm run schema:sync`');
+  ok(embutido.indexOf('create or replace function public.salvar_estado(') >= 0,
+     'função salvar_estado presente no SQL embutido');
+}
+
 /* ------------------------------------------------------------------ C */
 async function testarBanco(){
   console.log('\nC. Banco de dados (transação descartada ao final)');
@@ -218,6 +230,8 @@ async function testarBanco(){
   catch(e){ reprovados++; console.log('  ✗ não consegui ler as regras do index.html: ' + e.message); }
   try{ testarSessao(); }
   catch(e){ reprovados++; console.log('  ✗ sessão: ' + e.message); }
+  try{ testarSchemaEmbutido(); }
+  catch(e){ reprovados++; console.log('  ✗ schema embutido: ' + e.message); }
   await testarBanco();
 
   console.log('\n  ' + aprovados + ' aprovados, ' + reprovados + ' reprovados\n');

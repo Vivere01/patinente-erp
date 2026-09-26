@@ -5,6 +5,7 @@
   "description": "Sistema de controle de locação de patinetes e motos elétricas — balcão, caixa, frota, lacres e inventário.",
   "scripts": {
     "schema": "node scripts/aplicar-schema.js",
+    "schema:sync": "node scripts/gerar-schema.js",
     "test": "node scripts/testar.js",
     "dev": "vercel dev"
   },
