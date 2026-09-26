@@ -1,0 +1,10 @@
+# Não publica documentação interna nem SQL no site.
+# O código continua no GitHub; só fica fora do deploy estático.
+ESPECIFICACAO-TECNICA.md
+docs/
+*.sql
+*.log
+.env
+.env.*
+.git
+.gitignore
