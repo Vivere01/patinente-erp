@@ -21,8 +21,9 @@ if(!url){
 }
 
 (async () => {
+  const { limparUrl } = require('../lib/banco');
   const pool = new Pool({
-    connectionString: url,
+    connectionString: limparUrl(url),
     ssl: /@(localhost|127\.0\.0\.1)/.test(url) ? false : { rejectUnauthorized: false }
   });
   try{
