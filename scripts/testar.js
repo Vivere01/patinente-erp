@@ -7,6 +7,8 @@
       assinaturas. Roda dentro de uma transação que é DESCARTADA ao final:
       nada do que os testes escrevem sobrevive.
    D. schema.sql e lib/schema-sql.js em sincronia (fonte única).
+   E. Todos os módulos de api/ carregam (require com caminho errado só
+      aparece no ar, como FUNCTION_INVOCATION_FAILED).
 
    Uso:  npm test
 */
@@ -143,6 +145,33 @@ function testarSchemaEmbutido(){
      'função salvar_estado presente no SQL embutido');
 }
 
+/* ------------------------------------------------------------------ E */
+/* Um require com caminho errado derruba a função só no ar (FUNCTION_INVOCATION_FAILED).
+   Carregar todo módulo de api/ aqui pega o erro antes do deploy. */
+function testarModulosApi(){
+  console.log('\nE. Módulos de api/');
+  const dir = path.join(__dirname, '..', 'api');
+  const arquivos = [];
+  (function varrer(d){
+    for(const nome of fs.readdirSync(d)){
+      const cheio = path.join(d, nome);
+      if(fs.statSync(cheio).isDirectory()) varrer(cheio);
+      else if(nome.endsWith('.js')) arquivos.push(cheio);
+    }
+  })(dir);
+
+  ok(arquivos.length >= 9, 'api/ tem as rotas esperadas', 'achei só ' + arquivos.length);
+  for(const f of arquivos){
+    const nome = 'carrega api/' + path.relative(dir, f).split(path.sep).join('/');
+    try{
+      const m = require(f);
+      ok(typeof m === 'function', nome, 'não exporta função');
+    }catch(e){
+      ok(false, nome, e.message);
+    }
+  }
+}
+
 /* ------------------------------------------------------------------ C */
 async function testarBanco(){
   console.log('\nC. Banco de dados (transação descartada ao final)');
@@ -232,6 +261,8 @@ async function testarBanco(){
   catch(e){ reprovados++; console.log('  ✗ sessão: ' + e.message); }
   try{ testarSchemaEmbutido(); }
   catch(e){ reprovados++; console.log('  ✗ schema embutido: ' + e.message); }
+  try{ testarModulosApi(); }
+  catch(e){ reprovados++; console.log('  ✗ api: ' + e.message); }
   await testarBanco();
 
   console.log('\n  ' + aprovados + ' aprovados, ' + reprovados + ' reprovados\n');

@@ -10,11 +10,11 @@
    apenas do lado do servidor. Nenhum texto da requisição entra na
    consulta — o SQL é constante, vinda de lib/schema-sql.js.
    ===================================================================== */
-const { json, erro, metodoInvalido, corpo } = require('../lib/http');
-const { temBanco, sql, transacao } = require('../lib/banco');
-const { exigirSessao } = require('../lib/guardar');
-const { seguro } = require('../lib/tratar');
-const SCHEMA = require('../lib/schema-sql');
+const { json, erro, metodoInvalido, corpo } = require('../../lib/http');
+const { temBanco, sql, transacao } = require('../../lib/banco');
+const { exigirSessao } = require('../../lib/guardar');
+const { seguro } = require('../../lib/tratar');
+const SCHEMA = require('../../lib/schema-sql');
 
 const CONHECIDAS = ['aplicar', 'conferir', 'limpar'];
 
