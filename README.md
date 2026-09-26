@@ -126,7 +126,8 @@ O código continua público no repositório.
 ## Testes
 
 ```bash
-npm test
+npm test        # 30 verificações locais
+npm run verificar   # 21 verificações contra o site publicado
 ```
 
 - **A. Regras de dinheiro** — lê as funções do próprio `index.html` e confere os cenários
@@ -135,6 +136,14 @@ npm test
   escopo é recusado.
 - **C. Banco** — lock otimista, imutabilidade de `eventos`, fotos e assinaturas. Roda
   dentro de uma transação **descartada ao final**: nada do que o teste escreve sobrevive.
+- **D. SQL embutido** — `lib/schema-sql.js` em sincronia com `schema.sql`
+  (`npm run schema:sync` regenera).
+- **E. Módulos de api/** — todos carregam. Um `require` com caminho errado só estoura
+  no ar como `FUNCTION_INVOCATION_FAILED`; aqui ele reprova antes do deploy.
+- **`verificar-ar`** — roda a operação inteira no site publicado: login, estado com
+  lock, histórico, foto com link assinado, contrato assinado no celular e limpeza.
+  Usa `LOJA_EMAIL`/`LOJA_SENHA` do `.env.local` (ou `node scripts/verificar-ar.js URL EMAIL SENHA`)
+  e apaga os artefatos de teste ao final.
 
 ---
 
