@@ -49,22 +49,31 @@ const JPG = '/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE
   const ruim = await post(null, '/api/login', { email: EMAIL, senha: SENHA + 'x' });
   check(ruim.status === 401, 'senha errada é recusada (401)', 'veio ' + ruim.status);
 
+  /* limpa sobras de uma execução anterior para as contagens serem
+     determinísticas — e nunca mexe no documento real */
+  await post(t, '/api/admin/banco', { acao: 'limpar' });
+
   console.log('\n2. estado com lock otimista');
   const g0 = await j('/api/estado', { headers: cabecalho(t) });
   const v0 = Number(g0.body && g0.body.versao);
-  check(g0.status === 200 && Object.keys((g0.body && g0.body.doc) || {}).length === 0,
-        'documento vazio antes do teste (v' + v0 + ')', JSON.stringify(g0.body).slice(0, 120));
+  const original = (g0.body && g0.body.doc) || {};
+  check(g0.status === 200 && typeof original === 'object',
+        'GET /api/estado carrega a versão atual (v' + v0 + ', ' + Object.keys(original).length + ' chaves)',
+        JSON.stringify(g0.body).slice(0, 120));
+  if(!(g0.status === 200)){ console.log('\n  parando: não consegui ler o estado\n'); process.exit(1); }
 
-  const w1 = await post(t, '/api/estado', { doc: {}, versao: v0, por: 'verificacao' });
+  /* grava o MESMO documento de volta: testa o lock sem tocar no conteúdo */
+  const w1 = await post(t, '/api/estado', { doc: original, versao: v0, por: 'verificacao' });
   check(w1.status === 200 && w1.body.ok === true && Number(w1.body.versao) === v0 + 1,
         'gravando com a versão atual é aceito (v' + v0 + '→v' + (v0 + 1) + ')', JSON.stringify(w1.body));
 
-  const w2 = await post(t, '/api/estado', { doc: { perdido: true }, versao: v0, por: 'verificacao' });
+  const w2 = await post(t, '/api/estado', { doc: { __perdido: true }, versao: v0, por: 'verificacao' });
   check(w2.status === 409 && w2.body.ok === false, 'versão defasada é recusada (409)', 'veio ' + w2.status);
 
   const g1 = await j('/api/estado', { headers: cabecalho(t) });
-  check(g1.status === 200 && Number(g1.body.versao) === v0 + 1 && Object.keys(g1.body.doc).length === 0,
-        'nada foi sobrescrito: documento segue vazio', JSON.stringify(g1.body).slice(0, 120));
+  check(g1.status === 200 && Number(g1.body.versao) === v0 + 1 &&
+        JSON.stringify(g1.body.doc) === JSON.stringify(original),
+        'nada foi sobrescrito: o documento continua igual', JSON.stringify(g1.body).slice(0, 120));
 
   console.log('\n3. histórico imutável');
   const ev = await post(t, '/api/eventos', { usuario: 'verificacao', acao: 'verificacao', detalhe: 'rotina npm run verificar-ar' });
@@ -119,8 +128,10 @@ const JPG = '/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE
 
   console.log('\n7. situação final');
   const fin = await j('/api/estado', { headers: cabecalho(t) });
-  check(fin.status === 200 && Number(fin.body.versao) === v0 + 1 && Object.keys(fin.body.doc).length === 0,
-        'estado íntegro e vazio (v' + fin.body.versao + ')', JSON.stringify(fin.body).slice(0, 120));
+  check(fin.status === 200 && Number(fin.body.versao) >= v0 + 1 &&
+        JSON.stringify(fin.body.doc) === JSON.stringify(original),
+        'estado íntegro e idêntico ao de antes (v' + fin.body.versao + ')',
+        JSON.stringify(fin.body).slice(0, 120));
   const st = await j('/api/status');
   check(st.status === 200 && st.body.banco === true && st.body.login === true, 'status: banco e login prontos', JSON.stringify(st.body));
   const sg = await j('/api/sessao', { headers: cabecalho(t) });
