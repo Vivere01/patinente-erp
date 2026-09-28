@@ -508,6 +508,11 @@ tr.estornada td:last-child{opacity:1;text-decoration:none}
             <input type="checkbox" id="cfgFoto" style="width:auto;margin:0">
             <span style="margin:0;text-transform:none;letter-spacing:0;font-size:13px;color:var(--text)">Exigir foto do veículo na saída e na entrada</span>
           </label>
+          <label class="f" style="display:flex;align-items:center;gap:9px">
+            <input type="checkbox" id="cfgDocFoto" style="width:auto;margin:0">
+            <span style="margin:0;text-transform:none;letter-spacing:0;font-size:13px;color:var(--text)">Exigir foto do documento (CNH/RG) do cliente na saída</span>
+          </label>
+          <p class="muted" style="font-size:12px;margin:6px 0 0">Vira o padrão da locação. Na tela do cliente a atendente ainda pode ligar ou desligar essa exigência para aquela locação específica.</p>
           <button class="btn" id="btnSalvarEmpresa">Salvar</button>
         </div>
         <div class="card pad">
@@ -565,7 +570,7 @@ tr.estornada td:last-child{opacity:1;text-decoration:none}
           <div style="padding:15px 15px 0"><div id="divResumo"></div></div>
           <div class="tablewrap" style="max-height:300px"><table id="tbDiverg"></table></div>
         </div>
-        <div class="card" style="margin-bottom:14px">
+        <div class="card" style="margin-bottom:14px" id="cardUsuarios">
           <div style="padding:13px 15px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px">
             <span style="font-weight:700">Usuários</span>
             <button class="btn sm" id="btnNovoUsuario" style="margin-left:auto">+ Usuário</button>
@@ -994,6 +999,7 @@ function aplicarMigracoes(){
   if(!DB.seq.audit) DB.seq.audit = 1;
   if(!DB.seq.foto) DB.seq.foto = 1;
   if(DB.config.exigirFoto === undefined) DB.config.exigirFoto = true;
+  if(DB.config.exigirDocFoto === undefined) DB.config.exigirDocFoto = false;
   if(!DB.config.urlBase) DB.config.urlBase = '';   /* vazio = usa o próprio domínio */
   if(DB.contrato && (DB.contrato.indexOf('{{lista_veiculos}}')<0 || DB.contrato.indexOf('{{vistoria}}')<0))
   DB.contrato = CONTRATO_PADRAO;
@@ -1053,7 +1059,10 @@ function comprimirImagem(src, cb){
    SESSÃO E AUDITORIA
    ===================================================================== */
 let SESSAO = null;
+const PAPEIS = { gerente:'Gerente', atendente:'Atendente', operador:'Operador' };
 function ehGerente(){ return SESSAO && SESSAO.papel==='gerente'; }
+function ehOperador(){ return SESSAO && SESSAO.papel==='operador'; }
+function rotuloPapel(p){ return PAPEIS[p] || (p ? String(p).charAt(0).toUpperCase()+String(p).slice(1) : '—'); }
 function usuarioAtual(){ return SESSAO ? SESSAO.nome : 'sistema'; }
 
 function log(acao, detalhe, ref){
@@ -1067,6 +1076,19 @@ function exigirGerente(acao){
   if(ehGerente()) return true;
   toast('Apenas o gerente pode '+acao+'.');
   return false;
+}
+
+/* O papel operacional não enxerga o financeiro nem a administração de
+   usuários. Aqui é só visão (aba e card escondidos); quem decide o que
+   pode ser gravado continua sendo exigirGerente, que recusa o operador
+   na hora — inclusive no botão de cadastrar. O atendente continua vendo
+   a lista, como sempre viu. */
+function aplicarPermissoes(){
+  const abaFin = document.querySelector('nav.tabs button[data-tab="financeiro"]');
+  if(abaFin) abaFin.style.display = ehOperador() ? 'none' : '';
+  const cardUs = document.getElementById('cardUsuarios');
+  if(cardUs) cardUs.style.display = ehOperador() ? 'none' : '';
+  if(ehOperador() && document.querySelector('#page-financeiro.active')) irPara('painel');
 }
 
 /* ===================== utilitários ===================== */
@@ -1131,6 +1153,10 @@ function calcExcedente(loc, agoraTs){
 }
 /* ===================== navegação ===================== */
 function irPara(tab){
+  if(tab==='financeiro' && ehOperador()){
+    toast('Acesso operacional: o financeiro é de atendente e gerente.');
+    tab = 'painel';
+  }
   $$('nav.tabs button').forEach(b=>b.classList.toggle('active', b.dataset.tab===tab));
   $$('.page').forEach(p=>p.classList.toggle('active', p.id==='page-'+tab));
   if(tab==='painel') renderPainel();
@@ -1193,14 +1219,16 @@ function renderPainel(){
   const hoje = diaKey(agora);
   const fatHoje = DB.locacoes.filter(l=>diaKey(l.inicio)===hoje).reduce((s,l)=>s+totalLoc(l),0);
 
-  $('#kpis').innerHTML = [
+  const kpis = [
     kpi('Na rua', ativas.length, 'b'),
     kpi('Na loja', DB.veiculos.filter(v=>v.status==='loja').length, 'g'),
     kpi('Manutenção', DB.veiculos.filter(v=>v.status==='manutencao').length, 'w'),
     kpi('Tempo estourado', emAtraso, emAtraso?'r':''),
-    kpi('Faturamento hoje', brl(fatHoje), 'g'),
     kpi('Locações hoje', DB.locacoes.filter(l=>diaKey(l.inicio)===hoje).length, '')
-  ].join('');
+  ];
+  /* faturamento é dinheiro: quem opera não enxerga */
+  if(!ehOperador()) kpis.splice(4, 0, kpi('Faturamento hoje', brl(fatHoje), 'g'));
+  $('#kpis').innerHTML = kpis.join('');
 
   const box = $('#ativos');
   if(!ativas.length){
@@ -1448,7 +1476,9 @@ function abrirWizard(veiculoId){
   if(!caixaAberto()) return exigirCaixa('liberar um veículo', ()=> abrirWizard(veiculoId));
   pararEsperaAssinatura();
   W = { passo:1, veiculos: veiculoId?[veiculoId]:[], clienteId:null, novoCliente:null,
-        duracao:null, pagamento:PAGAMENTOS[0], assinatura:null, obs:'', fotos:{}, lacres:{} };
+        duracao:null, pagamento:PAGAMENTOS[0], assinatura:null, obs:'', fotos:{}, lacres:{},
+        docFoto:null, _docFotoCliente:null,
+        exigirDocFoto: DB.config.exigirDocFoto===true };
   const ov = abrirModal(
     '<header><h3>Nova locação</h3><button class="x">&times;</button></header>'+
     '<div class="steps" id="wsteps"></div>'+
@@ -1621,13 +1651,94 @@ function passoCliente(){
       '<label class="f"><span>E-mail (opcional)</span><input type="text" id="wEmail"></label>'+
       '<label class="f"><span>Documento apresentado</span><select id="wDoc"><option>CNH</option><option>RG</option><option>Passaporte</option></select></label>'+
     '</div>'+
+    blocoFotoDoc()+
     '<label class="f"><span>Observações da saída (opcional)</span><input type="text" id="wObs" placeholder="ex: capacete entregue, risco no paralama"></label>';
+}
+
+/* Foto do documento de identidade: câmera do aparelho OU arquivo já
+   existente no dispositivo (upload). A exigência é configurável — no
+   global (Configurações) e por locação (o quadro abaixo). */
+function blocoFotoDoc(){
+  const exigir = W.exigirDocFoto===true;
+  return '<div style="border:1px solid var(--line);border-radius:11px;padding:13px;margin-bottom:13px">'+
+      '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">'+
+        '<b style="font-size:13.5px">Foto do documento apresentado</b>'+
+        '<span style="flex:1"></span>'+
+        '<label class="fcheck" style="margin:0"><input type="checkbox" id="wDocExigir"'+(exigir?' checked':'')+'>'+
+        'exigir nesta locação</label>'+
+      '</div>'+
+      '<div id="wDocFotoBox" style="margin-top:10px"></div>'+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">'+
+        '<button type="button" class="btn sm" id="wDocTirar">Tirar foto</button>'+
+        '<button type="button" class="btn sm sec" id="wDocArquivo">Escolher arquivo</button>'+
+        '<button type="button" class="btn sm sec" id="wDocRemover" style="display:none">Remover</button>'+
+        '<input type="file" accept="image/*" id="wDocArq" class="hidden">'+
+      '</div>'+
+      '<p class="muted" style="font-size:12px;margin:9px 0 0">'+
+        (exigir ? '<b style="color:var(--danger)">Obrigatória nesta locação.</b> '
+                : 'Opcional nesta locação. ')+
+        '<b>Tirar foto</b> usa a câmera do aparelho; <b>Escolher arquivo</b> sube uma imagem já existente (foto, scan ou arquivo da CNH, RG ou passaporte).</p>'+
+    '</div>';
 }
 function ligaPassoCliente(){
   const cpf=$('#wCpf'), nome=$('#wNome'), tel=$('#wTel'), email=$('#wEmail');
-  if(W.clienteId){ const c=getCliente(W.clienteId); if(c){ cpf.value=c.cpf; nome.value=c.nome; tel.value=c.telefone||''; email.value=c.email||''; } }
-  else if(W.novoCliente){ cpf.value=W.novoCliente.cpf; nome.value=W.novoCliente.nome; tel.value=W.novoCliente.telefone; email.value=W.novoCliente.email; }
+  const doc = $('#wDoc');
+  const marcarDoc = c=>{ if(c && c.doc && Array.from(doc.options).some(o=>o.value===c.doc)) doc.value = c.doc; };
+  if(W.clienteId){ const c=getCliente(W.clienteId); if(c){ cpf.value=c.cpf; nome.value=c.nome; tel.value=c.telefone||''; email.value=c.email||''; marcarDoc(c); adotarDocFoto(c); } }
+  else if(W.novoCliente){ cpf.value=W.novoCliente.cpf; nome.value=W.novoCliente.nome; tel.value=W.novoCliente.telefone; email.value=W.novoCliente.email; marcarDoc(W.novoCliente); }
   $('#wObs').value = W.obs||'';
+
+  /* ---- foto do documento: miniatura + câmera + upload ---- */
+  const pintaFotoDoc = ()=>{
+    const box = $('#wDocFotoBox'); if(!box) return;
+    const rem = $('#wDocRemover');
+    if(!W.docFoto){
+      box.innerHTML = '<div class="muted" style="font-size:12.5px">Nenhuma foto anexada.</div>';
+      if(rem) rem.style.display='none';
+      return;
+    }
+    if(rem) rem.style.display='';
+    const vazio = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+    box.innerHTML =
+      '<div style="display:flex;gap:11px;align-items:center">'+
+        '<img id="wDocThumb" alt="Foto do documento" src="'+(W.docFoto.thumb||vazio)+'" '+
+          'style="width:104px;height:76px;object-fit:cover;border-radius:8px;border:1px solid var(--line);background:var(--line2)">'+
+        '<div class="muted" style="font-size:12.5px">'+esc(W.docFoto.legenda||'Documento')+'<br>'+
+          dtFmt(W.docFoto.ts)+(W.docFoto.caminho?'':' · guardada só neste aparelho')+'</div>'+
+      '</div>';
+    if(!W.docFoto.thumb && W.docFoto.caminho){
+      const img = $('#wDocThumb');
+      Fotos.obter(W.docFoto.id, W.docFoto.caminho).then(u=>{ if(u && $('#wDocThumb')===img) img.src = u; });
+    }
+  };
+  const anexarDoc = async dataUrl=>{
+    if(!W) return;
+    const id = 'd'+uid('foto')+'_'+Date.now();
+    const legenda = 'Foto do documento — '+(($('#wDoc')||{}).value || 'CNH');
+    const reg = { id, caminho:null, legenda, thumb:dataUrl, ts:Date.now() };
+    W.docFoto = reg;            /* visível já, sem esperar a nuvem */
+    pintaFotoDoc();
+    reg.salvando = Fotos.salvar(id, dataUrl).then(c=>{
+      reg.caminho = c;
+      if(W && W.docFoto && W.docFoto.id===id) pintaFotoDoc();
+      return c;
+    });
+    try{ await reg.salvando; }catch(e){ console.error('foto do documento', e); }
+  };
+  const tirar = $('#wDocTirar'), escolher = $('#wDocArquivo'), arq = $('#wDocArq'), rem = $('#wDocRemover');
+  if(tirar)   tirar.onclick   = ()=> capturarFoto('Documento — '+(($('#wDoc')||{}).value||'CNH'), anexarDoc);
+  if(escolher) escolher.onclick = ()=> arq.click();
+  if(arq) arq.onchange = ()=>{
+    const f = arq.files[0]; arq.value=''; if(!f) return;
+    if(!/^image\//.test(f.type) && !/\.(jpe?g|png|webp|heic|heif|gif|bmp)$/i.test(f.name))
+      return toast('Escolha um arquivo de imagem.');
+    const r = new FileReader();
+    r.onload = ()=> comprimirImagem(r.result, anexarDoc);
+    r.readAsDataURL(f);
+  };
+  if(rem) rem.onclick = ()=>{ W.docFoto = null; pintaFotoDoc(); };
+  pintaFotoDoc();
+
   cpf.oninput = ()=>{
     cpf.value = maskCPF(cpf.value);
     const d = soDigitos(cpf.value);
@@ -1635,16 +1746,26 @@ function ligaPassoCliente(){
       const c = DB.clientes.find(c=>soDigitos(c.cpf)===d);
       if(c){
         W.clienteId=c.id; nome.value=c.nome; tel.value=c.telefone||''; email.value=c.email||'';
+        marcarDoc(c); adotarDocFoto(c);
         const n = DB.locacoes.filter(l=>l.clienteId===c.id).length;
         $('#wCliAviso').innerHTML='<div style="background:var(--ok-bg);color:var(--ok);padding:9px 12px;border-radius:8px;margin-bottom:11px;font-size:13px"><b>Cliente já cadastrado.</b> '+n+' locação(ões) anteriores.</div>';
       } else {
-        W.clienteId=null;
+        W.clienteId=null; W._docFotoCliente=null;
         $('#wCliAviso').innerHTML='<div style="background:var(--brand-bg);color:var(--brand);padding:9px 12px;border-radius:8px;margin-bottom:11px;font-size:13px">Cliente novo — preencha os dados abaixo.</div>';
         nome.focus();
       }
     } else { $('#wCliAviso').innerHTML=''; }
+    pintaFotoDoc();
   };
   tel.oninput = ()=> tel.value = maskTel(tel.value);
+}
+
+/* A foto já gravada na ficha do cliente volta sozinha; trocar de cliente
+   troca a foto junto, para não entregar o documento de um ao outro. */
+function adotarDocFoto(c){
+  if(!c || W._docFotoCliente === c.id) return;
+  W.docFoto = c.docFoto ? Object.assign({}, c.docFoto) : null;
+  W._docFotoCliente = c.id;
 }
 
 /* ---- passo 3: duração e pagamento ---- */
@@ -1727,7 +1848,9 @@ function montarContrato(d){
   const map = {
     numero: String(DB.seq.grupo).padStart(6,'0'),
     cliente:d.cli.nome, cpf:d.cli.cpf, telefone:d.cli.telefone||'—',
-    email:d.cli.email||'não informado', documento:(d.cli.doc||'CNH')+(d.cli.docNum?' nº '+d.cli.docNum:''),
+    email:d.cli.email||'não informado',
+    documento:(d.cli.doc||'CNH')+(d.cli.docNum?' nº '+d.cli.docNum:'')+
+              (d.cli.docFoto ? ' — foto do documento anexada à locação' : ''),
     lista_veiculos: lista, quantidade: qtd,
     veiculo:d.itens.map(i=>i.codigo).join(', '), tipo:Object.keys(porTipo).join(' e '),
     placa:d.itens.map(i=>getVeiculo(i.veiculoId).placa||i.codigo).join(', '),
@@ -1990,7 +2113,7 @@ function abrirCelularSimulado(){
 }
 
 /* ---- avanço / conclusão ---- */
-function avancarWizard(){
+async function avancarWizard(){
   if(W.passo===1){
     if(!W.veiculos.length) return toast('Selecione pelo menos um veículo.');
     W.passo=2; return pintaWizard();
@@ -2001,7 +2124,16 @@ function avancarWizard(){
     if(nome.length<3) return toast('Informe o nome do cliente.');
     if(soDigitos(tel).length<10) return toast('Informe um telefone válido.');
     W.obs = $('#wObs').value.trim();
-    const dados = { nome, cpf:maskCPF(cpf), telefone:maskTel(tel), email:$('#wEmail').value.trim(), doc:$('#wDoc').value };
+    W.exigirDocFoto = !!($('#wDocExigir') && $('#wDocExigir').checked);
+    if(W.docFoto && !W.docFoto.caminho && W.docFoto.salvando){
+      try{ await W.docFoto.salvando; }catch(e){ console.error('foto do documento', e); }
+    }
+    if(W.exigirDocFoto && !W.docFoto)
+      return toast('Falta a foto do documento do cliente. Desmarque "exigir nesta locação" se não for necessária.');
+    const dados = { nome, cpf:maskCPF(cpf), telefone:maskTel(tel), email:$('#wEmail').value.trim(),
+                    doc:$('#wDoc').value,
+                    docFoto: W.docFoto ? { id:W.docFoto.id, caminho:W.docFoto.caminho,
+                                           legenda:W.docFoto.legenda, ts:W.docFoto.ts } : null };
     if(W.clienteId){ Object.assign(getCliente(W.clienteId), dados); W.novoCliente=null; }
     else W.novoCliente = dados;
     W.passo=3; return pintaWizard();
@@ -2045,6 +2177,9 @@ function concluirLocacao(){
     assinatura: W.assinatura, contrato: W._texto,
     assinaturaCanal: W.canal||'balcao', assinadoEm: W.assinadoEm||Date.now(),
     assinaturaToken: W._token||'', obsSaida: W.obs||'', obsVistoria: W.obsVist||'',
+    docFoto: W.docFoto ? { id:W.docFoto.id, caminho:W.docFoto.caminho,
+                           legenda:W.docFoto.legenda, ts:W.docFoto.ts } : null,
+    exigiuDocFoto: W.exigirDocFoto===true,
     atendenteId: SESSAO?SESSAO.id:null, atendente: usuarioAtual(),
     locacaoIds: [], status:'ativo'
   };
@@ -2610,6 +2745,7 @@ $('#btnExpHist').onclick = ()=>{
 /* ===================== FINANCEIRO ===================== */
 function totalLoc(l){ return estornada(l) ? 0 : (l.valorBase||0)+(l.valorExcedente||0)+(l.valorDanos||0); }
 function renderFinanceiro(){
+  if(ehOperador()) return;   /* a aba já fica escondida — defesa dupla */
   if(!$('#fMes').value) $('#fMes').value = mesKey(Date.now());
   const mes = $('#fMes').value;
   garantirFixos(mes);
@@ -3101,6 +3237,7 @@ function renderConfig(){
   $('#cfgTol').value = DB.config.toleranciaMin||0;
   $('#cfgUrl').value = DB.config.urlBase||'';
   $('#cfgFoto').checked = DB.config.exigirFoto!==false;
+  $('#cfgDocFoto').checked = DB.config.exigirDocFoto===true;
   $('#cfgContrato').value = DB.contrato;
   $('#cfgLacre').checked = DB.config.exigirLacre!==false;
   $('#cfgInvDias').value = DB.config.inventarioDias || 7;
@@ -3126,6 +3263,7 @@ $('#btnSalvarEmpresa').onclick = ()=>{
   DB.config.toleranciaMin = Math.max(0, +$('#cfgTol').value||0);
   DB.config.urlBase = $('#cfgUrl').value.trim() || DB.config.urlBase;
   DB.config.exigirFoto = $('#cfgFoto').checked;
+  DB.config.exigirDocFoto = $('#cfgDocFoto').checked;
   DB.config.exigirLacre = $('#cfgLacre').checked;
   persist(); aplicarMarca(); toast('Dados salvos.');
 };
@@ -3203,8 +3341,9 @@ function iniciais(nome){
 }
 function atualizarChip(){
   $('#userChip').innerHTML = SESSAO
-    ? esc(SESSAO.nome.split(' ')[0]) + ' <span class="p">· ' + (SESSAO.papel==='gerente'?'gerente':'atendente') + '</span>'
+    ? esc(SESSAO.nome.split(' ')[0]) + ' <span class="p">· ' + esc(rotuloPapel(SESSAO.papel).toLowerCase()) + '</span>'
     : 'entrar';
+  aplicarPermissoes();
 }
 $('#userChip').onclick = ()=>{ if(SESSAO){ log('logout',''); persist(); } SESSAO=null; telaLogin(); };
 
@@ -3219,7 +3358,7 @@ function telaLogin(){
       '<div class="userlist" id="lgLista">'+ ativos.map(u=>
         '<button data-u="'+u.id+'"><span class="av'+(u.papel==='gerente'?' g':'')+'">'+iniciais(u.nome)+'</span>'+
         '<span><b>'+esc(u.nome)+'</b><br><span class="muted" style="font-size:12px">'+
-        (u.papel==='gerente'?'Gerente':'Atendente')+'</span></span></button>').join('')+'</div>'+
+        esc(rotuloPapel(u.papel))+'</span></span></button>').join('')+'</div>'+
       '<div id="lgPin" class="hidden"></div>'+
     '</div></div>', {fixo:true});
   ov.querySelectorAll('#lgLista button').forEach(b=> b.onclick = ()=>{
@@ -3293,7 +3432,9 @@ function renderUsuarios(){
     '<thead><tr><th>Nome</th><th>Papel</th><th>Último acesso</th><th></th></tr></thead><tbody>'+
     its.map(u=>'<tr'+(u.ativo===false?' style="opacity:.45"':'')+'>'+
       '<td><b>'+esc(u.nome)+'</b>'+(SESSAO&&SESSAO.id===u.id?' <span class="pill rua">você</span>':'')+'</td>'+
-      '<td>'+(u.papel==='gerente'?'<span class="pill manut">Gerente</span>':'<span class="pill loja">Atendente</span>')+'</td>'+
+      '<td>'+(u.papel==='gerente'?'<span class="pill manut">Gerente</span>':
+              u.papel==='operador'?'<span class="pill rua">Operador</span>':
+              '<span class="pill loja">Atendente</span>')+'</td>'+
       '<td class="mono muted">'+(u.ultimoAcesso?dtFmt(u.ultimoAcesso):'nunca')+'</td>'+
       '<td class="right"><button class="btn sm sec" onclick="editarUsuario('+u.id+')">Editar</button></td></tr>').join('')+
     '</tbody>';
@@ -3304,11 +3445,14 @@ function formUsuario(u){
     '<label class="f"><span>Senha de 4 dígitos</span><input type="text" id="usPin" maxlength="4" inputmode="numeric" value="'+esc(u?u.pin:'')+'"></label>'+
     '<label class="f"><span>Papel</span><select id="usPapel">'+
       '<option value="atendente"'+(u&&u.papel==='atendente'?' selected':'')+'>Atendente</option>'+
+      '<option value="operador"'+(u&&u.papel==='operador'?' selected':'')+'>Operador</option>'+
       '<option value="gerente"'+(u&&u.papel==='gerente'?' selected':'')+'>Gerente</option></select></label></div>'+
     '<label class="f"><span>Situação</span><select id="usAtivo">'+
       '<option value="1"'+(!u||u.ativo!==false?' selected':'')+'>Ativo</option>'+
       '<option value="0"'+(u&&u.ativo===false?' selected':'')+'>Bloqueado</option></select></label>'+
-    '<p class="muted" style="font-size:12px">Atendente opera o balcão e o caixa. Gerente também estorna locações, altera preços e cadastra usuários.</p>';
+    '<p class="muted" style="font-size:12px"><b>Atendente</b> opera o balcão e o caixa. '+
+    '<b>Operador</b> opera o balcão, mas não enxerga o financeiro e não cadastra usuários. '+
+    '<b>Gerente</b> também estorna locações, altera preços e cadastra usuários.</p>';
 }
 $('#btnInventario2').onclick = ()=> abrirInventario();
 $('#cfgInvDias').onchange = ()=>{ DB.config.inventarioDias = Math.max(1, Math.min(90, +$('#cfgInvDias').value||7));

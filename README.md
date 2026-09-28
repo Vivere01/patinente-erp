@@ -100,6 +100,26 @@ e `vercel env add LOJA_SENHA production`.
 4. `urlBase` de assinatura fica em branco = usa o próprio domínio (`https://SEU-DOMINIO/assinar`).
 5. Cadastrar atendentes (PIN) e registrar o lote de lacres aplicando-os na frota.
 
+### Papéis
+
+| Papel | O que faz |
+|---|---|
+| **Operador** | Opera o balcão (locação, devolução, vistoria, clientes, histórico). **Não enxerga o financeiro** — a aba *Financeiro* e o faturamento do dia ficam escondidos — e **não vê nem cadastra usuários**. |
+| **Atendente** | Tudo do operador, mais o caixa do dia e o financeiro. |
+| **Gerente** | Acima disso: estorna locações e lançamentos, altera preços e tabela de peças, cadastra usuários, registra lote de lacres, trata divergências e zera o sistema. |
+
+Sempre deve existir pelo menos um gerente ativo.
+
+### Foto do documento do cliente (CNH/RG)
+
+Em **Configurações** há o interruptor *“Exigir foto do documento (CNH/RG) do cliente
+na saída”* — ele vira o padrão de toda locação. No passo 2 da locação, o quadro
+**Foto do documento apresentado** oferece **Tirar foto** (câmera do aparelho) e
+**Escolher arquivo** (upload de imagem, scan ou arquivo já existente), mais um
+checkbox **“exigir nesta locação”** que sobe ou derruba a exigência daquela
+locação só — para a atendente exigir na alta temporada ou diante de um cliente
+suspeito. A foto fica na ficha do cliente e volta sozinha na locação seguinte.
+
 ---
 
 ## Deploy
@@ -140,6 +160,9 @@ npm run verificar   # 21 verificações contra o site publicado
   (`npm run schema:sync` regenera).
 - **E. Módulos de api/** — todos carregam. Um `require` com caminho errado só estoura
   no ar como `FUNCTION_INVOCATION_FAILED`; aqui ele reprova antes do deploy.
+- **F. Papéis e foto do documento** — o papel operador é reconhecido, a aba financeiro
+  fica bloqueada para ele, o cadastro de usuário exige gerente e o quadro do documento
+  oferece câmera + upload com a exigência opcional ou marcada.
 - **`verificar-ar`** — roda a operação inteira no site publicado: login, estado com
   lock, histórico, foto com link assinado, contrato assinado no celular e limpeza.
   Usa `LOJA_EMAIL`/`LOJA_SENHA` do `.env.local` (ou `node scripts/verificar-ar.js URL EMAIL SENHA`)

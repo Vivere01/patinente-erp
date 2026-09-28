@@ -9,6 +9,8 @@
    D. schema.sql e lib/schema-sql.js em sincronia (fonte única).
    E. Todos os módulos de api/ carregam (require com caminho errado só
       aparece no ar, como FUNCTION_INVOCATION_FAILED).
+   F. Papel operacional (sem financeiro, sem cadastro de usuário) e a foto
+      do documento do cliente com câmera + upload.
 
    Uso:  npm test
 */
@@ -172,6 +174,75 @@ function testarModulosApi(){
   }
 }
 
+/* ------------------------------------------------------------------ F */
+/* Papel operacional (não enxerga o financeiro, não cadastra usuário) e a
+   foto do documento com câmera + upload — lidos do próprio index.html. */
+function testarPapelEDocumento(){
+  console.log('\nF. Papel operacional e foto do documento do cliente');
+  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  const corpo = f => extrairFuncao(html, f);
+
+  /* --- papel --- */
+  ok(/value="operador"/.test(html), 'o cadastro de usuário oferece o papel Operador');
+  const ctx = vm.createContext({ console });
+  vm.runInContext([
+    'var SESSAO = null;',
+    extrairLinha(html, 'PAPEIS'),
+    corpo('rotuloPapel'),
+    corpo('ehOperador')
+  ].join('\n'), ctx);
+
+  ok(ctx.rotuloPapel('operador') === 'Operador', 'rotuloPapel devolve "Operador"',
+     ctx.rotuloPapel('operador'));
+  ok(ctx.rotuloPapel('gerente') === 'Gerente' && ctx.rotuloPapel('atendente') === 'Atendente',
+     'papéis antigos continuam com o mesmo rótulo');
+
+  ctx.SESSAO = { papel:'operador' };
+  ok(ctx.ehOperador() === true, 'ehOperador reconhece o operador');
+  ctx.SESSAO = { papel:'gerente' };
+  ok(ctx.ehOperador() === false, 'gerente não é operador');
+  ctx.SESSAO = { papel:'atendente' };
+  ok(ctx.ehOperador() === false, 'atendente não é operador');
+
+  /* --- o operador não enxerga o financeiro --- */
+  const irPara = corpo('irPara');
+  ok(irPara.indexOf("'financeiro' && ehOperador()") >= 0,
+     'irPara bloqueia a aba financeiro para o operador');
+  ok(corpo('aplicarPermissoes').indexOf('data-tab="financeiro"') >= 0 &&
+     corpo('aplicarPermissoes').indexOf('cardUsuarios') >= 0 &&
+     (corpo('aplicarPermissoes').match(/ehOperador\(\) \? 'none'/g) || []).length === 2,
+     'aplicarPermissoes esconde a aba financeiro e o card de usuários só para o operador');
+  ok(corpo('renderFinanceiro').indexOf('if(ehOperador()) return;') >= 0,
+     'renderFinanceiro tem trava própria para o operador');
+  ok(corpo('renderPainel').indexOf('!ehOperador()) kpis.splice') >= 0,
+     'KPI de faturamento fica de fora do painel do operador');
+  ok(/id="cardUsuarios"/.test(html), 'o card de usuários tem id para ser escondido');
+  ok(/#btnNovoUsuario'\)\.onclick[\s\S]{0,160}exigirGerente\('cadastrar usuários'\)/.test(html),
+     'cadastrar usuário continua exigindo gerente');
+
+  /* --- foto do documento --- */
+  ok(/id="cfgDocFoto"/.test(html) && html.indexOf('DB.config.exigirDocFoto') >= 0,
+     'Configurações tem o interruptor global de exigir a foto do documento');
+  ok(html.indexOf('W.exigirDocFoto && !W.docFoto') >= 0,
+     'o avanço do passo 2 recusa locação exigindo foto sem foto');
+  ok(/grupo\.exigiuDocFoto|exigiuDocFoto:/.test(html), 'a locação guarda se a foto foi exigida');
+
+  vm.runInContext([corpo('blocoFotoDoc'), 'globalThis.B = { blocoFotoDoc };'].join('\n'), ctx);
+
+  ctx.W = { exigirDocFoto:true, docFoto:null };
+  const exigente = ctx.B.blocoFotoDoc();
+  ok(/id="wDocExigir"\s+checked/.test(exigente), 'quadro começa com "exigir" marcado quando configurado');
+  ctx.W = { exigirDocFoto:false, docFoto:null };
+  const opcional = ctx.B.blocoFotoDoc();
+  ok(!/id="wDocExigir"\s+checked/.test(opcional), 'quadro começa desmarcado quando é opcional');
+  ok(/Opcional nesta locação/.test(opcional), 'avisa que é opcional');
+  ok(/id="wDocTirar"/.test(opcional), 'tem botão de tirar foto (câmera)');
+  ok(/id="wDocArquivo"/.test(opcional), 'tem botão de escolher arquivo (upload)');
+  ok(/accept="image\/\*"/.test(opcional) && /id="wDocArq"/.test(opcional),
+     'o input de arquivo aceita imagem');
+  ok(!/capture=/.test(opcional), 'o upload não força a câmera (permite galeria e arquivo do PC)');
+}
+
 /* ------------------------------------------------------------------ C */
 async function testarBanco(){
   console.log('\nC. Banco de dados (transação descartada ao final)');
@@ -263,6 +334,8 @@ async function testarBanco(){
   catch(e){ reprovados++; console.log('  ✗ schema embutido: ' + e.message); }
   try{ testarModulosApi(); }
   catch(e){ reprovados++; console.log('  ✗ api: ' + e.message); }
+  try{ testarPapelEDocumento(); }
+  catch(e){ reprovados++; console.log('  ✗ papel/documento: ' + e.message); }
   await testarBanco();
 
   console.log('\n  ' + aprovados + ' aprovados, ' + reprovados + ' reprovados\n');

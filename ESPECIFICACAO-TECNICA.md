@@ -216,12 +216,24 @@ Estas regras foram definidas pelo dono. **Não altere sem confirmar com ele.**
 
 Regra de integridade: sempre deve existir pelo menos um gerente ativo.
 
+**Operador (papel operacional).** Opera o balcão — locação, devolução, vistoria,
+clientes e histórico — mas **não enxerga o financeiro**: a aba *Financeiro* fica
+oculta e o indicador de faturamento do dia some do painel. Também não vê a lista
+nem cadastra usuários; o cadastro continua reservado ao gerente. O atendente
+mantém o acesso integral previsto na tabela acima.
+
 ### 4.8 Vistoria fotográfica
 
 - Até 3 fotos por veículo na saída (frente, lateral, detalhe) e 3 na entrada.
 - Mínimo de **1 foto por veículo obrigatória**, configurável em `config.exigirFoto`.
 - Compressão no cliente: maior lado 800px, JPEG qualidade 0,55 (~50 KB/foto).
 - Existe para sustentar a cobrança de avaria. O contrato tem cláusula em que o cliente declara ter visto as imagens e concordar que retratam o estado do equipamento.
+- **Foto do documento do cliente.** Na tela do cliente da locação anexa-se a imagem da
+  CNH, RG ou passaporte — pela câmera do aparelho **ou por upload** de arquivo já
+  existente (foto, scan ou arquivo). A obrigatoriedade é configurável em dois níveis:
+  globalmente em Configurações (`config.exigirDocFoto`) e por locação, para a
+  atendente exigir na alta temporada ou diante de um cliente com comportamento
+  duvidoso. A foto vai para a ficha do cliente e volta sozinha na locação seguinte.
 
 ### 4.9 Controle de lacres
 
