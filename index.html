@@ -346,8 +346,9 @@ tr.estornada td:last-child{opacity:1;text-decoration:none}
     <button data-tab="frota">Frota</button>
     <button data-tab="clientes">Clientes</button>
     <button data-tab="historico">Histórico</button>
-    <button data-tab="financeiro">Financeiro</button>
-    <button data-tab="config">Configurações</button>
+<button data-tab="financeiro">Financeiro</button>
+<button data-tab="usuarios">Usuários</button>
+<button data-tab="config">Configurações</button>
   </nav>
 </header>
 
@@ -492,6 +493,28 @@ tr.estornada td:last-child{opacity:1;text-decoration:none}
   </section>
 
   <!-- ============ CONFIG ============ -->
+  <section class="page" id="page-usuarios">
+    <div class="pagehead"><h2>Usuários</h2></div>
+    <div class="grid2" style="gap:14px;align-items:start">
+      <div class="card" id="cardUsuarios">
+        <div style="padding:13px 15px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px">
+          <span style="font-weight:700">Usuários da loja</span>
+          <button class="btn sm" id="btnNovoUsuario" style="margin-left:auto">+ Usuário</button>
+        </div>
+        <table id="tbUsuarios"></table>
+      </div>
+      <div class="card pad">
+        <h3 style="font-size:15px;margin-bottom:6px">Níveis de acesso</h3>
+        <p class="muted" style="font-size:12px;margin:0 0 10px">Aba exclusiva do gerente. Crie aqui o nível abaixo do gerente para quem opera o balcão sem mexer com dinheiro.</p>
+        <ul style="font-size:13px;padding-left:18px;margin:0;line-height:1.8">
+          <li><b>Operador</b> — locação, devolução, vistoria, clientes e histórico. <b>Não enxerga o financeiro</b> e não cadastra usuários.</li>
+          <li><b>Atendente</b> — tudo do operador, mais o caixa do dia e o financeiro.</li>
+          <li><b>Gerente</b> — acima: estorna, altera preços, cadastra usuários, registra lacres e zera o sistema.</li>
+        </ul>
+        <p class="muted" style="font-size:12px;margin-top:11px">Sempre deve existir pelo menos um gerente ativo.</p>
+      </div>
+    </div>
+  </section>
   <section class="page" id="page-config">
     <div class="pagehead"><h2>Configurações</h2></div>
     <div class="grid2" style="gap:14px;align-items:start">
@@ -569,13 +592,6 @@ tr.estornada td:last-child{opacity:1;text-decoration:none}
           <div style="padding:13px 15px;border-bottom:1px solid var(--line);font-weight:700">Divergências</div>
           <div style="padding:15px 15px 0"><div id="divResumo"></div></div>
           <div class="tablewrap" style="max-height:300px"><table id="tbDiverg"></table></div>
-        </div>
-        <div class="card" style="margin-bottom:14px" id="cardUsuarios">
-          <div style="padding:13px 15px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px">
-            <span style="font-weight:700">Usuários</span>
-            <button class="btn sm" id="btnNovoUsuario" style="margin-left:auto">+ Usuário</button>
-          </div>
-          <table id="tbUsuarios"></table>
         </div>
         <div class="card" style="margin-bottom:14px">
           <div style="padding:13px 15px;border-bottom:1px solid var(--line);font-weight:700">Trilha de auditoria</div>
@@ -1078,17 +1094,17 @@ function exigirGerente(acao){
   return false;
 }
 
-/* O papel operacional não enxerga o financeiro nem a administração de
-   usuários. Aqui é só visão (aba e card escondidos); quem decide o que
-   pode ser gravado continua sendo exigirGerente, que recusa o operador
-   na hora — inclusive no botão de cadastrar. O atendente continua vendo
-   a lista, como sempre viu. */
+/* Quem enxerga o quê. Operador não vê o financeiro; a aba de usuários é
+   exclusiva do gerente — é lá que se cria o nível abaixo dele. Aqui é só
+   visão: quem decide o que pode ser gravado continua sendo exigirGerente,
+   que recusa o operador na hora, inclusive no botão de cadastrar. */
 function aplicarPermissoes(){
   const abaFin = document.querySelector('nav.tabs button[data-tab="financeiro"]');
   if(abaFin) abaFin.style.display = ehOperador() ? 'none' : '';
-  const cardUs = document.getElementById('cardUsuarios');
-  if(cardUs) cardUs.style.display = ehOperador() ? 'none' : '';
+  const abaUsr = document.querySelector('nav.tabs button[data-tab="usuarios"]');
+  if(abaUsr) abaUsr.style.display = ehGerente() ? '' : 'none';
   if(ehOperador() && document.querySelector('#page-financeiro.active')) irPara('painel');
+  if(!ehGerente() && document.querySelector('#page-usuarios.active')) irPara('painel');
 }
 
 /* ===================== utilitários ===================== */
@@ -1157,6 +1173,10 @@ function irPara(tab){
     toast('Acesso operacional: o financeiro é de atendente e gerente.');
     tab = 'painel';
   }
+  if(tab==='usuarios' && !ehGerente()){
+    toast('A aba de usuários é exclusiva do gerente.');
+    tab = 'painel';
+  }
   $$('nav.tabs button').forEach(b=>b.classList.toggle('active', b.dataset.tab===tab));
   $$('.page').forEach(p=>p.classList.toggle('active', p.id==='page-'+tab));
   if(tab==='painel') renderPainel();
@@ -1165,6 +1185,7 @@ function irPara(tab){
   if(tab==='clientes') renderClientes();
   if(tab==='historico') renderHistorico();
   if(tab==='financeiro') renderFinanceiro();
+  if(tab==='usuarios') renderUsuarios();
   if(tab==='config') renderConfig();
 }
 $$('nav.tabs button').forEach(b=> b.onclick = ()=> irPara(b.dataset.tab));
@@ -3472,7 +3493,7 @@ $('#btnNovoUsuario').onclick = ()=>{
     DB.usuarios.push({ id:uid('usuario'), nome, pin, papel:ov.querySelector('#usPapel').value,
       ativo:ov.querySelector('#usAtivo').value==='1', criadoEm:Date.now() });
     log('usuario_criado', nome);
-    persist(); fecharModal(ov); renderConfig(); toast('Usuário cadastrado.');
+    persist(); fecharModal(ov); renderUsuarios(); toast('Usuário cadastrado.');
   };
 };
 window.editarUsuario = function(id){
@@ -3490,7 +3511,7 @@ window.editarUsuario = function(id){
     u.nome=ov.querySelector('#usNome').value.trim(); u.pin=ov.querySelector('#usPin').value;
     u.papel=ov.querySelector('#usPapel').value; u.ativo=ov.querySelector('#usAtivo').value==='1';
     log('usuario_editado', u.nome);
-    persist(); fecharModal(ov); renderConfig(); atualizarChip(); toast('Usuário atualizado.');
+    persist(); fecharModal(ov); renderUsuarios(); atualizarChip(); toast('Usuário atualizado.');
   };
 };
 function renderAuditoria(){

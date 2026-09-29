@@ -110,6 +110,10 @@ e `vercel env add LOJA_SENHA production`.
 
 Sempre deve existir pelo menos um gerente ativo.
 
+A aba **Usuários** é exclusiva do gerente: é ali que se cria o nível abaixo dele
+(operador ou atendente), com PIN de 4 dígitos. Quem não é gerente não vê a aba —
+se chegar por atalho, volta para o painel.
+
 ### Foto do documento do cliente (CNH/RG)
 
 Em **Configurações** há o interruptor *“Exigir foto do documento (CNH/RG) do cliente

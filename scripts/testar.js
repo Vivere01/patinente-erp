@@ -209,14 +209,28 @@ function testarPapelEDocumento(){
   ok(irPara.indexOf("'financeiro' && ehOperador()") >= 0,
      'irPara bloqueia a aba financeiro para o operador');
   ok(corpo('aplicarPermissoes').indexOf('data-tab="financeiro"') >= 0 &&
-     corpo('aplicarPermissoes').indexOf('cardUsuarios') >= 0 &&
-     (corpo('aplicarPermissoes').match(/ehOperador\(\) \? 'none'/g) || []).length === 2,
-     'aplicarPermissoes esconde a aba financeiro e o card de usuários só para o operador');
+     (corpo('aplicarPermissoes').match(/ehOperador\(\) \? 'none'/g) || []).length === 1,
+     'aplicarPermissoes esconde a aba financeiro só para o operador');
+  ok(corpo('irPara').indexOf("'usuarios' && !ehGerente()") >= 0,
+     'irPara bloqueia a aba de usuários para quem não é gerente');
+  ok(/value="operador"/.test(html) && /<b>Operador<\/b> opera o balcão, mas não enxerga o financeiro/.test(html),
+     'o formulário oferece o nível abaixo do gerente e explica que ele não vê o financeiro');
+  ok(corpo('aplicarPermissoes').indexOf('data-tab="usuarios"') >= 0 &&
+     /abaUsr\.style\.display = ehGerente\(\)/.test(corpo('aplicarPermissoes')),
+     'a aba de usuários fica escondida de quem não é gerente');
+  ok(/<button data-tab="usuarios">/.test(html) && /id="page-usuarios"/.test(html),
+     'a aba Usuários existe com a página própria');
+  ok((html.match(/id="cardUsuarios"/g) || []).length === 1 &&
+     /<section class="page" id="page-usuarios"[\s\S]{0,1200}id="cardUsuarios"/.test(html),
+     'o card de usuários saiu de Configurações e mora na aba dele');
+  ok(/<section class="page" id="page-usuarios"[\s\S]{0,1600}id="btnNovoUsuario"/.test(html),
+     'a aba de usuários tem o botão de cadastrar');
+  ok(/if\(tab==='usuarios'\) renderUsuarios\(\)/.test(corpo('irPara')),
+     'entrar na aba de usuários redesenha a lista');
   ok(corpo('renderFinanceiro').indexOf('if(ehOperador()) return;') >= 0,
      'renderFinanceiro tem trava própria para o operador');
   ok(corpo('renderPainel').indexOf('!ehOperador()) kpis.splice') >= 0,
      'KPI de faturamento fica de fora do painel do operador');
-  ok(/id="cardUsuarios"/.test(html), 'o card de usuários tem id para ser escondido');
   ok(/#btnNovoUsuario'\)\.onclick[\s\S]{0,160}exigirGerente\('cadastrar usuários'\)/.test(html),
      'cadastrar usuário continua exigindo gerente');
 

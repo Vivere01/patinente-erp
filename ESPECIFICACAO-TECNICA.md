@@ -218,9 +218,15 @@ Regra de integridade: sempre deve existir pelo menos um gerente ativo.
 
 **Operador (papel operacional).** Opera o balcão — locação, devolução, vistoria,
 clientes e histórico — mas **não enxerga o financeiro**: a aba *Financeiro* fica
-oculta e o indicador de faturamento do dia some do painel. Também não vê a lista
-nem cadastra usuários; o cadastro continua reservado ao gerente. O atendente
-mantém o acesso integral previsto na tabela acima.
+oculta e o indicador de faturamento do dia some do painel.
+
+**Aba Usuários (exclusiva do gerente).** Criação e edição de usuários saíram de
+*Configurações* para uma aba própria, visível só para o gerente — é ali que se
+cadastra o nível abaixo dele (operador ou atendente), com PIN de 4 dígitos e
+situação ativo/bloqueado. Quem não é gerente não vê a aba; se chegar por atalho
+(`irPara('usuarios')`), é mandado de volta ao painel, e o botão de cadastrar
+continua atrás de `exigirGerente`. O atendente mantém o restante do acesso
+previsto na tabela acima.
 
 ### 4.8 Vistoria fotográfica
 
@@ -312,7 +318,8 @@ Duas vias: **celular do cliente** (fluxo principal) e **balcão** (fallback). O 
 | **Clientes** | Busca por nome, CPF ou telefone; histórico e total gasto. |
 | **Histórico** | Locações com filtro por período; base, excedente, avaria e total; acesso às fotos de saída e entrada, ao contrato e ao estorno. |
 | **Financeiro** | Demonstrativo de fluxo do mês (entradas por origem, saídas por categoria, resultado, margem); custos fixos recorrentes; movimento dia a dia com destaque do melhor dia; faturamento por veículo, tipo, pacote e forma de pagamento; exportação CSV. |
-| **Configurações** | Empresa; tolerância; tabela de preços; tabela de peças; template do contrato; lacres; conferência da frota e histórico; divergências; usuários; trilha de auditoria; backup e restauração; sair da conta. |
+| **Usuários** | Lista da loja (nome, papel, último acesso); cadastro e edição de operador, atendente e gerente — PIN de 4 dígitos e situação ativo/bloqueado — mais a explicação de cada nível. Aba exclusiva do gerente. |
+| **Configurações** | Empresa; tolerância; tabela de preços; tabela de peças; template do contrato; lacres; conferência da frota e histórico; divergências; trilha de auditoria; backup e restauração; sair da conta. |
 
 Wizard de locação em 5 passos: veículos (seleção múltipla) → cliente → período → vistoria e lacre → contrato e assinatura.
 
