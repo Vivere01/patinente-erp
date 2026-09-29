@@ -25,8 +25,10 @@ Navegador (index.html — sem build, sem framework)
    │              snapshots · fotos · assinaturas
    │
    ├── lock otimista: POST /api/estado recusa versão defasada e devolve o estado novo
+   │       → o aparelho recarrega a versão da nuvem em vez de sobrescrever
    │
    └── sincronização: a cada 5 s o cliente pergunta só a versão; muda, recarrega
+           → voltar para a aba confere na hora e repinta a aba aberta
 ```
 
 - **`index.html`** — aplicação de produção (acesso da loja + PIN de atendente).
@@ -150,7 +152,7 @@ O código continua público no repositório.
 ## Testes
 
 ```bash
-npm test        # 30 verificações locais
+npm test        # verificações locais (partes A a G)
 npm run verificar   # 21 verificações contra o site publicado
 ```
 
@@ -167,6 +169,10 @@ npm run verificar   # 21 verificações contra o site publicado
 - **F. Papéis e foto do documento** — o papel operador é reconhecido, a aba financeiro
   fica bloqueada para ele, o cadastro de usuário exige gerente e o quadro do documento
   oferece câmera + upload com a exigência opcional ou marcada.
+- **G. Fechamento e sincronização** — o fechamento lista e soma as entradas por forma
+  de pagamento (soma calculada num dia de exemplo), o impresso traz o mesmo detalhe, e a
+  nuvem: carga no acesso, sondagem de 5 s, confirmação ao voltar para a aba, conflito de
+  versão recarregando o estado do servidor e repintura da aba aberta.
 - **`verificar-ar`** — roda a operação inteira no site publicado: login, estado com
   lock, histórico, foto com link assinado, contrato assinado no celular e limpeza.
   Usa `LOJA_EMAIL`/`LOJA_SENHA` do `.env.local` (ou `node scripts/verificar-ar.js URL EMAIL SENHA`)

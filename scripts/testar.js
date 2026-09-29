@@ -11,6 +11,8 @@
       aparece no ar, como FUNCTION_INVOCATION_FAILED).
    F. Papel operacional (sem financeiro, sem cadastro de usuário) e a foto
       do documento do cliente com câmera + upload.
+   G. Fechamento do caixa (entradas somadas por forma de pagamento) e a
+      sincronização entre aparelhos (carga no acesso, sondagem, conflito).
 
    Uso:  npm test
 */
@@ -257,6 +259,70 @@ function testarPapelEDocumento(){
   ok(!/capture=/.test(opcional), 'o upload não força a câmera (permite galeria e arquivo do PC)');
 }
 
+/* ------------------------------------------------------------------ G */
+function testarFechamentoESync(){
+  console.log('\nG. Fechamento do caixa e sincronização entre aparelhos');
+  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  const corpo = f => extrairFuncao(html, f);
+
+  /* --- entradas somadas por forma de pagamento --- */
+  const fechar = corpo('fecharCaixaModal');
+  ok(fechar.indexOf('Entradas por forma de pagamento') >= 0,
+     'a janela de fechamento mostra as entradas por forma de pagamento');
+  ok(/formas\.map\(f=>'<div class="l">/.test(fechar) && fechar.indexOf('Total de entradas') >= 0,
+     'a janela de fechamento lista cada forma e soma o total');
+  ok(fechar.indexOf("porForma['Dinheiro']") >= 0,
+     'a janela de fechamento mantém a conferência do dinheiro em gaveta');
+  ok(/Object\.keys\(ent\.porForma\)\.sort\(\)\.map\(f=>'<tr>/.test(html),
+     'o impresso continua listando cada forma de pagamento');
+  ok(/id="tbCaixaEnt"/.test(html) && /porForma\[f\]/.test(html),
+     'a tela do caixa também mostra a tabela de entradas por forma');
+
+  /* soma de verdade, com um dia de exemplo */
+  const ctx = vm.createContext({ console });
+  vm.runInContext([
+    extrairFuncao(html, 'diaKey'),
+    extrairFuncao(html, 'estornada'),
+    extrairFuncao(html, 'entradasDoDia'),
+    'globalThis.DB = { locacoes: [] };',
+    'globalThis.C = { entradasDoDia, diaKey };'
+  ].join('\n'), ctx);
+  const agora = Date.now(), dia = ctx.C.diaKey(agora);
+  ctx.DB = { locacoes: [
+    { status:'ativa', inicio:agora, valorBase:100, pagamento:'Pix', veiculoCodigo:'P1', tarifaLabel:'30 min' },
+    { status:'ativa', inicio:agora, valorBase:50,  pagamento:'Dinheiro', veiculoCodigo:'P2', tarifaLabel:'1 h' },
+    { status:'ativa', inicio:agora - 4*86400000, valorBase:999, pagamento:'Pix', veiculoCodigo:'P3', tarifaLabel:'1 h' },
+    { status:'estornada', inicio:agora, valorBase:777, pagamento:'Pix', veiculoCodigo:'P4', tarifaLabel:'1 h' },
+    { status:'ativa', inicio:agora, fimReal:agora, valorExcedente:20, pagamentoExcedente:'Cartão de crédito',
+      veiculoCodigo:'P1', tarifaLabel:'30 min', minutosExcedente:12 }
+  ]};
+  const e = ctx.C.entradasDoDia(dia);
+  igual(e.porForma['Pix'], 100, 'Pix soma só as locações daquele dia');
+  igual(e.porForma['Dinheiro'], 50, 'Dinheiro soma à parte');
+  igual(e.porForma['Cartão de crédito'], 20, 'o excedente entra pela forma em que foi pago');
+  ok(Object.keys(e.porForma).length === 3, 'três formas de pagamento somadas separadamente');
+  igual(e.total, 170, 'o total é a soma das formas (locação de outro dia e estorno ficam de fora)');
+
+  /* --- sincronização entre aparelhos --- */
+  ok(/const doc = await Nuvem\.carregar\(\)/.test(html) && /Nuvem\.escutar\(\)/.test(html),
+     'no acesso o aparelho baixa o documento da nuvem e passa a observá-lo');
+  ok(/e\.codigo === 409 && e\.det/.test(html),
+     'o conflito de versão (409) é reconhecido como conflito, não como erro de rede');
+  ok(/assumir\(r\)\{/.test(html) && /Outro aparelho salvou antes/.test(html),
+     'diante de conflito a aplicação recarrega a versão da nuvem em vez de sobrescrever');
+  const gravar = html.slice(html.indexOf('async gravar(){'), html.indexOf('assumir(r){'));
+  const i409 = gravar.indexOf('codigo === 409'), irasc = gravar.indexOf('guardarRascunho()');
+  ok(i409 >= 0 && irasc > i409 && gravar.slice(i409, irasc).indexOf('}else{') >= 0,
+     'só a falha de rede guarda rascunho — o conflito não vira "sem conexão"');
+  ok(/async sondar\(\)/.test(html) && /setInterval\(\(\)=> this\.sondar\(\)/.test(html),
+     'a sondagem de 5 s usa a mesma rotina que confere a nuvem');
+  ok(/visibilitychange/.test(html) && /document\.hidden\) this\.sondar\(\)/.test(html),
+     'voltar para a aba confere a nuvem na hora, sem esperar os 5 s');
+  const repintar = corpo('repintarTela');
+  ['renderCaixa','renderFrota','renderClientes','renderHistorico','renderFinanceiro','renderUsuarios','renderConfig']
+    .forEach(fn=> ok(repintar.indexOf(fn) >= 0, 'repintarTela atualiza a aba de ' + fn));
+}
+
 /* ------------------------------------------------------------------ C */
 async function testarBanco(){
   console.log('\nC. Banco de dados (transação descartada ao final)');
@@ -350,6 +416,8 @@ async function testarBanco(){
   catch(e){ reprovados++; console.log('  ✗ api: ' + e.message); }
   try{ testarPapelEDocumento(); }
   catch(e){ reprovados++; console.log('  ✗ papel/documento: ' + e.message); }
+  try{ testarFechamentoESync(); }
+  catch(e){ reprovados++; console.log('  ✗ fechamento/sync: ' + e.message); }
   await testarBanco();
 
   console.log('\n  ' + aprovados + ' aprovados, ' + reprovados + ' reprovados\n');

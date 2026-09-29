@@ -733,28 +733,34 @@ const Nuvem = {
         doc: DB, versao: this.versao, por: (typeof usuarioAtual==='function'? usuarioAtual() : 'sistema')
       }});
       this.versao = r.versao;
-      if(r.ok === false){
-        /* outro aparelho salvou primeiro — assume a versão do servidor */
-        if(r.doc && r.doc.veiculos){
-          DB = r.doc;
-          if(typeof aplicarMigracoes==='function') aplicarMigracoes();
-          if(typeof aplicarMarca==='function') aplicarMarca();
-          if(typeof renderPainel==='function') renderPainel();
-          if(typeof renderConfig==='function' && $('#page-config').classList.contains('active')) renderConfig();
-          toast('Outro aparelho atualizou os dados. Tela recarregada.');
-        }
-        marcarSync('conflito');
-      } else {
-        marcarSync('ok');
-      }
+      if(r.ok === false) this.assumir(r);
+      else marcarSync('ok');
     }catch(e){
-      console.error(e);
-      marcarSync('erro');
-      guardarRascunho();
+      /* o 409 do lock otimista NÃO é erro de rede: chamar() lança, então
+         ele chega aqui. Assume a versão do servidor, como manda o contrato. */
+      if(e && e.codigo === 409 && e.det){
+        this.versao = Number(e.det.versao) || this.versao;
+        this.assumir(e.det);
+      }else{
+        console.error(e);
+        marcarSync('erro');
+        guardarRascunho();
+      }
     }finally{
       this.salvando = false;
       if(this.pendente){ this.pendente = false; this.agendar(); }
     }
+  },
+
+  /* outro aparelho salvou primeiro: recarrega em vez de sobrescrever */
+  assumir(r){
+    if(r && r.doc && r.doc.veiculos){
+      DB = r.doc;
+      if(typeof aplicarMigracoes==='function') aplicarMigracoes();
+      if(typeof repintarTela==='function') repintarTela();
+      if(typeof toast==='function') toast('Outro aparelho salvou antes — recarreguei a versão da nuvem.');
+    }
+    marcarSync('conflito');
   },
 
   async evento(acao, detalhe, payload){
@@ -769,29 +775,33 @@ const Nuvem = {
 
   /* Observa o servidor: a cada 5 s pergunta só a versão, e quando ela
      muda recarrega o documento. Substitui o Realtime do protótipo e
-     gera um SELECT curto por vez. */
+     gera um SELECT curto por vez. Voltar para a aba confere na hora. */
   escutar(){
     if(this._sondagem) clearInterval(this._sondagem);
-    this._sondagem = setInterval(async ()=>{
-      if(!this.online || this.salvando || this.fila) return;
-      try{
-        const s = await this.chamar('/estado?versao=1');
-        if(!s || s.versao === this.versao) return;
-        const d = await this.chamar('/estado');
-        if(!d || d.versao === this.versao) return;
-        if(!(d.doc && d.doc.veiculos)) return;
-        this.versao = d.versao;
-        DB = d.doc;
-        if(typeof aplicarMigracoes==='function') aplicarMigracoes();
-        if(typeof aplicarMarca==='function') aplicarMarca();
-        if(typeof renderPainel==='function') renderPainel();
-        if($ && $('#page-caixa') && $('#page-caixa').classList.contains('active') && typeof renderCaixa==='function') renderCaixa();
-        marcarSync('ok');
-        if(typeof toast==='function') toast('Dados atualizados por outro aparelho.');
-      }catch(e){
-        marcarSync(e && e.codigo ? 'erro' : 'erro');
-      }
-    }, 5000);
+    this._sondagem = setInterval(()=> this.sondar(), 5000);
+    if(!this._visivel && typeof document!=='undefined' && document.addEventListener){
+      this._visivel = true;
+      document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) this.sondar(); });
+    }
+  },
+
+  async sondar(){
+    if(!this.online || this.salvando || this.fila) return;
+    try{
+      const s = await this.chamar('/estado?versao=1');
+      if(!s || s.versao === this.versao) return;
+      const d = await this.chamar('/estado');
+      if(!d || d.versao === this.versao) return;
+      if(!(d.doc && d.doc.veiculos)) return;
+      this.versao = d.versao;
+      DB = d.doc;
+      if(typeof aplicarMigracoes==='function') aplicarMigracoes();
+      if(typeof repintarTela==='function') repintarTela();
+      marcarSync('ok');
+      if(typeof toast==='function') toast('Dados atualizados por outro aparelho.');
+    }catch(e){
+      marcarSync('erro');
+    }
   },
 
   /* --- assinatura no celular do cliente (rota /assinar/{token}) --- */
@@ -814,6 +824,21 @@ function lerRascunho(){
   try{ const r = localStorage.getItem('mobilidade_rascunho'); return r ? JSON.parse(r) : null; }catch(e){ return null; }
 }
 function limparRascunho(){ try{ localStorage.removeItem('mobilidade_rascunho'); }catch(e){} }
+
+/* Depois que os dados vêm de fora (outro aparelho, conflito de versão,
+   restauração de backup), repinta o painel e a aba que estiver aberta —
+   o resto volta sozinho quando o usuário trocar de aba. */
+function repintarTela(){
+  if(typeof aplicarMarca==='function') aplicarMarca();
+  if(typeof renderPainel==='function') renderPainel();
+  const ativa = document.querySelector('.page.active');
+  const aba = ativa ? String(ativa.id||'').replace('page-','') : '';
+  const mapa = { caixa:'renderCaixa', frota:'renderFrota', clientes:'renderClientes',
+                 historico:'renderHistorico', financeiro:'renderFinanceiro',
+                 usuarios:'renderUsuarios', config:'renderConfig' };
+  const nome = mapa[aba];
+  if(nome && typeof window[nome]==='function') window[nome]();
+}
 
 function marcarSync(estado){
   const el = document.getElementById('syncChip'); if(!el) return;
@@ -3099,13 +3124,26 @@ function abrirCaixaModal(dia, depois){
 }
 function fecharCaixaModal(dia, esperado){
   const cx = getCaixa(dia);
+  const ent = entradasDoDia(dia);
+  const formas = Object.keys(ent.porForma).sort();
   const ov = abrirModal('<header><h3>Fechar caixa — '+diaLegivel(dia)+'</h3><button class="x">&times;</button></header>'+
     '<div class="body">'+
     '<div class="resumo">'+
       '<div class="l"><span>Fundo de troco</span><b>'+brl(cx.saldoInicial)+'</b></div>'+
-      '<div class="l"><span>+ Entradas em dinheiro</span><b>'+brl(entradasDoDia(dia).porForma['Dinheiro']||0)+'</b></div>'+
+      '<div class="l"><span>+ Entradas em dinheiro</span><b>'+brl(ent.porForma['Dinheiro']||0)+'</b></div>'+
       '<div class="l"><span>− Saídas pagas em dinheiro</span><b>'+brl(saidasDoDia(dia).itens.filter(d=>d.pago&&d.forma==='Dinheiro').reduce((s,d)=>s+d.valor,0))+'</b></div>'+
       '<div class="l tot"><span>Deveria ter na gaveta</span><span>'+brl(esperado)+'</span></div>'+
+    '</div>'+
+    /* o impresso já trazia o detalhe por forma de pagamento; aqui entra o
+       mesmo detalhe para o conferente ver o total de cada forma antes de
+       fechar (Pix, cartões, dinheiro) */
+    '<div style="margin-top:14px">'+
+      '<div style="font-weight:700;font-size:13px;margin-bottom:7px">Entradas por forma de pagamento</div>'+
+      '<div class="resumo">'+
+        (formas.length ? formas.map(f=>'<div class="l"><span>'+esc(f)+'</span><b>'+brl(ent.porForma[f])+'</b></div>').join('')
+                       : '<div class="l"><span>Nenhuma entrada registrada neste dia.</span></div>')+
+        '<div class="l tot"><span>Total de entradas</span><span>'+brl(ent.total)+'</span></div>'+
+      '</div>'+
     '</div>'+
     (locAtivas().length ? '<div class="fnota">Atenção: ainda há '+locAtivas().length+
       ' veículo(s) na rua. Se algum voltar depois do fechamento, você precisará reabrir o caixa para registrar a entrada.</div>' : '')+

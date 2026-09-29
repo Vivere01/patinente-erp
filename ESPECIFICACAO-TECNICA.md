@@ -194,6 +194,7 @@ Estas regras foram definidas pelo dono. **Não altere sem confirmar com ele.**
 - Ao ser bloqueado, o operador recebe a opção de abrir (ou reabrir) o caixa ali mesmo, e a ação pendente continua de onde parou.
 - Fechar o caixa com veículos na rua é permitido, com aviso. Se algum voltar depois, exige reabertura.
 - Fechamento confere dinheiro: `saldoInicial + entradas em dinheiro − saídas pagas em dinheiro` contra o valor contado. Diferença é registrada com autor e horário.
+- O fechamento também mostra **as entradas somadas por forma de pagamento** (Pix, cartão de débito, cartão de crédito, dinheiro) e o total — o mesmo detalhe que sai na impressão, para o conferente ver antes de confirmar.
 
 ### 4.6 Imutabilidade e estorno
 
