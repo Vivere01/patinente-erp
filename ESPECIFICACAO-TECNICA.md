@@ -333,6 +333,8 @@ vêm das variáveis do tema: `--brand` (amarelo) e `--ink` (preto usado por cima
 amarelo), iguais nos dois temas; `--brand-fg` resolve o texto da marca em fundo claro,
 onde amarelo não teria contraste. Regra: **texto sobre amarelo é sempre `--ink`**, nunca
 branco — botão principal, aba ativa, cabeçalho de total e avatar de quem está no PIN.
+O nome padrão da empresa também é a marca: lojas que ainda guardam o nome de fábrica
+("Minha Locadora") são renomeadas para **VeeLo Way** quando o estado é carregado.
 
 ---
 

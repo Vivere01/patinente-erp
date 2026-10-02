@@ -998,7 +998,7 @@ const PECAS_PADRAO = [
 
 function dbPadrao(){
   return {
-    empresa:{ nome:'Minha Locadora', cnpj:'', endereco:'', telefone:'' },
+    empresa:{ nome:'VeeLo Way', cnpj:'', endereco:'', telefone:'' },
     config:{ toleranciaMin:5, urlBase:'' },
     contrato: CONTRATO_PADRAO,
     tipos: JSON.parse(JSON.stringify(TIPOS_PADRAO)),
@@ -1050,6 +1050,8 @@ function aplicarMigracoes(){
   if(!DB.config.urlBase) DB.config.urlBase = '';   /* vazio = usa o próprio domínio */
   if(DB.contrato && (DB.contrato.indexOf('{{lista_veiculos}}')<0 || DB.contrato.indexOf('{{vistoria}}')<0))
   DB.contrato = CONTRATO_PADRAO;
+  if(!DB.empresa) DB.empresa = { nome:'VeeLo Way', cnpj:'', endereco:'', telefone:'' };
+  if(DB.empresa.nome === 'Minha Locadora') DB.empresa.nome = 'VeeLo Way';   /* nome de fábrica vira a marca */
 }
 function persist(){ Store.save(DB); }
 
@@ -4058,7 +4060,7 @@ function primeiroUso(){
   if(DB.veiculos.length) return;
   const ov = abrirModal('<header><h3>Bem-vindo</h3></header>'+
     '<div class="body"><p style="margin-top:0">Vamos criar sua frota inicial. Você pode ajustar tudo depois em <b>Frota</b> e <b>Configurações</b>.</p>'+
-    '<div class="grid2"><label class="f"><span>Nome da empresa</span><input type="text" id="ozNome" placeholder="Minha Locadora"></label>'+
+    '<div class="grid2"><label class="f"><span>Nome da empresa</span><input type="text" id="ozNome" placeholder="VeeLo Way"></label>'+
     '<label class="f"><span>Tolerância de atraso (min)</span><input type="number" id="ozTol" value="5"></label></div>'+
     '<div class="grid2"><label class="f"><span>Quantos patinetes</span><input type="number" id="ozPat" value="200"></label>'+
     '<label class="f"><span>Quantas motos elétricas</span><input type="number" id="ozMoto" value="10"></label></div>'+
@@ -4066,7 +4068,7 @@ function primeiroUso(){
     '<footer><button class="btn sec" id="ozPular">Começar vazio</button><button class="btn" id="ozOk">Criar frota</button></footer>', {fixo:true});
   ov.querySelector('#ozPular').onclick = ()=> fecharModal(ov);
   ov.querySelector('#ozOk').onclick = ()=>{
-    DB.empresa.nome = ov.querySelector('#ozNome').value.trim() || 'Minha Locadora';
+    DB.empresa.nome = ov.querySelector('#ozNome').value.trim() || 'VeeLo Way';
     DB.config.toleranciaMin = Math.max(0, +ov.querySelector('#ozTol').value||0);
     const np = Math.min(2000, Math.max(0, +ov.querySelector('#ozPat').value||0));
     const nm = Math.min(2000, Math.max(0, +ov.querySelector('#ozMoto').value||0));

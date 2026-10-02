@@ -2,7 +2,8 @@
 
    Confere, contra o Postgres real, a sequência inteira de operação:
    login → estado com lock → histórico → foto → contrato assinado →
-   limpeza. Só usa rotas da API, exatamente como usa o navegador.
+   limpeza → identidade no ar (página e logo). Usa as rotas da API como
+   usa o navegador, e confere o HTML publicado no fim.
 
    Uso:
      npm run verificar                      # site e credenciais do .env.local
@@ -136,6 +137,15 @@ const JPG = '/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE
   check(st.status === 200 && st.body.banco === true && st.body.login === true, 'status: banco e login prontos', JSON.stringify(st.body));
   const sg = await j('/api/sessao', { headers: cabecalho(t) });
   check(sg.status === 200 && sg.body.ok === true, 'sessão segue válida para o balcão', JSON.stringify(sg.body));
+
+  console.log('\n8. identidade no ar');
+  const pagTopo = await fetch(BASE + '/');
+  const txt = pagTopo.status === 200 ? await pagTopo.text() : '';
+  check(pagTopo.status === 200 && txt.indexOf('assets/logo-veeloway.jpeg') >= 0 && txt.indexOf('--brand:#ffe500') >= 0,
+        'a página publicada traz o logo e o amarelo da marca', 'status ' + pagTopo.status);
+  const img = await fetch(BASE + '/assets/logo-veeloway.jpeg', { method: 'HEAD' });
+  check(img.status === 200 && String(img.headers.get('content-type') || '').indexOf('image/jpeg') >= 0,
+        'o logo responde como imagem (200)', 'veio ' + img.status + ' ' + img.headers.get('content-type'));
 
   console.log('\n  ' + aprovados + ' aprovados, ' + reprovados + ' reprovados\n');
   process.exit(reprovados ? 1 : 0);

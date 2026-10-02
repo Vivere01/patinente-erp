@@ -142,6 +142,9 @@ suspeito. A foto fica na ficha do cliente e volta sozinha na locação seguinte.
 - **Para trocar a marca:** substitua o arquivo em `assets/` mantendo o nome (ou altere
   os quatro `src="assets/logo-veeloway.jpeg"` no `index.html` e no `assinar.html`) e
   ajuste `--brand` nos dois temas do `<style>`.
+- **Nome da empresa:** o padrão (e o que uma loja já cadastrada com o nome de fábrica
+  passa a mostrar) é **VeeLo Way**; em `Configurações → Empresa` dá para mudar para o
+  nome jurídico, CNPJ e endereço da loja.
 
 ---
 
@@ -169,8 +172,8 @@ O código continua público no repositório.
 ## Testes
 
 ```bash
-npm test        # verificações locais (partes A a G)
-npm run verificar   # 21 verificações contra o site publicado
+npm test        # verificações locais (partes A a H)
+npm run verificar   # 23 verificações contra o site publicado
 ```
 
 - **A. Regras de dinheiro** — lê as funções do próprio `index.html` e confere os cenários
@@ -192,9 +195,11 @@ npm run verificar   # 21 verificações contra o site publicado
   versão recarregando o estado do servidor e repintura da aba aberta.
 - **H. Identidade visual** — o logo está no repositório e é um JPEG válido; aparece no
   favicon, no topo, nas duas telas de acesso e na assinatura; amarelo e preto nos dois
-  temas, sem texto branco por cima do amarelo e sem resquício do azul antigo.
+  temas, sem texto branco por cima do amarelo e sem resquício do azul antigo; e o nome
+  padrão da empresa é a marca, não "Minha Locadora".
 - **`verificar-ar`** — roda a operação inteira no site publicado: login, estado com
-  lock, histórico, foto com link assinado, contrato assinado no celular e limpeza.
+  lock, histórico, foto com link assinado, contrato assinado no celular, limpeza e a
+  identidade no ar (a página publicada e o logo servido como imagem).
   Usa `LOJA_EMAIL`/`LOJA_SENHA` do `.env.local` (ou `node scripts/verificar-ar.js URL EMAIL SENHA`)
   e apaga os artefatos de teste ao final.
 

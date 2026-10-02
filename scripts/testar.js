@@ -373,6 +373,12 @@ function testarIdentidadeVisual(){
      'a barra do topo é marcada com o amarelo da marca');
   ok(/--brand:#f2e200; --brand-2:#dccb00/.test(assinar),
      'a tela de assinatura usa o mesmo amarelo');
+
+  /* a empresa já cadastrada passa a se chamar pela marca */
+  ok((html.match(/Minha Locadora/g) || []).length === 1,
+     'o nome de fábrica só resta para ser renomeado, nunca exibido');
+  ok(html.indexOf("DB.empresa.nome === 'Minha Locadora') DB.empresa.nome = 'VeeLo Way'") >= 0,
+     'a loja existente é renomeada de "Minha Locadora" para a marca');
 }
 
 /* ------------------------------------------------------------------ C */
