@@ -3,29 +3,32 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sistema de Locação — Patinetes e Motos Elétricas</title>
+<title>VeeLo Way — Mobilidade Urbana</title>
+<link rel="icon" href="assets/logo-veeloway.jpeg">
 <style>
-/* ===================== TEMA ===================== */
+/* ============ TEMA — identidade VeeLo Way: amarelo e preto ============ */
 :root, :root[data-tema="escuro"]{
-  --bg:#0a0e13; --bg2:#0f151d; --surface:#141b25; --surface2:#1a2331;
-  --line:#232f3f; --line2:#2e3d51;
-  --text:#eaf0f7; --muted:#8fa1b6; --muted2:#5d6f85;
+  --bg:#0b0b0b; --bg2:#121212; --surface:#171717; --surface2:#212121;
+  --line:#2c2c2c; --line2:#3b3b3b;
+  --text:#f6f6f6; --muted:#a6a6a6; --muted2:#6e6e6e;
   --ok:#00e08a; --ok-bg:rgba(0,224,138,.12); --ok-fg:#08130d;
   --warn:#ffb020; --warn-bg:rgba(255,176,32,.12);
   --danger:#ff4d5e; --danger-bg:rgba(255,77,94,.13);
-  --brand:#4d8dff; --brand-bg:rgba(77,141,255,.14); --brand-2:#7b5cff;
-  --input:#0d131b;
-  --shadow:0 4px 20px rgba(0,0,0,.4);
+  --brand:#ffe500; --brand-2:#e3ce00; --brand-bg:rgba(255,229,0,.15); --brand-fg:#ffe500;
+  --ink:#0a0a0a;
+  --input:#0d0d0d;
+  --shadow:0 4px 20px rgba(0,0,0,.5);
   --radius:15px;
 }
 :root[data-tema="claro"]{
-  --bg:#f2f4f7; --bg2:#e9edf2; --surface:#ffffff; --surface2:#f7f9fb;
-  --line:#e2e7ee; --line2:#d3dbe5;
-  --text:#0d1520; --muted:#5b6b7f; --muted2:#8c9aab;
+  --bg:#f3f3f3; --bg2:#ffffff; --surface:#ffffff; --surface2:#f7f7f7;
+  --line:#e4e4e4; --line2:#d1d1d1;
+  --text:#0d0d0d; --muted:#5e5e5e; --muted2:#8b8b8b;
   --ok:#00a865; --ok-bg:rgba(0,168,101,.10); --ok-fg:#ffffff;
   --warn:#c47a00; --warn-bg:rgba(196,122,0,.10);
   --danger:#e02f43; --danger-bg:rgba(224,47,67,.09);
-  --brand:#2d6ff5; --brand-bg:rgba(45,111,245,.10); --brand-2:#6d4df5;
+  --brand:#f2e200; --brand-2:#dccb00; --brand-bg:rgba(242,226,0,.30); --brand-fg:#0a0a0a;
+  --ink:#0a0a0a;
   --input:#ffffff;
   --shadow:0 2px 12px rgba(16,24,40,.08);
 }
@@ -45,11 +48,11 @@ h1,h2,h3,h4{margin:0;letter-spacing:-.3px}
 ::-webkit-scrollbar-track{background:transparent}
 
 /* ===================== TOPO ===================== */
-header.top{position:sticky;top:0;z-index:50;background:var(--bg2);border-bottom:1px solid var(--line);
+header.top{position:sticky;top:0;z-index:50;background:var(--bg2);border-bottom:2px solid var(--brand);
   padding:11px 20px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+header.top .logomarca{width:36px;height:36px;border-radius:11px;object-fit:cover;flex:none;
+  box-shadow:0 0 0 1px var(--line)}
 header.top .logo{display:flex;align-items:center;gap:11px;font-weight:750;font-size:15px}
-header.top .logo::before{content:'⚡';width:34px;height:34px;border-radius:11px;flex:none;
-  background:linear-gradient(135deg,var(--brand),var(--brand-2));display:grid;place-items:center;font-size:16px}
 header.top .logo span{display:block;font-size:11.5px;font-weight:400;color:var(--muted2)}
 .clock{font-variant-numeric:tabular-nums;color:var(--muted2);font-size:12.5px}
 nav.tabs{display:flex;gap:3px;background:var(--surface);padding:4px;border-radius:12px;
@@ -57,7 +60,7 @@ nav.tabs{display:flex;gap:3px;background:var(--surface);padding:4px;border-radiu
 nav.tabs button{background:none;border:0;color:var(--muted);padding:8px 14px;border-radius:9px;
   font-size:13.5px;font-weight:600}
 nav.tabs button:hover{color:var(--text)}
-nav.tabs button.active{background:var(--surface2);color:var(--text);box-shadow:var(--shadow)}
+nav.tabs button.active{background:var(--brand);color:var(--ink);box-shadow:var(--shadow)}
 .userchip{margin-left:auto;background:var(--surface);border:1px solid var(--line);color:var(--text);
   border-radius:20px;padding:6px 14px;font-size:12.5px;font-weight:600}
 .userchip:hover{border-color:var(--line2)}
@@ -74,7 +77,7 @@ main{padding:22px;max-width:1560px;margin:0 auto}
 .pagehead .sp{margin-left:auto}
 
 /* ===================== BOTÕES E CAMPOS ===================== */
-.btn{background:linear-gradient(135deg,var(--brand),var(--brand-2));color:#fff;border:0;
+.btn{background:linear-gradient(135deg,var(--brand),var(--brand-2));color:var(--ink);border:0;
   padding:10px 18px;border-radius:11px;font-weight:700;font-size:14px}
 .btn:hover{filter:brightness(1.1)}
 .btn.sec{background:var(--surface);color:var(--text);border:1px solid var(--line2)}
@@ -82,7 +85,7 @@ main{padding:22px;max-width:1560px;margin:0 auto}
 .btn.ok{background:var(--ok);color:var(--ok-fg)}
 .btn.danger{background:var(--danger);color:#fff}
 .btn.sm{padding:6px 12px;font-size:12.5px;border-radius:8px}
-.btn.lg{padding:13px 24px;font-size:14.5px;box-shadow:0 6px 18px rgba(77,141,255,.3)}
+.btn.lg{padding:13px 24px;font-size:14.5px;box-shadow:0 6px 18px rgba(255,229,0,.22)}
 .btn:disabled{opacity:.4;cursor:not-allowed;filter:none}
 label.f{display:block;margin-bottom:12px}
 label.f>span{display:block;font-size:11px;font-weight:700;color:var(--muted2);margin-bottom:5px;
@@ -116,7 +119,7 @@ tbody tr:hover td{background:var(--surface2)}
 .pill{display:inline-block;padding:3px 10px;border-radius:20px;font-size:10.5px;font-weight:700;
   text-transform:uppercase;letter-spacing:.3px}
 .pill.loja{background:var(--ok-bg);color:var(--ok)}
-.pill.rua{background:var(--brand-bg);color:var(--brand)}
+.pill.rua{background:var(--brand-bg);color:var(--brand-fg)}
 .pill.manut{background:var(--warn-bg);color:var(--warn)}
 .pill.est{background:rgba(123,92,255,.16);color:#a78bfa}
 .empty{text-align:center;padding:44px;color:var(--muted2)}
@@ -132,7 +135,7 @@ tbody tr:hover td{background:var(--surface2)}
 .kpi.r::before{background:var(--danger);opacity:1}
 .kpi .lab{font-size:10.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--muted2)}
 .kpi .val{font-size:28px;font-weight:750;letter-spacing:-1px;margin-top:5px;line-height:1}
-.kpi.b .val{color:var(--brand)} .kpi.g .val{color:var(--ok)}
+.kpi.b .val{color:var(--brand-fg)} .kpi.g .val{color:var(--ok)}
 .kpi.w .val{color:var(--warn)} .kpi.r .val{color:var(--danger)}
 
 /* ===================== ALERTA DO PAINEL ===================== */
@@ -197,7 +200,7 @@ tbody tr:hover td{background:var(--surface2)}
 .tarifa:hover{border-color:var(--brand);transform:translateY(-2px)}
 .tarifa.sel{border-color:var(--brand);background:var(--brand-bg)}
 .tarifa .t{font-weight:700;font-size:14px}
-.tarifa .v{font-size:21px;font-weight:750;color:var(--brand);margin-top:4px;letter-spacing:-.5px}
+.tarifa .v{font-size:21px;font-weight:750;color:var(--brand-fg);margin-top:4px;letter-spacing:-.5px}
 
 /* ===================== RESUMO / CONTRATO ===================== */
 .resumo{background:var(--brand-bg);border:1px solid var(--line);border-radius:13px;padding:15px;margin-bottom:15px}
@@ -225,7 +228,7 @@ tbody tr:hover td{background:var(--surface2)}
 .qrfallback{width:132px;height:132px;border:2px dashed var(--line2);border-radius:10px;
   display:flex;align-items:center;justify-content:center;text-align:center;font-size:11px;color:var(--muted2)}
 .linkbox{background:var(--input);border:1px solid var(--line);border-radius:9px;padding:9px 12px;
-  font-family:ui-monospace,Menlo,monospace;font-size:11.5px;word-break:break-all;color:var(--brand)}
+  font-family:ui-monospace,Menlo,monospace;font-size:11.5px;word-break:break-all;color:var(--brand-fg)}
 .statusass{margin-top:12px;padding:10px 13px;border-radius:10px;background:var(--warn-bg);color:var(--warn);
   font-size:13px;font-weight:700;display:flex;align-items:center;gap:8px}
 .statusass.ok{background:var(--ok-bg);color:var(--ok)}
@@ -239,7 +242,7 @@ tbody tr:hover td{background:var(--surface2)}
 /* ===================== CELULAR SIMULADO ===================== */
 .fone{max-width:370px;margin:0 auto;background:var(--surface);border:9px solid var(--line2);
   border-radius:34px;overflow:hidden;box-shadow:0 18px 50px rgba(0,0,0,.5)}
-.fonetop{background:linear-gradient(135deg,var(--brand),var(--brand-2));color:#fff;text-align:center;
+.fonetop{background:linear-gradient(135deg,var(--brand),var(--brand-2));color:var(--ink);text-align:center;
   padding:11px;font-size:13.5px;font-weight:700}
 .fonebody{padding:16px;max-height:56vh;overflow:auto}
 .fcard{border:1px solid var(--line);border-radius:13px;padding:14px;margin-bottom:13px;background:var(--bg2)}
@@ -276,7 +279,7 @@ tbody tr:hover td{background:var(--surface2)}
 tr.dregrupo td{background:var(--surface2);font-weight:700;font-size:10.5px;text-transform:uppercase;
   letter-spacing:.5px;padding:10px 14px;color:var(--muted)}
 td.dreitem{padding-left:30px;color:var(--muted)}
-tr.dretotal td{background:linear-gradient(135deg,var(--brand),var(--brand-2));color:#fff;font-weight:750;
+tr.dretotal td{background:linear-gradient(135deg,var(--brand),var(--brand-2));color:var(--ink);font-weight:750;
   padding:13px 14px;font-size:14.5px}
 tr.dretotal:hover td{background:linear-gradient(135deg,var(--brand),var(--brand-2))}
 
@@ -287,6 +290,8 @@ tr.dretotal:hover td{background:linear-gradient(135deg,var(--brand),var(--brand-
 .syncchip.erro{background:var(--danger-bg);color:var(--danger);border-color:var(--danger)}
 /* ===================== LOGIN ===================== */
 .login{max-width:390px;margin:0 auto}
+.loginmarca{display:flex;justify-content:center;margin-bottom:16px}
+.loginmarca img{width:148px;height:148px;object-fit:cover;border-radius:22px;box-shadow:var(--shadow)}
 .pinpad{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-top:14px}
 .pinpad button{padding:17px 0;font-size:20px;font-weight:700;border:1px solid var(--line2);
   background:var(--bg2);color:var(--text);border-radius:12px}
@@ -299,16 +304,16 @@ tr.dretotal:hover td{background:linear-gradient(135deg,var(--brand),var(--brand-
   background:var(--bg2);color:var(--text);border-radius:12px;text-align:left;width:100%;font-size:14px}
 .userlist button:hover{border-color:var(--brand);background:var(--brand-bg)}
 .userlist .av,.login .av{width:36px;height:36px;border-radius:50%;
-  background:linear-gradient(135deg,var(--brand),var(--brand-2));color:#fff;display:flex;
+  background:linear-gradient(135deg,var(--brand),var(--brand-2));color:var(--ink);display:flex;
   align-items:center;justify-content:center;font-weight:700;font-size:13.5px;flex:none}
-.userlist .av.g{background:linear-gradient(135deg,var(--brand-2),#c026d3)}
+.userlist .av.g{background:#0a0a0a;color:var(--brand)}
 
 /* ===================== FOTOS ===================== */
 .fotogrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:10px;margin-top:11px}
 .fotoslot{border:2px dashed var(--line2);border-radius:12px;aspect-ratio:4/3;display:flex;flex-direction:column;
   align-items:center;justify-content:center;gap:4px;color:var(--muted2);font-size:11.5px;
   background:var(--bg2);text-align:center;padding:6px;cursor:pointer}
-.fotoslot:hover{border-color:var(--brand);color:var(--brand)}
+.fotoslot:hover{border-color:var(--brand);color:var(--brand-fg)}
 .fotoslot.cheio{border-style:solid;border-color:var(--line2);padding:0;overflow:hidden;position:relative}
 .fotoslot img{width:100%;height:100%;object-fit:cover;display:block}
 .fotoslot .rm{position:absolute;top:5px;right:5px;background:rgba(10,14,19,.8);color:#fff;border:0;
@@ -335,7 +340,8 @@ tr.estornada td:last-child{opacity:1;text-decoration:none}
 <body>
 
 <header class="top">
-  <div class="logo" id="empresaNome">Locadora <span>· sistema de operação</span></div>
+  <img class="logomarca" src="assets/logo-veeloway.jpeg" alt="VeeLo Way">
+  <div class="logo" id="empresaNome">VeeLo Way <span>· sistema de operação</span></div>
   <div class="clock" id="relogio"></div>
   <span class="syncchip" id="syncChip">conectando…</span>
   <button class="temachip" id="temaChip" title="Alternar tema">◐ tema</button>
@@ -1797,7 +1803,7 @@ function ligaPassoCliente(){
         $('#wCliAviso').innerHTML='<div style="background:var(--ok-bg);color:var(--ok);padding:9px 12px;border-radius:8px;margin-bottom:11px;font-size:13px"><b>Cliente já cadastrado.</b> '+n+' locação(ões) anteriores.</div>';
       } else {
         W.clienteId=null; W._docFotoCliente=null;
-        $('#wCliAviso').innerHTML='<div style="background:var(--brand-bg);color:var(--brand);padding:9px 12px;border-radius:8px;margin-bottom:11px;font-size:13px">Cliente novo — preencha os dados abaixo.</div>';
+        $('#wCliAviso').innerHTML='<div style="background:var(--brand-bg);color:var(--brand-fg);padding:9px 12px;border-radius:8px;margin-bottom:11px;font-size:13px">Cliente novo — preencha os dados abaixo.</div>';
         nome.focus();
       }
     } else { $('#wCliAviso').innerHTML=''; }
@@ -3414,6 +3420,7 @@ function telaLogin(){
   const ov = abrirModal(
     '<header><h3>Quem está usando o sistema?</h3></header>'+
     '<div class="body"><div class="login">'+
+      '<div class="loginmarca"><img src="assets/logo-veeloway.jpeg" alt="VeeLo Way — Mobilidade Urbana"></div>'+
       '<div class="userlist" id="lgLista">'+ ativos.map(u=>
         '<button data-u="'+u.id+'"><span class="av'+(u.papel==='gerente'?' g':'')+'">'+iniciais(u.nome)+'</span>'+
         '<span><b>'+esc(u.nome)+'</b><br><span class="muted" style="font-size:12px">'+
@@ -3429,7 +3436,7 @@ function telaLogin(){
     const pinta = ()=>{
       box.innerHTML =
         '<div style="text-align:center"><span class="av g" style="width:44px;height:44px;border-radius:50%;'+
-        'background:#101828;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-weight:700">'+iniciais(u.nome)+'</span>'+
+        'background:var(--brand);color:var(--ink);display:inline-flex;align-items:center;justify-content:center;font-weight:700">'+iniciais(u.nome)+'</span>'+
         '<div style="font-weight:700;margin-top:7px">'+esc(u.nome)+'</div>'+
         '<div class="muted" style="font-size:12.5px">digite sua senha de 4 dígitos</div></div>'+
         '<div class="pindots">'+[0,1,2,3].map(i=>'<i class="'+(i<pin.length?'on':'')+'"></i>').join('')+'</div>'+
@@ -4095,7 +4102,8 @@ function telaLoja(){
   const ov = abrirModal(
     '<header><h3>Acesso da loja</h3></header>'+
     '<div class="body"><div class="login">'+
-      '<p style="margin-top:0;font-size:13.5px">Este acesso libera o aparelho. Depois cada atendente entra com o PIN dele.</p>'+
+      '<div class="loginmarca"><img src="assets/logo-veeloway.jpeg" alt="VeeLo Way — Mobilidade Urbana"></div>'+
+      '<p style="margin-top:0;font-size:13.5px;text-align:center">Este acesso libera o aparelho. Depois cada atendente entra com o PIN dele.</p>'+
       '<label class="f"><span>E-mail</span><input type="text" id="loEmail" autofocus></label>'+
       '<label class="f"><span>Senha</span><input type="password" id="loSenha"></label>'+
       '<div id="loErro" style="color:var(--danger);font-size:13px;min-height:18px"></div>'+

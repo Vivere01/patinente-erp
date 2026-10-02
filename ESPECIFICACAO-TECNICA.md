@@ -326,6 +326,14 @@ Wizard de locação em 5 passos: veículos (seleção múltipla) → cliente →
 
 Tema escuro e claro, alternável, preferência gravada por dispositivo. Escuro é o padrão: o painel é tela de vigilância, e os estados de cor precisam saltar.
 
+**Identidade visual — VeeLo Way · Mobilidade Urbana: amarelo e preto.** O logo
+(`assets/logo-veeloway.jpeg`) entra como favicon, na barra do topo, nas duas telas de
+acesso (loja e PIN) e na assinatura eletrônica que o cliente abre no celular. As cores
+vêm das variáveis do tema: `--brand` (amarelo) e `--ink` (preto usado por cima do
+amarelo), iguais nos dois temas; `--brand-fg` resolve o texto da marca em fundo claro,
+onde amarelo não teria contraste. Regra: **texto sobre amarelo é sempre `--ink`**, nunca
+branco — botão principal, aba ativa, cabeçalho de total e avatar de quem está no PIN.
+
 ---
 
 ## 7. Banco de dados

@@ -13,6 +13,8 @@
       do documento do cliente com câmera + upload.
    G. Fechamento do caixa (entradas somadas por forma de pagamento) e a
       sincronização entre aparelhos (carga no acesso, sondagem, conflito).
+   H. Identidade visual VeeLo Way — logo no repositório, no topo, nos dois
+      logins, no favicon e na assinatura; amarelo e preto nos dois temas.
 
    Uso:  npm test
 */
@@ -323,6 +325,56 @@ function testarFechamentoESync(){
     .forEach(fn=> ok(repintar.indexOf(fn) >= 0, 'repintarTela atualiza a aba de ' + fn));
 }
 
+/* ------------------------------------------------------------------ H */
+function testarIdentidadeVisual(){
+  console.log('\nH. Identidade visual — VeeLo Way (amarelo e preto)');
+  const raiz = path.join(__dirname, '..');
+  const html = fs.readFileSync(path.join(raiz, 'index.html'), 'utf8');
+  const assinar = fs.readFileSync(path.join(raiz, 'assinar.html'), 'utf8');
+  const logo = path.join(raiz, 'assets', 'logo-veeloway.jpeg');
+
+  /* o arquivo da marca existe mesmo e é imagem */
+  const okArq = fs.existsSync(logo);
+  ok(okArq, 'assets/logo-veeloway.jpeg está no repositório');
+  if(okArq){
+    const b = fs.readFileSync(logo);
+    ok(b[0] === 0xFF && b[1] === 0xD8 && b.length > 10000, 'o logo é um JPEG válido (' + b.length + ' bytes)');
+  }
+  ok(!/^assets\//m.test(fs.readFileSync(path.join(raiz, '.vercelignore'), 'utf8')),
+     'o .vercelignore não bloqueia a pasta assets');
+
+  /* a marca aparece no topo, no login e no favicon */
+  ok(/<link rel="icon" href="assets\/logo-veeloway\.jpeg">/.test(html),
+     'index.html usa o logo como favicon');
+  ok(/class="logomarca" src="assets\/logo-veeloway\.jpeg"/.test(html),
+     'a barra do topo mostra o logo');
+  ok((html.match(/class="loginmarca"/g) || []).length === 2,
+     'as duas telas de acesso (loja e PIN) mostram o logo');
+  ok(/<img src="assets\/logo-veeloway\.jpeg"[^>]*><span id="empresa">/.test(assinar),
+     'a tela de assinatura do cliente também leva o logo');
+  ok(/<title>VeeLo Way/.test(html), 'o título da aba é a marca');
+
+  /* amarelo e preto nos dois temas */
+  ok(/--brand:#ffe500/.test(html) && /--ink:#0a0a0a/.test(html),
+     'tema escuro: amarelo de marca sobre fundo preto');
+  ok(/--brand:#f2e200/.test(html) && /--brand-fg:#0a0a0a/.test(html),
+     'tema claro: amarelo de marca com texto preto legível');
+  ok(/--brand-fg/.test(html) && !/--brand:#4d8dff|--brand:#2d6ff5/.test(html + assinar),
+     'o azul antigo saiu das duas telas');
+
+  /* preto por cima do amarelo — branco aqui não se lê */
+  ok(/\.btn\{background:linear-gradient\(135deg,var\(--brand\),var\(--brand-2\)\);color:var\(--ink\)/.test(html),
+     'botão principal: fundo amarelo com texto preto');
+  ok(/nav\.tabs button\.active\{background:var\(--brand\);color:var\(--ink\)/.test(html),
+     'aba ativa em amarelo com texto preto');
+  ok(!/linear-gradient\(135deg,var\(--brand\),var\(--brand-2\)\);color:#fff/.test(html),
+     'nenhum bloco amarelo ficou com texto branco');
+  ok(/header\.top\{[^}]*border-bottom:2px solid var\(--brand\)/.test(html),
+     'a barra do topo é marcada com o amarelo da marca');
+  ok(/--brand:#f2e200; --brand-2:#dccb00/.test(assinar),
+     'a tela de assinatura usa o mesmo amarelo');
+}
+
 /* ------------------------------------------------------------------ C */
 async function testarBanco(){
   console.log('\nC. Banco de dados (transação descartada ao final)');
@@ -418,6 +470,8 @@ async function testarBanco(){
   catch(e){ reprovados++; console.log('  ✗ papel/documento: ' + e.message); }
   try{ testarFechamentoESync(); }
   catch(e){ reprovados++; console.log('  ✗ fechamento/sync: ' + e.message); }
+  try{ testarIdentidadeVisual(); }
+  catch(e){ reprovados++; console.log('  ✗ identidade visual: ' + e.message); }
   await testarBanco();
 
   console.log('\n  ' + aprovados + ' aprovados, ' + reprovados + ' reprovados\n');

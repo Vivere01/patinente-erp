@@ -128,6 +128,23 @@ suspeito. A foto fica na ficha do cliente e volta sozinha na locação seguinte.
 
 ---
 
+## Identidade visual
+
+**VeeLo Way · Mobilidade Urbana — amarelo e preto.**
+
+- **Logo:** `assets/logo-veeloway.jpeg` (arquivo original da marca, versionado). Aparece
+  como favicon, na barra do topo do sistema, nas duas telas de acesso (loja e PIN), na
+  tela de assinatura do cliente (`assinar.html`) e no `<title>` da aba.
+- **Cores:** `--brand` = amarelo (`#ffe500` no escuro, `#f2e200` no claro) e `--ink` =
+  preto. Todo texto por cima do amarelo usa `--ink` — botão principal, aba ativa,
+  cabeçalho de total, avatar do PIN. `--brand-fg` resolve o texto da marca quando o
+  fundo é claro (amarelo sobre branco não se lê).
+- **Para trocar a marca:** substitua o arquivo em `assets/` mantendo o nome (ou altere
+  os quatro `src="assets/logo-veeloway.jpeg"` no `index.html` e no `assinar.html`) e
+  ajuste `--brand` nos dois temas do `<style>`.
+
+---
+
 ## Deploy
 
 O repositório está vinculado ao projeto da Vercel: **qualquer push em `main` gera um
@@ -173,6 +190,9 @@ npm run verificar   # 21 verificações contra o site publicado
   de pagamento (soma calculada num dia de exemplo), o impresso traz o mesmo detalhe, e a
   nuvem: carga no acesso, sondagem de 5 s, confirmação ao voltar para a aba, conflito de
   versão recarregando o estado do servidor e repintura da aba aberta.
+- **H. Identidade visual** — o logo está no repositório e é um JPEG válido; aparece no
+  favicon, no topo, nas duas telas de acesso e na assinatura; amarelo e preto nos dois
+  temas, sem texto branco por cima do amarelo e sem resquício do azul antigo.
 - **`verificar-ar`** — roda a operação inteira no site publicado: login, estado com
   lock, histórico, foto com link assinado, contrato assinado no celular e limpeza.
   Usa `LOJA_EMAIL`/`LOJA_SENHA` do `.env.local` (ou `node scripts/verificar-ar.js URL EMAIL SENHA`)
