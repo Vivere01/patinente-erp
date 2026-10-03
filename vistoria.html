@@ -329,7 +329,7 @@
       const r = await fetch('/api/vistoria', {
         method:'POST', headers:{'Content-Type':'application/json'},
         cache:'no-store',
-        body: JSON.stringify(Object.assign({ token, acao, locacaoId: locId }, corpo))
+        body: JSON.stringify(Object.assign({ token, acao, locacaoId: String(locId) }, corpo))
       });
       const j = await r.json().catch(()=>({}));
       if(!r.ok){

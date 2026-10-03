@@ -718,6 +718,10 @@ function testarVistoria(){
      'foto e lacre são exigidos quando a configuração pede');
   ok(api.indexOf('lacre_trocado') >= 0 && api.indexOf('divergir(') >= 0,
      'divergência de lacre continua sendo registrada na saída');
+  ok(api.indexOf('String(l.id) === String(locId)') >= 0 && api.indexOf('mesmaLoc') >= 0,
+     'a API acha a locação mesmo com o id chegando como texto do cartão');
+  ok(pagina.indexOf('locacaoId: String(locId)') >= 0,
+     'a página manda o id do cartão como ele é (texto)');
 
   /* --- a página do celular --- */
   ok(pagina.indexOf("qs.get('token')") >= 0, 'a página lê o token do link');

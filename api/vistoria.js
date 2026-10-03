@@ -181,11 +181,16 @@ module.exports = async (req, res) => {
     if(!tokenValido(dbInicial, b.token)) return erro(res, 401, 'token_invalido', 'Link inválido. Peça um novo link da vistoria no balcão.');
 
     const acao = String(b.acao || '');
+    /* o id chega como texto, vindo do atributo data-* do cartão: a procura
+       compara o valor por igual, servindo tanto para id numérico quanto para
+       id em texto (o id real sai do documento, nunca do pedido) */
     const locId = b.locacaoId;
-    if(!locId) return erro(res, 400, 'locacao_invalida', 'Informe a locação.');
+    if(locId == null || String(locId).trim() === '')
+      return erro(res, 400, 'locacao_invalida', 'Informe a locação.');
+    const mesmaLoc = l => !!l && String(l.id) === String(locId);
     if(acao !== 'liberar' && acao !== 'chegada') return erro(res, 400, 'acao_invalida', 'Ação desconhecida.');
 
-    const loc0 = (dbInicial.locacoes || []).find(l => l.id === locId);
+    const loc0 = (dbInicial.locacoes || []).find(mesmaLoc);
     if(!loc0) return erro(res, 404, 'locacao_nao_encontrada', 'Locação não encontrada.');
     if(acao === 'liberar' && loc0.status !== 'pendente')
       return erro(res, 409, 'ja_liberada', 'Essa locação já foi liberada.');
@@ -207,13 +212,13 @@ module.exports = async (req, res) => {
     /* fotos primeiro: caminho novo por locação e por rodada */
     const fotos = [];
     for(let i = 0; i < fotosBrutas.length; i++){
-      const f = await guardarFoto(fotosBrutas[i], locId, i + '-' + Date.now());
+      const f = await guardarFoto(fotosBrutas[i], loc0.id, i + '-' + Date.now());
       if(f) fotos.push({ id: f.id, caminho: f.caminho, ts: f.ts,
                          legenda: acao === 'liberar' ? ('Vistoria de saída ' + (i+1)) : ('Vistoria de chegada ' + (i+1)) });
     }
 
     const ok = await comLock(db => {
-      const loc = (db.locacoes || []).find(l => l.id === locId);
+      const loc = (db.locacoes || []).find(mesmaLoc);
       if(!loc) return;
       const quem = 'vistoria (link)';
 

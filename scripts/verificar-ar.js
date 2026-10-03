@@ -245,6 +245,112 @@ const JPG = '/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE
   check(rotaV.status === 200 && txtR.indexOf('capture="environment"') >= 0,
         '/vistoria também chega na página (e ela pede a câmera)', 'status ' + rotaV.status);
 
+  console.log('\n11. vistoria ponta a ponta (locação de teste, depois apagada)');
+  const g11 = await j('/api/estado', { headers: cabecalho(t) });
+  const docA = (g11.body && g11.body.doc) || {};
+  const vid11 = 999001, lid11 = 999001, gid11 = 'GTESTVIST';
+
+  /* monta o documento de teste a partir de uma cópia do real: desliga as
+     exigências (senão a verificação deixaria foto gravada) e acrescenta uma
+     locação paga aguardando liberação, com veículo próprio */
+  function docDeTeste(base){
+    const agora = Date.now();
+    const d = JSON.parse(JSON.stringify(base));
+    const tipo = ((base.veiculos || [])[0] || {}).tipoId || null;
+    d.config = Object.assign({}, d.config, { exigirFoto: false, exigirLacre: false });
+    d.veiculos = (d.veiculos || []).concat([{ id: vid11, codigo: 'VIST001', status: 'loja', tipoId: tipo }]);
+    d.locacoes = (d.locacoes || []).concat([{
+      id: lid11, grupoId: gid11, veiculoId: vid11, veiculoCodigo: 'VIST001',
+      clienteId: null, clienteNome: 'Locação de teste', clienteCpf: '',
+      tipoId: tipo, tipoNome: 'Teste',
+      tarifaId: null, tarifaLabel: '30 minutos', minutos: 30, duracaoMin: 30,
+      inicio: null, fimPrevisto: null, fimReal: null,
+      pagoEm: agora, liberadaEm: null, vistoriadaEm: null, vistoriadoPor: null,
+      valorBase: 0, valorExcedente: 0, minutosExcedente: 0,
+      pagamento: 'Pix', pagamentoExcedente: null,
+      obsSaida: 'verificação', obsEntrada: '', obsVistoria: '',
+      atendenteSaida: 'verificacao', atendenteEntrada: '',
+      fotosSaida: [], fotosEntrada: [], lacreEsperado: null,
+      lacreSaida: null, lacreEntrada: null, danos: [], valorDanos: 0, status: 'pendente'
+    }]);
+    d.grupos = (d.grupos || []).concat([{
+      id: gid11, status: 'aguardando_vistoria', locacaoIds: [lid11],
+      clienteNome: 'Locação de teste', valorBase: 0, pagoEm: agora
+    }]);
+    return d;
+  }
+
+  let w11 = await post(t, '/api/estado', { doc: docDeTeste(docA), versao: Number(g11.body.versao), por: 'verificacao' });
+  if(!(w11.status === 200 && w11.body.ok === true)){
+    /* alguém mexeu no sistema durante a verificação: relê e tenta uma vez mais */
+    const g11b = await j('/api/estado', { headers: cabecalho(t) });
+    w11 = await post(t, '/api/estado',
+      { doc: docDeTeste((g11b.body && g11b.body.doc) || {}), versao: Number(g11b.body.versao), por: 'verificacao' });
+  }
+  check(w11.status === 200 && w11.body.ok === true, 'locação de teste gravada no documento',
+        JSON.stringify(w11.body).slice(0, 140));
+
+  try{
+    const filaP = await j('/api/vistoria?token=' + encodeURIComponent(tokenV));
+    check(filaP.status === 200 && (filaP.body.pendentes || []).some(p => String(p.locacaoId) === String(lid11)),
+          'a fila pública mostra a locação paga aguardando liberação', JSON.stringify(filaP.body).slice(0, 140));
+
+    /* o mesmo formato que o cartão manda: texto vindo do atributo data-* */
+    const lib11 = await post(null, '/api/vistoria',
+      { token: tokenV, acao: 'liberar', locacaoId: String(lid11), fotos: [], lacre: '', obs: 'verificação' });
+    check(lib11.status === 200 && lib11.body.ok === true &&
+          (lib11.body.naRua || []).some(p => String(p.locacaoId) === String(lid11)),
+          'liberar acha a locação mesmo com o id chegando como texto', JSON.stringify(lib11.body).slice(0, 160));
+
+    const est1 = await j('/api/estado', { headers: cabecalho(t) });
+    const d1 = (est1.body && est1.body.doc) || {};
+    const loc1 = (d1.locacoes || []).find(l => String(l.id) === String(lid11));
+    const vei1 = (d1.veiculos || []).find(v => String(v.id) === String(vid11));
+    check(!!loc1 && loc1.status === 'ativa' && !!loc1.inicio && !!vei1 && vei1.status === 'rua',
+          'no documento: locação ativa com a hora de saída e o veículo na rua',
+          loc1 ? 'status ' + loc1.status + ' · veículo ' + (vei1 && vei1.status) : 'locação sumiu');
+
+    const che11 = await post(null, '/api/vistoria',
+      { token: tokenV, acao: 'chegada', locacaoId: String(lid11), fotos: [], lacre: '', estado: 'loja', obs: 'verificação' });
+    check(che11.status === 200 && che11.body.ok === true, 'a chegada passa pelo mesmo link', JSON.stringify(che11.body).slice(0, 160));
+
+    const est2 = await j('/api/estado', { headers: cabecalho(t) });
+    const d2 = (est2.body && est2.body.doc) || {};
+    const loc2 = (d2.locacoes || []).find(l => String(l.id) === String(lid11));
+    const vei2 = (d2.veiculos || []).find(v => String(v.id) === String(vid11));
+    check(!!loc2 && loc2.status === 'devolvida' && !!loc2.fimReal && !!vei2 && vei2.status === 'loja',
+          'no documento: o relógio parou na chegada e o veículo voltou para a loja',
+          loc2 ? 'status ' + loc2.status + ' · veículo ' + (vei2 && vei2.status) : 'locação sumiu');
+
+    const filaD = await j('/api/vistoria?token=' + encodeURIComponent(tokenV));
+    check(filaD.status === 200 && (filaD.body.chegadas || []).some(p => String(p.locacaoId) === String(lid11)),
+          'a fila pública lista a chegada de hoje', JSON.stringify(filaD.body).slice(0, 140));
+
+    const vazio = await post(null, '/api/vistoria', { token: tokenV, acao: 'liberar', locacaoId: '   ' });
+    check(vazio.status === 400, 'id de locação vazio é recusado (400)', 'veio ' + vazio.status);
+  } finally {
+    /* apaga só o que a verificação criou — qualquer alteração legítima feita
+       no meio tempo (por quem estiver operando o balcão) fica de pé */
+    const atual = await j('/api/estado', { headers: cabecalho(t) });
+    const docAtual = (atual.body && atual.body.doc) || {};
+    const volta = JSON.parse(JSON.stringify(docAtual));
+    volta.locacoes = (volta.locacoes || []).filter(l => String(l.id) !== String(lid11));
+    volta.grupos = (volta.grupos || []).filter(g => String(g.id) !== gid11);
+    volta.veiculos = (volta.veiculos || []).filter(v => String(v.id) !== String(vid11));
+    volta.config = volta.config || {};
+    volta.config.exigirFoto = docA.config && docA.config.exigirFoto !== undefined ? docA.config.exigirFoto : true;
+    volta.config.exigirLacre = docA.config && docA.config.exigirLacre !== undefined ? docA.config.exigirLacre : true;
+    const wVolta = await post(t, '/api/estado',
+      { doc: volta, versao: Number((atual.body && atual.body.versao) || 0), por: 'verificacao' });
+    const depois11 = await j('/api/estado', { headers: cabecalho(t) });
+    const dep = (depois11.body && depois11.body.doc) || {};
+    const sobrou = (dep.locacoes || []).some(l => String(l.id) === String(lid11)) ||
+                   (dep.veiculos || []).some(v => String(v.id) === String(vid11));
+    check(wVolta.status === 200 && wVolta.body.ok === true && !sobrou,
+          'a locação de teste saiu do documento (o resto continua de pé)',
+          JSON.stringify(wVolta.body).slice(0, 120));
+  }
+
   console.log('\n  ' + aprovados + ' aprovados, ' + reprovados + ' reprovados\n');
   process.exit(reprovados ? 1 : 0);
 })().catch(e => { console.error('\n  ✗ erro:', e && e.message ? e.message : e, '\n'); process.exit(1); });

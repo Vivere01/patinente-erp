@@ -209,7 +209,7 @@ O código continua público no repositório.
 
 ```bash
 npm test        # verificações locais (partes A a K)
-npm run verificar   # 39 verificações contra o site publicado
+npm run verificar   # 48 verificações contra o site publicado
 ```
 
 - **A. Regras de dinheiro** — lê as funções do próprio `index.html` e confere os cenários
@@ -254,7 +254,9 @@ npm run verificar   # 39 verificações contra o site publicado
   identidade no ar (página, login por e-mail, aba Relatórios e o logo servido como
   imagem), o usuário do sistema (criar conta, entrar pelo e-mail, recusar senha
   errada e conta bloqueada, e devolver o documento intacto) e a vistoria pública
-  (token, fila sem CPF, recusa de token/ação/locação inválidos e a página do celular).
+  (token, fila sem CPF, recusa de token/ação/locação inválidos, a página do celular e
+  o ciclo inteiro — liberar e chegar pelo link numa locação de teste, que sai do
+  documento ao final).
   Usa `LOJA_EMAIL`/`LOJA_SENHA` do `.env.local` (ou `node scripts/verificar-ar.js URL EMAIL SENHA`)
   e apaga os artefatos de teste ao final.
 
