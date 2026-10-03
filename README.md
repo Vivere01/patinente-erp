@@ -31,7 +31,8 @@ Navegador (index.html — sem build, sem framework)
            → voltar para a aba confere na hora e repinta a aba aberta
 ```
 
-- **`index.html`** — aplicação de produção (acesso da loja + PIN de atendente).
+- **`index.html`** — aplicação de produção (acesso por e-mail + senha, com os níveis
+  Administrador e Atendente).
 - **`app.html`** — mesma aplicação em `localStorage`, para rodar offline/demonstração sem
   tocar nos dados reais.
 - **`assinar.html`** — tela que o cliente abre em `/assinar/{token}` para assinar no celular.
@@ -96,25 +97,36 @@ e `vercel env add LOJA_SENHA production`.
 
 ## 4. Primeiro acesso
 
-1. Abra o site → **Acesso da loja** (email + senha).
-2. Criar o usuário **gerente** com PIN de 4 dígitos.
-3. Criar a frota (wizard de boas-vindas) e preencher os dados da empresa em **Configurações**.
-4. `urlBase` de assinatura fica em branco = usa o próprio domínio (`https://SEU-DOMINIO/assinar`).
-5. Cadastrar atendentes (PIN) e registrar o lote de lacres aplicando-os na frota.
+1. Abra o site → entre com **e-mail e senha** (as `LOJA_EMAIL` / `LOJA_SENHA`).
+2. Criar a frota (wizard de boas-vindas) e preencher os dados da empresa em **Configurações**.
+3. `urlBase` de assinatura fica em branco = usa o próprio domínio (`https://SEU-DOMINIO/assinar`).
+4. Na aba **Usuários**, cadastrar as pessoas da loja com **e-mail, senha e nível**
+   (Administrador ou Atendente), registrar o lote de lacres e aplicá-los na frota.
 
 ### Papéis
 
 | Papel | O que faz |
 |---|---|
-| **Operador** | Opera o balcão (locação, devolução, vistoria, clientes, histórico). **Não enxerga o financeiro** — a aba *Financeiro* e o faturamento do dia ficam escondidos — e **não vê nem cadastra usuários**. |
-| **Atendente** | Tudo do operador, mais o caixa do dia e o financeiro. |
-| **Gerente** | Acima disso: estorna locações e lançamentos, altera preços e tabela de peças, cadastra usuários, registra lote de lacres, trata divergências e zera o sistema. |
+| **Atendente** | Opera o balcão: locação, devolução, vistoria, clientes, histórico e caixa do dia. **Não enxerga o financeiro, os relatórios nem os usuários** — a aba *Financeiro*, a aba *Relatórios* e o faturamento do dia ficam escondidos. |
+| **Administrador** | Tudo do atendente, mais o financeiro do mês, a aba **Relatórios** e a aba **Usuários**: estorna locações e lançamentos, altera preços e tabela de peças, cadastra usuários, registra lote de lacres, trata divergências e zera o sistema. |
 
-Sempre deve existir pelo menos um gerente ativo.
+Sempre deve existir pelo menos um administrador ativo.
 
-A aba **Usuários** é exclusiva do gerente: é ali que se cria o nível abaixo dele
-(operador ou atendente), com PIN de 4 dígitos. Quem não é gerente não vê a aba —
-se chegar por atalho, volta para o painel.
+As abas **Financeiro**, **Relatórios** e **Usuários** são exclusivas do administrador.
+Quem não é administrador não vê nenhuma das três — se chegar por atalho, volta para
+o painel. É na aba **Usuários** que se cria cada conta com **e-mail, senha e nível**;
+a senha nunca fica em texto claro: o navegador deriva PBKDF2-SHA256 com salt próprio
+(120 mil iterações) e o servidor guarda só o hash.
+
+Depois de entrar, a sessão fica no aparelho (token de 12 h): só pede a senha de novo
+ao abrir o sistema, ao expirar ou ao sair.
+
+### Relatórios (só administrador)
+
+A aba **Relatórios** fecha o mês numa tela só — o seletor de calendário escolhe o mês
+e a página responde: viagens, faturamento, ticket médio, dias com movimento, os
+clientes que mais viajaram (com faturamento), o melhor dia, as horas de pico com
+barra de movimento e um resumo em uma coluna. Sem viagens no mês, tudo aparece em zero.
 
 ### Foto do documento do cliente (CNH/RG)
 
@@ -133,11 +145,11 @@ suspeito. A foto fica na ficha do cliente e volta sozinha na locação seguinte.
 **VeeLo Way · Mobilidade Urbana — amarelo e preto.**
 
 - **Logo:** `assets/logo-veeloway.jpeg` (arquivo original da marca, versionado). Aparece
-  como favicon, na barra do topo do sistema, nas duas telas de acesso (loja e PIN), na
+  como favicon, na barra do topo do sistema, na tela de acesso (e-mail + senha), na
   tela de assinatura do cliente (`assinar.html`) e no `<title>` da aba.
 - **Cores:** `--brand` = amarelo (`#ffe500` no escuro, `#f2e200` no claro) e `--ink` =
-  preto. Todo texto por cima do amarelo usa `--ink` — botão principal, aba ativa,
-  cabeçalho de total, avatar do PIN. `--brand-fg` resolve o texto da marca quando o
+  preto. Todo texto por cima do amarelo usa `--ink` — botão principal, aba ativa e
+  cabeçalho de total. `--brand-fg` resolve o texto da marca quando o
   fundo é claro (amarelo sobre branco não se lê).
 - **Para trocar a marca:** substitua o arquivo em `assets/` mantendo o nome (ou altere
   os quatro `src="assets/logo-veeloway.jpeg"` no `index.html` e no `assinar.html`) e
@@ -172,34 +184,45 @@ O código continua público no repositório.
 ## Testes
 
 ```bash
-npm test        # verificações locais (partes A a H)
-npm run verificar   # 23 verificações contra o site publicado
+npm test        # verificações locais (partes A a J)
+npm run verificar   # 30 verificações contra o site publicado
 ```
 
 - **A. Regras de dinheiro** — lê as funções do próprio `index.html` e confere os cenários
   da seção 9 da especificação (excedente por fração, tolerância, contrato multi-veículo).
-- **B. Sessão e links** — token adulterado/vencido é recusado, link de foto fora do
-  escopo é recusado.
+- **B. Sessão, links e senha** — token adulterado/vencido é recusado, link de foto fora do
+  escopo é recusado, e o hash de senha (PBKDF2 + salt) confere só com a senha certa —
+  inclusive para conta bloqueada e e-mail em caixa alta.
 - **C. Banco** — lock otimista, imutabilidade de `eventos`, fotos e assinaturas. Roda
   dentro de uma transação **descartada ao final**: nada do que o teste escreve sobrevive.
 - **D. SQL embutido** — `lib/schema-sql.js` em sincronia com `schema.sql`
   (`npm run schema:sync` regenera).
 - **E. Módulos de api/** — todos carregam. Um `require` com caminho errado só estoura
   no ar como `FUNCTION_INVOCATION_FAILED`; aqui ele reprova antes do deploy.
-- **F. Papéis e foto do documento** — o papel operador é reconhecido, a aba financeiro
-  fica bloqueada para ele, o cadastro de usuário exige gerente e o quadro do documento
-  oferece câmera + upload com a exigência opcional ou marcada.
+- **F. Níveis de acesso e foto do documento** — uma tela única de e-mail + senha (sem PIN),
+  os dois níveis (Administrador/Atendente) com a migração dos papéis antigos, as três
+  abas do administrador bloqueadas e escondidas para o atendente, a validação do
+  formulário de usuário (e-mail único, senha mínima) e o quadro do documento com
+  câmera + upload.
 - **G. Fechamento e sincronização** — o fechamento lista e soma as entradas por forma
   de pagamento (soma calculada num dia de exemplo), o impresso traz o mesmo detalhe, e a
   nuvem: carga no acesso, sondagem de 5 s, confirmação ao voltar para a aba, conflito de
   versão recarregando o estado do servidor e repintura da aba aberta.
 - **H. Identidade visual** — o logo está no repositório e é um JPEG válido; aparece no
-  favicon, no topo, nas duas telas de acesso e na assinatura; amarelo e preto nos dois
+  favicon, no topo, na tela de acesso e na assinatura; amarelo e preto nos dois
   temas, sem texto branco por cima do amarelo e sem resquício do azul antigo; e o nome
   padrão da empresa é a marca, não "Minha Locadora".
+- **I. Relatórios** — a aba existe e é redesenhada ao entrar; e o fechamento do mês é
+  calculado num mês de exemplo (viagens fora estorno, faturamento, ticket, cliente
+  destaque, melhor dia, hora de pico) e devolve zero em tudo num mês vazio.
+- **J. Paridade da senha** — o navegador (WebCrypto) e o servidor (crypto do Node)
+  derivam exatamente a mesma chave a partir do mesmo salt: se divergirem, ninguém entra
+  pelo usuário cadastrado.
 - **`verificar-ar`** — roda a operação inteira no site publicado: login, estado com
-  lock, histórico, foto com link assinado, contrato assinado no celular, limpeza e a
-  identidade no ar (a página publicada e o logo servido como imagem).
+  lock, histórico, foto com link assinado, contrato assinado no celular, limpeza, a
+  identidade no ar (página, login por e-mail, aba Relatórios e o logo servido como
+  imagem) e o usuário do sistema (criar conta, entrar pelo e-mail, recusar senha
+  errada e conta bloqueada, e devolver o documento intacto).
   Usa `LOJA_EMAIL`/`LOJA_SENHA` do `.env.local` (ou `node scripts/verificar-ar.js URL EMAIL SENHA`)
   e apaga os artefatos de teste ao final.
 
@@ -210,7 +233,7 @@ npm run verificar   # 23 verificações contra o site publicado
 | Rota | Método | Sessão | Função |
 |---|---|---|---|
 | `/api/status` | GET | — | Situação do banco e das credenciais. |
-| `/api/login` | POST | — | Abre a sessão da loja (email + senha). |
+| `/api/login` | POST | — | Abre a sessão (e-mail + senha): conta da loja ou usuário cadastrado. |
 | `/api/sessao` | GET | ✓ | Confirma se o token do aparelho ainda vale. |
 | `/api/estado` | GET/POST | ✓ | Carrega / grava o documento com controle de versão. |
 | `/api/eventos` | POST | ✓ | Histórico imutável (a tabela recusa UPDATE/DELETE). |
@@ -226,8 +249,10 @@ npm run verificar   # 23 verificações contra o site publicado
 - **8.1 — estado monolítico.** O documento inteiro é reescrito a cada alteração. Cerca de
   15 MB de `locacoes` ao fim do primeiro ano; requisições passam pelo limite de 4,5 MB de
   corpo da função antes disso. **Normalizar em tabelas antes de operar em escala.**
-- **8.2 — PIN de operador simplificado.** A identidade do atendente vive na aplicação;
-  para controle antifraude forte, migrar para usuário Auth por operador.
+- **8.2 — identidade no documento.** E-mail, nível e hash da senha dos usuários vivem
+  no `doc` versionado: não há segundo fator nem sessão por dispositivo gerenciada.
+  Para controle antifraude forte, migrar para um provedor de identidade por pessoa,
+  com RLS por usuário.
 - **8.3 — retenção de fotos.** A tabela `fotos` cresce; executar
   `select limpar_fotos(180)` por rotina (a promessa de eliminação está no contrato).
 - **Fotos em escala.** Acima de alguns milhares de imagens, mover para Vercel Blob —

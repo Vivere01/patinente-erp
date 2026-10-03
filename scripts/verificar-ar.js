@@ -2,8 +2,9 @@
 
    Confere, contra o Postgres real, a sequência inteira de operação:
    login → estado com lock → histórico → foto → contrato assinado →
-   limpeza → identidade no ar (página e logo). Usa as rotas da API como
-   usa o navegador, e confere o HTML publicado no fim.
+   limpeza → identidade no ar → usuário do sistema (e-mail + senha).
+   Usa as rotas da API como usa o navegador, e confere o HTML
+   publicado no fim.
 
    Uso:
      npm run verificar                      # site e credenciais do .env.local
@@ -146,6 +147,55 @@ const JPG = '/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE
   const img = await fetch(BASE + '/assets/logo-veeloway.jpeg', { method: 'HEAD' });
   check(img.status === 200 && String(img.headers.get('content-type') || '').indexOf('image/jpeg') >= 0,
         'o logo responde como imagem (200)', 'veio ' + img.status + ' ' + img.headers.get('content-type'));
+  check(txt.indexOf('id="loEmail"') >= 0 && txt.indexOf('id="loSenha"') >= 0,
+        'no ar: o acesso pede e-mail e senha (sem PIN de 4 dígitos)',
+        txt.indexOf('id="loEmail"') < 0 ? 'id="loEmail" ausente' : 'id="loSenha" ausente');
+  check(txt.indexOf('data-tab="relatorios"') >= 0 && txt.indexOf('id="page-relatorios"') >= 0,
+        'no ar: a aba Relatórios existe para o administrador',
+        txt.indexOf('data-tab="relatorios"') < 0 ? 'aba ausente' : 'página ausente');
+
+  console.log('\n9. usuário do sistema (e-mail + senha, sem PIN)');
+  const auth = require('../lib/auth');
+  const g9 = await j('/api/estado', { headers: cabecalho(t) });
+  const doc9 = (g9.body && g9.body.doc) || {};
+  const versao9 = Number(g9.body && g9.body.versao);
+  const usuarios = Array.isArray(doc9.usuarios) ? doc9.usuarios.slice() : [];
+  const senha9 = 'SenhaDeTeste123';
+  const salt9 = auth.novoSalt();
+  const novo = {
+    id: usuarios.reduce((m, u) => Math.max(m, Number(u.id) || 0), 0) + 1,
+    nome: 'Verificação AR',
+    email: 'verificacao@veeloway.test',
+    papel: 'atendente',
+    ativo: true,
+    salt: salt9,
+    hash: auth.hashSenha(senha9, salt9)
+  };
+  const docNovo = Object.assign({}, doc9, { usuarios: usuarios.concat([novo]) });
+  const w9 = await post(t, '/api/estado', { doc: docNovo, versao: versao9, por: 'verificacao' });
+  check(w9.status === 200 && w9.body.ok === true, 'usuário de teste gravado no documento',
+        JSON.stringify(w9.body));
+
+  const dentro = await post(null, '/api/login', { email: novo.email, senha: senha9 });
+  check(dentro.status === 200 && dentro.body.usuario && dentro.body.usuario.papel === 'atendente',
+        'usuário do sistema entra pelo e-mail e pela senha (papel Atendente)',
+        JSON.stringify(dentro.body));
+
+  const errada = await post(null, '/api/login', { email: novo.email, senha: senha9 + 'x' });
+  check(errada.status === 401, 'senha errada recusa o usuário (401)', 'veio ' + errada.status);
+
+  const bloqueado = usuarios.concat([Object.assign({}, novo, { ativo: false })]);
+  const docBloq = Object.assign({}, docNovo, { usuarios: bloqueado });
+  const wB = await post(t, '/api/estado', { doc: docBloq, versao: Number(w9.body.versao), por: 'verificacao' });
+  const semEntrar = await post(null, '/api/login', { email: novo.email, senha: senha9 });
+  check(wB.status === 200 && semEntrar.status === 401, 'conta bloqueada não entra (401)',
+        'gravou ' + wB.status + ', login ' + semEntrar.status);
+
+  const voltar = await post(t, '/api/estado', { doc: original, versao: Number(wB.body.versao), por: 'verificacao' });
+  const depois = await j('/api/estado', { headers: cabecalho(t) });
+  check(voltar.status === 200 && JSON.stringify(depois.body.doc) === JSON.stringify(original),
+        'documento restaurado, idêntico ao de antes (v' + (depois.body && depois.body.versao) + ')',
+        JSON.stringify(depois.body).slice(0, 120));
 
   console.log('\n  ' + aprovados + ' aprovados, ' + reprovados + ' reprovados\n');
   process.exit(reprovados ? 1 : 0);

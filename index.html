@@ -292,21 +292,6 @@ tr.dretotal:hover td{background:linear-gradient(135deg,var(--brand),var(--brand-
 .login{max-width:390px;margin:0 auto}
 .loginmarca{display:flex;justify-content:center;margin-bottom:16px}
 .loginmarca img{width:148px;height:148px;object-fit:cover;border-radius:22px;box-shadow:var(--shadow)}
-.pinpad{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-top:14px}
-.pinpad button{padding:17px 0;font-size:20px;font-weight:700;border:1px solid var(--line2);
-  background:var(--bg2);color:var(--text);border-radius:12px}
-.pinpad button:hover{background:var(--surface2);border-color:var(--brand)}
-.pindots{display:flex;gap:11px;justify-content:center;margin:18px 0 4px}
-.pindots i{width:14px;height:14px;border-radius:50%;border:2px solid var(--line2);display:block}
-.pindots i.on{background:var(--brand);border-color:var(--brand)}
-.userlist{display:grid;gap:9px}
-.userlist button{display:flex;align-items:center;gap:12px;padding:14px 16px;border:1px solid var(--line2);
-  background:var(--bg2);color:var(--text);border-radius:12px;text-align:left;width:100%;font-size:14px}
-.userlist button:hover{border-color:var(--brand);background:var(--brand-bg)}
-.userlist .av,.login .av{width:36px;height:36px;border-radius:50%;
-  background:linear-gradient(135deg,var(--brand),var(--brand-2));color:var(--ink);display:flex;
-  align-items:center;justify-content:center;font-weight:700;font-size:13.5px;flex:none}
-.userlist .av.g{background:#0a0a0a;color:var(--brand)}
 
 /* ===================== FOTOS ===================== */
 .fotogrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:10px;margin-top:11px}
@@ -353,6 +338,7 @@ tr.estornada td:last-child{opacity:1;text-decoration:none}
     <button data-tab="clientes">Clientes</button>
     <button data-tab="historico">Histórico</button>
 <button data-tab="financeiro">Financeiro</button>
+<button data-tab="relatorios">Relatórios</button>
 <button data-tab="usuarios">Usuários</button>
 <button data-tab="config">Configurações</button>
   </nav>
@@ -498,6 +484,34 @@ tr.estornada td:last-child{opacity:1;text-decoration:none}
     </div>
   </section>
 
+  <!-- ============ RELATÓRIOS ============ -->
+  <section class="page" id="page-relatorios">
+    <div class="pagehead"><h2>Relatórios</h2><div class="sp"></div>
+      <label class="f" style="margin:0"><span>Mês de referência</span><input type="month" id="rMes"></label></div>
+    <div class="kpis" id="kpisRel"></div>
+    <div class="grid2" style="gap:14px;align-items:start">
+      <div class="card">
+        <div style="padding:13px 15px;border-bottom:1px solid var(--line);font-weight:700">Clientes que mais viajaram</div>
+        <div class="tablewrap" style="max-height:360px"><table id="tbRelClientes"></table></div>
+      </div>
+      <div class="card">
+        <div style="padding:13px 15px;border-bottom:1px solid var(--line);font-weight:700">Dias que mais faturaram</div>
+        <div class="tablewrap" style="max-height:360px"><table id="tbRelDias"></table></div>
+      </div>
+      <div class="card">
+        <div style="padding:13px 15px;border-bottom:1px solid var(--line);font-weight:700">Horários de pico</div>
+        <table id="tbRelHoras"></table>
+        <div style="padding:11px 15px;border-top:1px solid var(--line);font-size:12px" class="muted">
+          Contagem por hora de início das viagens no mês de referência.
+        </div>
+      </div>
+      <div class="card">
+        <div style="padding:13px 15px;border-bottom:1px solid var(--line);font-weight:700">Resumo do período</div>
+        <table id="tbRelResumo"></table>
+      </div>
+    </div>
+  </section>
+
   <!-- ============ CONFIG ============ -->
   <section class="page" id="page-usuarios">
     <div class="pagehead"><h2>Usuários</h2></div>
@@ -511,13 +525,12 @@ tr.estornada td:last-child{opacity:1;text-decoration:none}
       </div>
       <div class="card pad">
         <h3 style="font-size:15px;margin-bottom:6px">Níveis de acesso</h3>
-        <p class="muted" style="font-size:12px;margin:0 0 10px">Aba exclusiva do gerente. Crie aqui o nível abaixo do gerente para quem opera o balcão sem mexer com dinheiro.</p>
+        <p class="muted" style="font-size:12px;margin:0 0 10px">Aba exclusiva do administrador. Cada usuário entra com o próprio e-mail e a própria senha — ninguém escolhe perfil numa tela inicial.</p>
         <ul style="font-size:13px;padding-left:18px;margin:0;line-height:1.8">
-          <li><b>Operador</b> — locação, devolução, vistoria, clientes e histórico. <b>Não enxerga o financeiro</b> e não cadastra usuários.</li>
-          <li><b>Atendente</b> — tudo do operador, mais o caixa do dia e o financeiro.</li>
-          <li><b>Gerente</b> — acima: estorna, altera preços, cadastra usuários, registra lacres e zera o sistema.</li>
+          <li><b>Administrador</b> — vê tudo: painel, caixa, frota, clientes, histórico, <b>financeiro</b>, <b>relatórios</b> e esta aba. Cadastra usuários, estorna, altera preços, registra lacres e zera o sistema.</li>
+          <li><b>Atendente</b> — locação, devolução, vistoria, clientes, histórico e caixa do dia. <b>Não enxerga financeiro, relatórios nem usuários.</b></li>
         </ul>
-        <p class="muted" style="font-size:12px;margin-top:11px">Sempre deve existir pelo menos um gerente ativo.</p>
+        <p class="muted" style="font-size:12px;margin-top:11px">Sempre deve existir pelo menos um administrador ativo. A senha fica gravada só como hash e pode ser trocada aqui.</p>
       </div>
     </div>
   </section>
@@ -841,7 +854,7 @@ function repintarTela(){
   const aba = ativa ? String(ativa.id||'').replace('page-','') : '';
   const mapa = { caixa:'renderCaixa', frota:'renderFrota', clientes:'renderClientes',
                  historico:'renderHistorico', financeiro:'renderFinanceiro',
-                 usuarios:'renderUsuarios', config:'renderConfig' };
+                 relatorios:'renderRelatorios', usuarios:'renderUsuarios', config:'renderConfig' };
   const nome = mapa[aba];
   if(nome && typeof window[nome]==='function') window[nome]();
 }
@@ -1052,6 +1065,14 @@ function aplicarMigracoes(){
   DB.contrato = CONTRATO_PADRAO;
   if(!DB.empresa) DB.empresa = { nome:'VeeLo Way', cnpj:'', endereco:'', telefone:'' };
   if(DB.empresa.nome === 'Minha Locadora') DB.empresa.nome = 'VeeLo Way';   /* nome de fábrica vira a marca */
+  /* Usuários: dois níveis (administrador e atendente) e senha por
+     e-mail. O PIN de 4 dígitos e os papéis antigos saíram do sistema. */
+  DB.usuarios.forEach(u=>{
+    u.papel = papelDe(u.papel);
+    delete u.pin;
+    const nome = String(u.nome||'').trim();
+    u.email = String(u.email || (nome.indexOf('@')>0 ? nome : '') || '').trim().toLowerCase();
+  });
 }
 function persist(){ Store.save(DB); }
 
@@ -1108,10 +1129,13 @@ function comprimirImagem(src, cb){
    SESSÃO E AUDITORIA
    ===================================================================== */
 let SESSAO = null;
-const PAPEIS = { gerente:'Gerente', atendente:'Atendente', operador:'Operador' };
-function ehGerente(){ return SESSAO && SESSAO.papel==='gerente'; }
-function ehOperador(){ return SESSAO && SESSAO.papel==='operador'; }
-function rotuloPapel(p){ return PAPEIS[p] || (p ? String(p).charAt(0).toUpperCase()+String(p).slice(1) : '—'); }
+const PAPEIS = { administrador:'Administrador', atendente:'Atendente' };
+/* O sistema tem dois níveis. Administrador vê tudo e cadastra usuários;
+   atendente opera o balcão — sem financeiro, sem relatórios, sem usuários. */
+function papelDe(p){ return p==='administrador' || p==='gerente' || p==='admin' ? 'administrador' : 'atendente'; }
+function ehAdministrador(){ return SESSAO && SESSAO.papel==='administrador'; }
+function ehAtendente(){ return SESSAO && SESSAO.papel==='atendente'; }
+function rotuloPapel(p){ const r = PAPEIS[papelDe(p)]; return r || (p ? String(p).charAt(0).toUpperCase()+String(p).slice(1) : '—'); }
 function usuarioAtual(){ return SESSAO ? SESSAO.nome : 'sistema'; }
 
 function log(acao, detalhe, ref){
@@ -1121,23 +1145,28 @@ function log(acao, detalhe, ref){
   Nuvem.evento(acao, detalhe, ref?{ref:ref}:null);
   if(DB.auditoria.length > 5000) DB.auditoria = DB.auditoria.slice(-5000);
 }
-function exigirGerente(acao){
-  if(ehGerente()) return true;
-  toast('Apenas o gerente pode '+acao+'.');
+function exigirAdministrador(acao){
+  if(ehAdministrador()) return true;
+  toast('Apenas o administrador pode '+acao+'.');
   return false;
 }
 
-/* Quem enxerga o quê. Operador não vê o financeiro; a aba de usuários é
-   exclusiva do gerente — é lá que se cria o nível abaixo dele. Aqui é só
-   visão: quem decide o que pode ser gravado continua sendo exigirGerente,
-   que recusa o operador na hora, inclusive no botão de cadastrar. */
+/* Quem enxerga o quê: financeiro, relatórios e usuários são do
+   administrador. Aqui é só visão — quem decide o que pode ser gravado
+   continua sendo exigirAdministrador, que recusa na hora do botão. */
 function aplicarPermissoes(){
-  const abaFin = document.querySelector('nav.tabs button[data-tab="financeiro"]');
-  if(abaFin) abaFin.style.display = ehOperador() ? 'none' : '';
-  const abaUsr = document.querySelector('nav.tabs button[data-tab="usuarios"]');
-  if(abaUsr) abaUsr.style.display = ehGerente() ? '' : 'none';
-  if(ehOperador() && document.querySelector('#page-financeiro.active')) irPara('painel');
-  if(!ehGerente() && document.querySelector('#page-usuarios.active')) irPara('painel');
+  const soAdmin = tab => {
+    const b = document.querySelector('nav.tabs button[data-tab="'+tab+'"]');
+    if(b) b.style.display = ehAdministrador() ? '' : 'none';
+  };
+  soAdmin('financeiro');
+  soAdmin('relatorios');
+  soAdmin('usuarios');
+  if(!ehAdministrador()){
+    const ativa = document.querySelector('.page.active');
+    const aba = ativa ? String(ativa.id||'').replace('page-','') : '';
+    if(aba==='financeiro' || aba==='relatorios' || aba==='usuarios') irPara('painel');
+  }
 }
 
 /* ===================== utilitários ===================== */
@@ -1202,12 +1231,8 @@ function calcExcedente(loc, agoraTs){
 }
 /* ===================== navegação ===================== */
 function irPara(tab){
-  if(tab==='financeiro' && ehOperador()){
-    toast('Acesso operacional: o financeiro é de atendente e gerente.');
-    tab = 'painel';
-  }
-  if(tab==='usuarios' && !ehGerente()){
-    toast('A aba de usuários é exclusiva do gerente.');
+  if((tab==='financeiro' || tab==='relatorios' || tab==='usuarios') && !ehAdministrador()){
+    toast('Acesso restrito: essa área é do administrador.');
     tab = 'painel';
   }
   $$('nav.tabs button').forEach(b=>b.classList.toggle('active', b.dataset.tab===tab));
@@ -1218,6 +1243,7 @@ function irPara(tab){
   if(tab==='clientes') renderClientes();
   if(tab==='historico') renderHistorico();
   if(tab==='financeiro') renderFinanceiro();
+  if(tab==='relatorios') renderRelatorios();
   if(tab==='usuarios') renderUsuarios();
   if(tab==='config') renderConfig();
 }
@@ -1281,7 +1307,7 @@ function renderPainel(){
     kpi('Locações hoje', DB.locacoes.filter(l=>diaKey(l.inicio)===hoje).length, '')
   ];
   /* faturamento é dinheiro: quem opera não enxerga */
-  if(!ehOperador()) kpis.splice(4, 0, kpi('Faturamento hoje', brl(fatHoje), 'g'));
+  if(!ehAdministrador()) kpis.splice(4, 0, kpi('Faturamento hoje', brl(fatHoje), 'g'));
   $('#kpis').innerHTML = kpis.join('');
 
   const box = $('#ativos');
@@ -2328,7 +2354,7 @@ window.imprimirContrato = function(grupoId){
    continua contando a verdade, inclusive os erros.
    ===================================================================== */
 window.estornarLocacao = function(locId){
-  if(!exigirGerente('estornar uma locação')) return;
+  if(!exigirAdministrador('estornar uma locação')) return;
   const loc = DB.locacoes.find(l=>l.id===locId); if(!loc || estornada(loc)) return;
   const valor = totalLoc(loc);
   const ov = abrirModal(
@@ -2365,7 +2391,7 @@ window.estornarLocacao = function(locId){
 };
 
 window.estornarDespesa = function(id){
-  if(!exigirGerente('estornar um lançamento')) return;
+  if(!exigirAdministrador('estornar um lançamento')) return;
   const d = DB.despesas.find(x=>x.id===id); if(!d || d.estornada) return;
   const ov = abrirModal('<header><h3>Estornar lançamento</h3><button class="x">&times;</button></header>'+
     '<div class="body">'+
@@ -2799,7 +2825,7 @@ $('#btnExpHist').onclick = ()=>{
 /* ===================== FINANCEIRO ===================== */
 function totalLoc(l){ return estornada(l) ? 0 : (l.valorBase||0)+(l.valorExcedente||0)+(l.valorDanos||0); }
 function renderFinanceiro(){
-  if(ehOperador()) return;   /* a aba já fica escondida — defesa dupla */
+  if(!ehAdministrador()) return;   /* a aba já fica escondida — defesa dupla */
   if(!$('#fMes').value) $('#fMes').value = mesKey(Date.now());
   const mes = $('#fMes').value;
   garantirFixos(mes);
@@ -2934,6 +2960,98 @@ $('#btnExpFin').onclick = ()=>{
   Object.entries(m).sort((a,b)=>b[1].v-a[1].v).forEach(([k,v])=>linhas.push([k,v.tipo,v.n,v.v.toFixed(2)]));
   baixarCSV('fluxo_'+mes+'.csv', linhas);
 };
+
+/* =====================================================================
+   RELATÓRIOS — o mês respondido numa tela só: quantas viagens, quanto
+   faturou, quem mais viajou, qual foi o melhor dia e quais horas são
+   cheias. Só o administrador enxerga esta aba.
+   ===================================================================== */
+function relatorioDoMes(mes){
+  const doMes = DB.locacoes.filter(l=> mesKey(l.inicio)===mes && !estornada(l));
+  const clientes = {}, dias = {};
+  const horas = [];
+  for(let h=0; h<24; h++) horas.push({ h:h, n:0 });
+  let fat = 0;
+  doMes.forEach(l=>{
+    const v = totalLoc(l);
+    fat += v;
+    const nome = String(l.clienteNome || 'Sem cliente');
+    const c = clientes[nome] = clientes[nome] || {n:0, fat:0}; c.n++; c.fat += v;
+    const d = diaKey(l.inicio);
+    const dd = dias[d] = dias[d] || {n:0, fat:0}; dd.n++; dd.fat += v;
+    horas[new Date(l.inicio).getHours()].n++;
+  });
+  const listaClientes = Object.keys(clientes)
+    .map(nome=>({ nome:nome, n:clientes[nome].n, fat:clientes[nome].fat }))
+    .sort((a,b)=> b.n-a.n || b.fat-a.fat);
+  const listaDias = Object.keys(dias)
+    .map(dia=>({ dia:dia, n:dias[dia].n, fat:dias[dia].fat }))
+    .sort((a,b)=> b.fat-a.fat || b.n-a.n);
+  const horasPico = horas.filter(x=>x.n>0).slice().sort((a,b)=> b.n-a.n || a.h-b.h);
+  return { n: doMes.length, fat: fat, ticket: doMes.length ? fat/doMes.length : 0,
+           clientes: listaClientes, dias: listaDias, horas: horas, horasPico: horasPico,
+           diasComMovimento: listaDias.length,
+           melhorDia: listaDias.length ? listaDias[0].dia : null,
+           pico: horasPico.length ? horasPico[0].h : null };
+}
+
+function renderRelatorios(){
+  if(!ehAdministrador()) return;   /* a aba já fica escondida — defesa dupla */
+  if(!$('#rMes').value) $('#rMes').value = mesKey(Date.now());
+  const r = relatorioDoMes($('#rMes').value);
+  const vazio = (cols, txt)=> '<tr><td colspan="'+cols+'" class="empty">'+txt+'</td></tr>';
+
+  $('#kpisRel').innerHTML = [
+    kpi('Viagens', r.n, ''),
+    kpi('Faturamento', brl(r.fat), 'g'),
+    kpi('Ticket médio', brl(r.ticket), 'b'),
+    kpi('Dias com movimento', r.diasComMovimento, '')
+  ].join('');
+
+  $('#tbRelClientes').innerHTML =
+    '<thead><tr><th>#</th><th>Cliente</th><th class="right">Viagens</th><th class="right">Faturamento</th></tr></thead><tbody>'+
+    (r.clientes.length ? r.clientes.slice(0,8).map((c,i)=>
+      '<tr'+(i===0?' style="background:var(--ok-bg)"':'')+'><td class="mono muted">'+(i+1)+'</td>'+
+      '<td><b>'+esc(c.nome)+'</b></td><td class="right mono">'+c.n+'</td>'+
+      '<td class="right mono">'+brl(c.fat)+'</td></tr>').join('')
+      : vazio(4,'Nenhuma viagem neste mês.'))+'</tbody>';
+
+  $('#tbRelDias').innerHTML =
+    '<thead><tr><th>Dia</th><th>Semana</th><th class="right">Viagens</th><th class="right">Faturamento</th></tr></thead><tbody>'+
+    (r.dias.length ? r.dias.slice(0,8).map((d,i)=>
+      '<tr'+(i===0?' style="background:var(--ok-bg)"':'')+'><td><b>'+diaLegivel(d.dia)+'</b></td>'+
+      '<td class="muted">'+diaSemana(d.dia)+'</td><td class="right mono">'+d.n+'</td>'+
+      '<td class="right mono"><b>'+brl(d.fat)+'</b></td></tr>').join('')
+      : vazio(4,'Nenhum dia com movimento.'))+'</tbody>';
+
+  const maxHora = r.horasPico.length ? r.horasPico[0].n : 1;
+  $('#tbRelHoras').innerHTML =
+    '<thead><tr><th>Hora</th><th class="right">Viagens</th><th></th></tr></thead><tbody>'+
+    (r.horasPico.length ? r.horasPico.slice(0,8).map(x=>
+      '<tr><td><b>'+String(x.h).padStart(2,'0')+'h</b>'+
+        '<span class="muted" style="font-size:11px"> às '+String((x.h+1)%24).padStart(2,'0')+'h</span></td>'+
+      '<td class="right mono">'+x.n+'</td>'+
+      '<td style="width:44%"><div style="height:9px;border-radius:5px;background:var(--brand);width:'+
+        Math.max(4, Math.round(x.n/maxHora*100))+'%"></div></td></tr>').join('')
+      : vazio(3,'Nenhuma viagem neste mês.'))+'</tbody>';
+
+  const topo = r.clientes[0];
+  $('#tbRelResumo').innerHTML = '<tbody>'+
+    '<tr><td>Viagens no mês</td><td class="right mono"><b>'+r.n+'</b></td></tr>'+
+    '<tr><td>Faturamento no mês</td><td class="right mono"><b>'+brl(r.fat)+'</b></td></tr>'+
+    '<tr><td>Ticket médio por viagem</td><td class="right mono">'+brl(r.ticket)+'</td></tr>'+
+    '<tr><td>Dias com movimento</td><td class="right mono">'+r.diasComMovimento+'</td></tr>'+
+    '<tr><td>Viagens por dia ativo</td><td class="right mono">'+
+      (r.diasComMovimento ? (r.n/r.diasComMovimento).toFixed(1) : '—')+'</td></tr>'+
+    '<tr><td>Melhor dia (faturamento)</td><td class="right">'+
+      (r.melhorDia ? esc(diaLegivel(r.melhorDia))+' · '+esc(diaSemana(r.melhorDia)) : '—')+'</td></tr>'+
+    '<tr><td>Cliente destaque</td><td class="right">'+
+      (topo ? esc(topo.nome)+' · '+topo.n+' viagens' : '—')+'</td></tr>'+
+    '<tr><td>Hora mais movimentada</td><td class="right">'+
+      (r.pico!==null ? String(r.pico).padStart(2,'0')+'h' : '—')+'</td></tr>'+
+    '</tbody>';
+}
+$('#rMes').onchange = renderRelatorios;
 
 $('#btnConferirLacres').onclick = ()=> abrirConferenciaLacres();
 $('#btnImprimirCaixa').onclick = ()=>{
@@ -3392,11 +3510,11 @@ $('#fileRestore').onchange = e=>{
   r.readAsText(f);
 };
 $('#btnZerar').onclick = ()=>{
-  if(!exigirGerente('zerar o sistema')) return;
+  if(!exigirAdministrador('zerar o sistema')) return;
   if(!confirm('Isso apaga frota, clientes e todo o histórico. Continuar?')) return;
   if(!confirm('Tem certeza absoluta? Faça um backup antes.')) return;
   DB = dbPadrao(); SESSAO = null;
-  persist(); aplicarMarca(); telaPrimeiroUsuario(); toast('Sistema zerado.');
+  persist(); aplicarMarca(); telaLogin(); toast('Sistema zerado.');
 };
 
 /* =====================================================================
@@ -3416,111 +3534,147 @@ $('#userChip').onclick = ()=>{ if(SESSAO){ log('logout',''); persist(); } SESSAO
 
 function telaLogin(){
   fecharTodosModais();
-  const ativos = DB.usuarios.filter(u=>u.ativo!==false);
-  if(!ativos.length) return telaPrimeiroUsuario();
+  marcarSync(Nuvem.online ? 'ok' : 'offline');
   atualizarChip();
   const ov = abrirModal(
-    '<header><h3>Quem está usando o sistema?</h3></header>'+
+    '<header><h3>Entrar no sistema</h3></header>'+
     '<div class="body"><div class="login">'+
       '<div class="loginmarca"><img src="assets/logo-veeloway.jpeg" alt="VeeLo Way — Mobilidade Urbana"></div>'+
-      '<div class="userlist" id="lgLista">'+ ativos.map(u=>
-        '<button data-u="'+u.id+'"><span class="av'+(u.papel==='gerente'?' g':'')+'">'+iniciais(u.nome)+'</span>'+
-        '<span><b>'+esc(u.nome)+'</b><br><span class="muted" style="font-size:12px">'+
-        esc(rotuloPapel(u.papel))+'</span></span></button>').join('')+'</div>'+
-      '<div id="lgPin" class="hidden"></div>'+
-    '</div></div>', {fixo:true});
-  ov.querySelectorAll('#lgLista button').forEach(b=> b.onclick = ()=>{
-    const u = DB.usuarios.find(x=>x.id===+b.dataset.u);
-    ov.querySelector('#lgLista').classList.add('hidden');
-    const box = ov.querySelector('#lgPin');
-    box.classList.remove('hidden');
-    let pin = '';
-    const pinta = ()=>{
-      box.innerHTML =
-        '<div style="text-align:center"><span class="av g" style="width:44px;height:44px;border-radius:50%;'+
-        'background:var(--brand);color:var(--ink);display:inline-flex;align-items:center;justify-content:center;font-weight:700">'+iniciais(u.nome)+'</span>'+
-        '<div style="font-weight:700;margin-top:7px">'+esc(u.nome)+'</div>'+
-        '<div class="muted" style="font-size:12.5px">digite sua senha de 4 dígitos</div></div>'+
-        '<div class="pindots">'+[0,1,2,3].map(i=>'<i class="'+(i<pin.length?'on':'')+'"></i>').join('')+'</div>'+
-        '<div id="lgErro" style="height:18px;text-align:center;font-size:12.5px;color:var(--danger)"></div>'+
-        '<div class="pinpad">'+[1,2,3,4,5,6,7,8,9].map(n=>'<button data-n="'+n+'">'+n+'</button>').join('')+
-          '<button data-a="volta">←</button><button data-n="0">0</button><button data-a="apaga">⌫</button></div>';
-      box.querySelectorAll('[data-n]').forEach(b2=> b2.onclick = ()=>{
-        if(pin.length<4){ pin += b2.dataset.n; pinta(); if(pin.length===4) setTimeout(tenta,120); }
-      });
-      box.querySelector('[data-a=apaga]').onclick = ()=>{ pin = pin.slice(0,-1); pinta(); };
-      box.querySelector('[data-a=volta]').onclick = ()=>{ fecharModal(ov); telaLogin(); };
-    };
-    const tenta = ()=>{
-      if(pin === u.pin){
-        SESSAO = { id:u.id, nome:u.nome, papel:u.papel };
-        u.ultimoAcesso = Date.now();
-        log('login','');
-        persist(); fecharModal(ov); atualizarChip();
-        irPara('painel'); renderPainel();
-        toast('Bem-vindo, '+u.nome.split(' ')[0]+'.');
-      } else {
-        pin=''; pinta();
-        box.querySelector('#lgErro').textContent = 'Senha incorreta. Tente de novo.';
-      }
-    };
-    pinta();
-  });
+      '<p style="margin-top:0;font-size:13.5px;text-align:center">Entre com o seu e-mail e a sua senha.</p>'+
+      '<label class="f"><span>E-mail</span><input type="email" id="loEmail" autocomplete="username"></label>'+
+      '<label class="f"><span>Senha</span><input type="password" id="loSenha" autocomplete="current-password"></label>'+
+      '<div id="loErro" style="color:var(--danger);font-size:13px;min-height:18px"></div>'+
+    '</div></div>'+
+    '<footer><button class="btn" id="loOk" style="width:100%">Entrar</button></footer>', {fixo:true});
+  const tentar = async ()=>{
+    const email = ov.querySelector('#loEmail').value.trim().toLowerCase();
+    const senha = ov.querySelector('#loSenha').value;
+    const aviso = ov.querySelector('#loErro');
+    const b = ov.querySelector('#loOk');
+    aviso.textContent = '';
+    if(!EMAIL_RE.test(email)){ aviso.textContent = 'Informe um e-mail válido.'; return; }
+    if(!senha){ aviso.textContent = 'Informe a senha.'; return; }
+    b.disabled = true; b.textContent = 'entrando…';
+    try{
+      const d = await Nuvem.entrar(email, senha);
+      SESSAO = { email: d.usuario.email, papel: papelDe(d.usuario.papel), nome: d.usuario.nome };
+      fecharModal(ov);
+      const c = await carregarTudo();
+      if(!c || !c.ok){ SESSAO = null; return; }
+      if(c.rascunho) return;   /* o modal de trabalho não enviado decide a seguir */
+      await garantirRegistroDaConta(d, senha);
+      if(!resolverSessao()){ SESSAO = null; telaLogin(); return; }
+      const u = DB.usuarios.find(x=>x.id===SESSAO.id);
+      if(u) u.ultimoAcesso = Date.now();
+      log('login',''); persist();
+      atualizarChip(); irPara('painel'); primeiroUso();
+      toast('Bem-vindo, '+String(SESSAO.nome||'').split(' ')[0]+'.');
+    }catch(e){
+      SESSAO = null;
+      aviso.textContent = (e && e.codigo === 401) ? 'E-mail ou senha incorretos.'
+        : (e && e.message) || 'Não consegui falar com o servidor.';
+      b.disabled = false; b.textContent = 'Entrar';
+    }
+  };
+  ov.querySelector('#loOk').onclick = tentar;
+  ov.querySelector('#loSenha').onkeydown = e=>{ if(e.key==='Enter') tentar(); };
+  ov.querySelector('#loEmail').onkeydown = e=>{ if(e.key==='Enter') tentar(); };
 }
 
-function telaPrimeiroUsuario(){
-  const ov = abrirModal(
-    '<header><h3>Criar o primeiro acesso</h3></header>'+
-    '<div class="body"><div class="login">'+
-      '<p style="margin-top:0;font-size:13.5px">Este primeiro usuário é o <b>gerente</b>: só ele pode estornar locações, mexer em preços e cadastrar outros usuários.</p>'+
-      '<label class="f"><span>Seu nome</span><input type="text" id="puNome" placeholder="ex: Savio Vogt" autofocus></label>'+
-      '<label class="f"><span>Senha de 4 dígitos</span><input type="text" id="puPin" maxlength="4" inputmode="numeric" placeholder="0000"></label>'+
-      '<p class="muted" style="font-size:12px">Anote essa senha. Sem ela ninguém entra no sistema.</p>'+
-    '</div></div>'+
-    '<footer><button class="btn" id="puOk" style="width:100%">Criar acesso</button></footer>', {fixo:true});
-  ov.querySelector('#puPin').oninput = e=> e.target.value = e.target.value.replace(/\D/g,'').slice(0,4);
-  ov.querySelector('#puOk').onclick = ()=>{
-    const nome = ov.querySelector('#puNome').value.trim();
-    const pin = ov.querySelector('#puPin').value;
-    if(nome.length<3) return toast('Informe seu nome.');
-    if(pin.length!==4) return toast('A senha precisa ter 4 dígitos.');
-    const u = { id:uid('usuario'), nome, pin, papel:'gerente', ativo:true, criadoEm:Date.now() };
-    DB.usuarios.push(u);
-    SESSAO = { id:u.id, nome:u.nome, papel:u.papel };
-    log('usuario_criado', nome+' (gerente)');
-    persist(); fecharModal(ov); atualizarChip();
-    primeiroUso();
-  };
+/* ===================== senha dos usuários =====================
+   O mesmo derivador do servidor: PBKDF2-SHA256, 120 mil iterações,
+   32 bytes. Só o salt e o hash vão para o documento — a senha em
+   claro nunca é gravada nem trafega de volta. */
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const ITERACOES_PBKDF2 = 120000;
+
+function hexDe(buf){
+  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+function bytesDeHex(hex){
+  const s = String(hex||'');
+  const out = new Uint8Array(Math.floor(s.length/2));
+  for(let i=0;i<out.length;i++) out[i] = parseInt(s.substr(i*2,2),16);
+  return out;
+}
+function saltNovo(){ const a = new Uint8Array(16); crypto.getRandomValues(a); return hexDe(a); }
+async function hashSenha(senha, salt){
+  const material = await crypto.subtle.importKey('raw', new TextEncoder().encode(String(senha||'')),
+    'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits(
+    { name:'PBKDF2', salt: bytesDeHex(salt), iterations: ITERACOES_PBKDF2, hash:'SHA-256' }, material, 256);
+  return hexDe(bits);
+}
+
+/* Quem entrou é o dono de qual registro da aba Usuários? */
+function resolverSessao(){
+  if(!SESSAO || !SESSAO.email) return false;
+  const email = String(SESSAO.email).toLowerCase();
+  const u = DB.usuarios.find(x => x.ativo !== false && String(x.email||'').toLowerCase() === email);
+  if(!u) return false;
+  SESSAO = { id:u.id, nome:u.nome, email:u.email, papel:papelDe(u.papel) };
+  return true;
+}
+
+/* A conta da loja (variáveis do projeto) pode ainda não ter registro na
+   aba Usuários: cria aqui, com o hash da senha digitada agora. */
+async function garantirRegistroDaConta(d, senha){
+  const email = String((d.usuario && d.usuario.email)||'').toLowerCase();
+  if(!email || DB.usuarios.some(x => String(x.email||'').toLowerCase() === email)) return;
+  if(papelDe(d.usuario.papel) !== 'administrador') return;
+  const salt = saltNovo();
+  DB.usuarios.push({ id:uid('usuario'), nome:d.usuario.nome||email, email, papel:'administrador',
+    salt, hash: await hashSenha(senha, salt), ativo:true, criadoEm:Date.now() });
+  log('usuario_criado', email+' (conta da loja)');
+  await Nuvem.gravar();
+}
+
+/* Depois que o documento carrega, decide quem entra. */
+function depoisDoCarregamento(){
+  if(resolverSessao()){ atualizarChip(); irPara('painel'); primeiroUso(); }
+  else { SESSAO = null; telaLogin(); }
 }
 
 /* ===================== USUÁRIOS (config) ===================== */
 function renderUsuarios(){
-  const its = DB.usuarios.slice().sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR'));
+  const its = DB.usuarios.slice().sort((a,b)=>String(a.nome||'').localeCompare(String(b.nome||''),'pt-BR'));
   $('#tbUsuarios').innerHTML =
-    '<thead><tr><th>Nome</th><th>Papel</th><th>Último acesso</th><th></th></tr></thead><tbody>'+
-    its.map(u=>'<tr'+(u.ativo===false?' style="opacity:.45"':'')+'>'+
-      '<td><b>'+esc(u.nome)+'</b>'+(SESSAO&&SESSAO.id===u.id?' <span class="pill rua">você</span>':'')+'</td>'+
-      '<td>'+(u.papel==='gerente'?'<span class="pill manut">Gerente</span>':
-              u.papel==='operador'?'<span class="pill rua">Operador</span>':
-              '<span class="pill loja">Atendente</span>')+'</td>'+
+    '<thead><tr><th>Nome</th><th>E-mail</th><th>Papel</th><th>Último acesso</th><th></th></tr></thead><tbody>'+
+    its.map(u=>{
+      const adm = papelDe(u.papel)==='administrador';
+      return '<tr'+(u.ativo===false?' style="opacity:.45"':'')+'>'+
+      '<td><b>'+esc(u.nome||'—')+'</b>'+(SESSAO&&SESSAO.id===u.id?' <span class="pill rua">você</span>':'')+'</td>'+
+      '<td class="mono muted">'+esc(u.email||'sem e-mail')+(u.hash?'':' <span class="pill manut">sem senha</span>')+'</td>'+
+      '<td>'+(adm?'<span class="pill manut">Administrador</span>':'<span class="pill loja">Atendente</span>')+'</td>'+
       '<td class="mono muted">'+(u.ultimoAcesso?dtFmt(u.ultimoAcesso):'nunca')+'</td>'+
-      '<td class="right"><button class="btn sm sec" onclick="editarUsuario('+u.id+')">Editar</button></td></tr>').join('')+
+      '<td class="right"><button class="btn sm sec" onclick="editarUsuario('+u.id+')">Editar</button></td></tr>';
+    }).join('')+
     '</tbody>';
 }
 function formUsuario(u){
-  return '<label class="f"><span>Nome</span><input type="text" id="usNome" value="'+esc(u?u.nome:'')+'"></label>'+
+  return '<label class="f"><span>Nome</span><input type="text" id="usNome" value="'+esc(u?(u.nome||''):'')+'"></label>'+
+    '<label class="f"><span>E-mail</span><input type="email" id="usEmail" value="'+esc(u?(u.email||''):'')+'" placeholder="nome@loja.com" autocomplete="off"></label>'+
     '<div class="grid2">'+
-    '<label class="f"><span>Senha de 4 dígitos</span><input type="text" id="usPin" maxlength="4" inputmode="numeric" value="'+esc(u?u.pin:'')+'"></label>'+
+    '<label class="f"><span>'+(u?'Nova senha (em branco = manter)':'Senha')+'</span>'+
+      '<input type="password" id="usSenha" value="" autocomplete="new-password"></label>'+
     '<label class="f"><span>Papel</span><select id="usPapel">'+
       '<option value="atendente"'+(u&&u.papel==='atendente'?' selected':'')+'>Atendente</option>'+
-      '<option value="operador"'+(u&&u.papel==='operador'?' selected':'')+'>Operador</option>'+
-      '<option value="gerente"'+(u&&u.papel==='gerente'?' selected':'')+'>Gerente</option></select></label></div>'+
+      '<option value="administrador"'+(u&&u.papel==='administrador'?' selected':'')+'>Administrador</option></select></label></div>'+
     '<label class="f"><span>Situação</span><select id="usAtivo">'+
       '<option value="1"'+(!u||u.ativo!==false?' selected':'')+'>Ativo</option>'+
       '<option value="0"'+(u&&u.ativo===false?' selected':'')+'>Bloqueado</option></select></label>'+
-    '<p class="muted" style="font-size:12px"><b>Atendente</b> opera o balcão e o caixa. '+
-    '<b>Operador</b> opera o balcão, mas não enxerga o financeiro e não cadastra usuários. '+
-    '<b>Gerente</b> também estorna locações, altera preços e cadastra usuários.</p>';
+    '<p class="muted" style="font-size:12px"><b>Administrador</b> vê tudo — financeiro, relatórios e esta aba — e cadastra usuários. '+
+    '<b>Atendente</b> opera o balcão, o caixa e os cadastros, mas não enxerga dinheiro nem usuários. '+
+    'A senha tem no mínimo 6 caracteres e é guardada apenas como hash.</p>';
+}
+function conferirDadosUsuario(nome, email, senha, papel, u){
+  if(nome.length<3) return 'Informe o nome completo.';
+  if(!EMAIL_RE.test(email)) return 'Informe um e-mail válido.';
+  if(DB.usuarios.some(x=>x!==u && String(x.email||'').toLowerCase()===email))
+    return 'Já existe um usuário com este e-mail.';
+  if(papel!=='administrador' && papel!=='atendente') return 'Papel inválido.';
+  if(senha !== null && senha.length<6) return 'A senha precisa de pelo menos 6 caracteres.';
+  return null;
 }
 $('#btnInventario2').onclick = ()=> abrirInventario();
 $('#cfgInvDias').onchange = ()=>{ DB.config.inventarioDias = Math.max(1, Math.min(90, +$('#cfgInvDias').value||7));
@@ -3528,36 +3682,56 @@ $('#cfgInvDias').onchange = ()=>{ DB.config.inventarioDias = Math.max(1, Math.mi
 $('#btnLoteLacres').onclick = abrirLoteLacres;
 $('#btnAplicarLacres').onclick = abrirAplicarLacres;
 $('#btnNovoUsuario').onclick = ()=>{
-  if(!exigirGerente('cadastrar usuários')) return;
+  if(!exigirAdministrador('cadastrar usuários')) return;
   const ov = abrirModal('<header><h3>Novo usuário</h3><button class="x">&times;</button></header>'+
     '<div class="body">'+formUsuario(null)+'</div>'+
     '<footer><button class="btn sec" id="c">Cancelar</button><button class="btn" id="s">Cadastrar</button></footer>');
-  ov.querySelector('#usPin').oninput = e=> e.target.value=e.target.value.replace(/\D/g,'').slice(0,4);
   ov.querySelector('#c').onclick=()=>fecharModal(ov);
-  ov.querySelector('#s').onclick=()=>{
-    const nome=ov.querySelector('#usNome').value.trim(), pin=ov.querySelector('#usPin').value;
-    if(nome.length<3 || pin.length!==4) return toast('Informe nome e senha de 4 dígitos.');
-    DB.usuarios.push({ id:uid('usuario'), nome, pin, papel:ov.querySelector('#usPapel').value,
-      ativo:ov.querySelector('#usAtivo').value==='1', criadoEm:Date.now() });
-    log('usuario_criado', nome);
-    persist(); fecharModal(ov); renderUsuarios(); toast('Usuário cadastrado.');
+  ov.querySelector('#s').onclick = async ()=>{
+    const btn = ov.querySelector('#s');
+    const nome = ov.querySelector('#usNome').value.trim();
+    const email = ov.querySelector('#usEmail').value.trim().toLowerCase();
+    const senha = ov.querySelector('#usSenha').value;
+    const papel = ov.querySelector('#usPapel').value;
+    const ativo = ov.querySelector('#usAtivo').value==='1';
+    const erro = conferirDadosUsuario(nome, email, senha, papel, null);
+    if(erro) return toast(erro);
+    btn.disabled = true; btn.textContent = 'salvando…';
+    const salt = saltNovo();
+    const hash = await hashSenha(senha, salt);
+    DB.usuarios.push({ id:uid('usuario'), nome, email, papel, salt, hash, ativo, criadoEm:Date.now() });
+    log('usuario_criado', nome+' · '+email+' · '+rotuloPapel(papel));
+    persist(); fecharModal(ov); renderUsuarios(); toast('Usuário cadastrado. Já pode entrar com e-mail e senha.');
   };
 };
 window.editarUsuario = function(id){
-  if(!exigirGerente('editar usuários')) return;
+  if(!exigirAdministrador('editar usuários')) return;
   const u = DB.usuarios.find(x=>x.id===id); if(!u) return;
   const ov = abrirModal('<header><h3>Editar usuário</h3><button class="x">&times;</button></header>'+
     '<div class="body">'+formUsuario(u)+'</div>'+
     '<footer><button class="btn sec" id="c">Cancelar</button><button class="btn" id="s">Salvar</button></footer>');
-  ov.querySelector('#usPin').oninput = e=> e.target.value=e.target.value.replace(/\D/g,'').slice(0,4);
   ov.querySelector('#c').onclick=()=>fecharModal(ov);
-  ov.querySelector('#s').onclick=()=>{
-    const gerentes = DB.usuarios.filter(x=>x.papel==='gerente' && x.ativo!==false);
-    const virandoNaoGerente = u.papel==='gerente' && (ov.querySelector('#usPapel').value!=='gerente' || ov.querySelector('#usAtivo').value==='0');
-    if(gerentes.length<=1 && virandoNaoGerente) return toast('Precisa existir pelo menos um gerente ativo.');
-    u.nome=ov.querySelector('#usNome').value.trim(); u.pin=ov.querySelector('#usPin').value;
-    u.papel=ov.querySelector('#usPapel').value; u.ativo=ov.querySelector('#usAtivo').value==='1';
-    log('usuario_editado', u.nome);
+  ov.querySelector('#s').onclick = async ()=>{
+    const btn = ov.querySelector('#s');
+    const nome = ov.querySelector('#usNome').value.trim();
+    const email = ov.querySelector('#usEmail').value.trim().toLowerCase();
+    /* sem senha nova, mantém a atual */
+    const novaSenha = ov.querySelector('#usSenha').value;
+    const papel = ov.querySelector('#usPapel').value;
+    const ativo = ov.querySelector('#usAtivo').value==='1';
+    const erro = conferirDadosUsuario(nome, email, novaSenha || null, papel, u);
+    if(erro) return toast(erro);
+    const admins = DB.usuarios.filter(x=>papelDe(x.papel)==='administrador' && x.ativo!==false);
+    const virandoNaoAdmin = papelDe(u.papel)==='administrador' && (papel!=='administrador' || !ativo);
+    if(admins.length<=1 && virandoNaoAdmin) return toast('Precisa existir pelo menos um administrador ativo.');
+    btn.disabled = true; btn.textContent = 'salvando…';
+    u.nome = nome; u.email = email; u.papel = papel; u.ativo = ativo;
+    if(novaSenha){ const salt = saltNovo(); u.salt = salt; u.hash = await hashSenha(novaSenha, salt); }
+    if(SESSAO && SESSAO.id===u.id){
+      SESSAO.nome = u.nome; SESSAO.email = u.email; SESSAO.papel = papelDe(u.papel);
+      aplicarPermissoes(); repintarTela();   /* rebaixou a si mesmo: as abas somem na hora */
+    }
+    log('usuario_editado', nome+' · '+email+' · '+rotuloPapel(papel));
     persist(); fecharModal(ov); renderUsuarios(); atualizarChip(); toast('Usuário atualizado.');
   };
 };
@@ -3581,7 +3755,7 @@ function renderAuditoria(){
    Cada veículo parado na loja fica lacrado. Para soltar, o atendente
    precisa romper o lacre e informar o número — e o número tem que bater
    com o que o sistema diz que estava naquele veículo.
-   O estoque de lacres é do dono, não do atendente: só o gerente registra
+   O estoque de lacres é do dono, não do atendente: só o administrador registra
    lotes novos. Assim, lacre rompido sem locação não tem como se esconder.
    ===================================================================== */
 
@@ -3659,7 +3833,7 @@ function renderLacres(){
 }
 
 function abrirLoteLacres(){
-  if(!exigirGerente('registrar lacres')) return;
+  if(!exigirAdministrador('registrar lacres')) return;
   const ov = abrirModal('<header><h3>Registrar lote de lacres</h3><button class="x">&times;</button></header>'+
     '<div class="body">'+
       '<p style="margin-top:0;font-size:13.5px">Informe a faixa de números impressa nos lacres que você comprou. '+
@@ -3764,7 +3938,7 @@ function renderDivergencias(){
       : '<tr><td colspan="5" class="empty">Nada registrado.</td></tr>')+'</tbody>';
 }
 window.resolverDivergencia = function(id){
-  if(!exigirGerente('tratar divergências')) return;
+  if(!exigirAdministrador('tratar divergências')) return;
   const d = DB.divergencias.find(x=>x.id===id); if(!d) return;
   const ov = abrirModal('<header><h3>Tratar divergência</h3><button class="x">&times;</button></header>'+
     '<div class="body"><div class="resumo"><div class="l"><span>'+esc(TIPOS_DIVERG[d.tipo]||d.tipo)+'</span>'+
@@ -3837,7 +4011,7 @@ window.abrirConferenciaLacres = function(){
    Diferente da conferência de lacres, que só olha o que está na loja:
    aqui a frota inteira é conferida, inclusive o que está na rua e em
    manutenção. É o que responde "sumiu algum?".
-   O operador digita ou lê os códigos que encontrou; a lista de pendentes
+   Quem faz a contagem digita ou lê os códigos que encontrou; a lista de pendentes
    fica escondida por padrão, para a contagem valer alguma coisa.
    ===================================================================== */
 
@@ -4098,34 +4272,6 @@ $('#btnSairConta').onclick = async ()=>{
   await Nuvem.sair(); location.reload();
 };
 
-function telaLoja(){
-  fecharTodosModais();
-  marcarSync('offline');
-  const ov = abrirModal(
-    '<header><h3>Acesso da loja</h3></header>'+
-    '<div class="body"><div class="login">'+
-      '<div class="loginmarca"><img src="assets/logo-veeloway.jpeg" alt="VeeLo Way — Mobilidade Urbana"></div>'+
-      '<p style="margin-top:0;font-size:13.5px;text-align:center">Este acesso libera o aparelho. Depois cada atendente entra com o PIN dele.</p>'+
-      '<label class="f"><span>E-mail</span><input type="text" id="loEmail" autofocus></label>'+
-      '<label class="f"><span>Senha</span><input type="password" id="loSenha"></label>'+
-      '<div id="loErro" style="color:var(--danger);font-size:13px;min-height:18px"></div>'+
-    '</div></div>'+
-    '<footer><button class="btn" id="loOk" style="width:100%">Entrar</button></footer>', {fixo:true});
-  const entrar = async ()=>{
-    const b = ov.querySelector('#loOk');
-    b.disabled = true; b.textContent = 'entrando…';
-    try{
-      await Nuvem.entrar(ov.querySelector('#loEmail').value.trim(), ov.querySelector('#loSenha').value);
-      fecharModal(ov); await carregarTudo();
-    }catch(e){
-      ov.querySelector('#loErro').textContent = 'E-mail ou senha incorretos.';
-      b.disabled = false; b.textContent = 'Entrar';
-    }
-  };
-  ov.querySelector('#loOk').onclick = entrar;
-  ov.querySelector('#loSenha').onkeydown = e=>{ if(e.key==='Enter') entrar(); };
-}
-
 function telaSemConfig(det){
   marcarSync('offline');
   const d = det || {};
@@ -4142,10 +4288,10 @@ function perguntarRascunho(r){
     '<p>Enviar agora? Isso substitui o que está no servidor pelo que ficou guardado aqui.</p></div>'+
     '<footer><button class="btn sec" id="rDescartar">Descartar</button>'+
     '<button class="btn" id="rEnviar">Enviar para o servidor</button></footer>', {fixo:true});
-  ov.querySelector('#rDescartar').onclick = ()=>{ limparRascunho(); fecharModal(ov); telaLogin(); };
+  ov.querySelector('#rDescartar').onclick = ()=>{ limparRascunho(); fecharModal(ov); depoisDoCarregamento(); };
   ov.querySelector('#rEnviar').onclick = async ()=>{
     DB = r.doc; aplicarMigracoes(); await Nuvem.gravar(); limparRascunho();
-    fecharModal(ov); renderPainel(); toast('Enviado.'); telaLogin();
+    fecharModal(ov); renderPainel(); toast('Enviado.'); depoisDoCarregamento();
   };
 }
 
@@ -4159,16 +4305,18 @@ async function carregarTudo(){
   }catch(e){
     console.error(e);
     marcarSync('erro');
-    return abrirModal('<header><h3>Não consegui falar com o servidor</h3></header>'+
+    abrirModal('<header><h3>Não consegui falar com o servidor</h3></header>'+
       '<div class="body"><p style="margin-top:0">Verifique a internet e recarregue a página.</p>'+
       '<p class="muted" style="font-size:12.5px">'+esc(String(e.message||e))+'</p></div>', {fixo:true});
+    return { ok:false };
   }
+  resolverSessao();
   aplicarMarca(); atualizarChip(); renderPainel();
   $('#fMes').value = mesKey(Date.now());
   $('#fCaixaDia').value = hojeKey();
   const r = lerRascunho();
-  if(r && r.doc && r.doc.veiculos) return perguntarRascunho(r);
-  telaLogin();
+  if(r && r.doc && r.doc.veiculos){ perguntarRascunho(r); return { ok:true, rascunho:true }; }
+  return { ok:true };
 }
 
 (async function arrancar(){
@@ -4196,8 +4344,12 @@ async function carregarTudo(){
   });
 
   const sess = await Nuvem.sessao();
-  if(!sess) return telaLoja();
-  await carregarTudo();
+  if(!sess) return telaLogin();
+  SESSAO = { email: sess.email, papel:null, nome:sess.email };
+  const c = await carregarTudo();
+  if(!c || !c.ok || c.rascunho) return;
+  if(!resolverSessao()){ SESSAO = null; return telaLogin(); }
+  atualizarChip(); irPara('painel');
 })();
 
 </script>

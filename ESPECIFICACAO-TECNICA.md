@@ -48,7 +48,7 @@ Navegador (single-file HTML, sem build, sem framework)
 - **Single-file, sem framework.** O protótipo precisava rodar sem infraestrutura para validar regras de negócio com o cliente. Cumpriu esse papel. Não é a escolha para produção — ver seção 8.
 - **Estado como documento único versionado.** Permitiu migrar de `localStorage` para servidor trocando apenas duas funções, sem reescrever a aplicação. O lock otimista resolve concorrência entre dispositivos sem perda silenciosa: se a versão enviada não é a atual, o servidor recusa e devolve o estado novo. **Testado.**
 - **`eventos` append-only no banco, não na aplicação.** As tabelas `eventos` e `snapshots` não têm policy de UPDATE nem DELETE. Sem policy, a operação é negada pelo RLS. A imutabilidade é garantida pelo Postgres, não por código de aplicação.
-- **Auth de loja + PIN de operador.** Um usuário Supabase Auth libera o dispositivo; dentro da aplicação, cada atendente entra com PIN de 4 dígitos que identifica quem operou. Isso é uma simplificação consciente — ver seção 8.
+- **Login por e-mail + senha, dois níveis.** A sessão é um token HMAC assinado em `lib/auth.js`. A senha nunca vai para o servidor em texto claro nem fica guardada assim: o navegador deriva PBKDF2-SHA256 com salt de 16 bytes e 120 mil iterações, e o documento guarda só `salt` + `hash` — o servidor refaz a derivação e compara na hora de entrar. Existem dois níveis, **Administrador** e **Atendente**; os papéis antigos (`gerente`, `operador`) são convertidos na migração e o PIN de 4 dígitos foi removido. Ver seção 4.7 e a pendência da seção 8.2.
 
 ---
 
@@ -125,7 +125,9 @@ Navegador (single-file HTML, sem build, sem framework)
     fechamentoTs, saldoContado, esperado, operadorFech, obs
   }],
 
-  usuarios: [{ id, nome, pin, papel: 'gerente'|'atendente', ativo, criadoEm, ultimoAcesso }],
+  usuarios: [{ id, nome, email, papel: 'administrador'|'atendente', ativo,
+               salt, hash,          // PBKDF2-SHA256, 120 mil iterações, hex
+               criadoEm, ultimoAcesso }],
 
   auditoria: [{ id, ts, usuarioId, usuario, acao, detalhe, ref }],
 
@@ -201,13 +203,20 @@ Estas regras foram definidas pelo dono. **Não altere sem confirmar com ele.**
 - **Nada é apagado.** Erro se corrige com estorno.
 - Locação estornada: `status = 'estornada'`, valor sai do faturamento (`totalLoc()` retorna 0), registro permanece visível e riscado no histórico, com motivo obrigatório, autor e data. Se estava na rua, o veículo volta para a loja.
 - Despesa: editável **apenas enquanto não paga**. Depois de paga, só estorno.
-- Estorno é exclusivo do papel `gerente`.
+- Estorno é exclusivo do papel `administrador`.
 
-### 4.7 Papéis
+### 4.7 Papéis e acesso
 
-| Ação | Atendente | Gerente |
+Só existem dois níveis: **Administrador** e **Atendente**. Os papéis antigos são
+convertidos na migração do documento (`papelDe`: `gerente` → administrador, o resto →
+atendente), o campo `pin` é apagado e, se o nome do usuário parecer um e-mail, ele é
+promovido a `email` da conta.
+
+| Ação | Atendente | Administrador |
 |---|---|---|
 | Operar balcão e caixa | sim | sim |
+| Ver o financeiro do mês | — | sim |
+| Ver a aba Relatórios | — | sim |
 | Estornar locação ou lançamento | — | sim |
 | Alterar preços e tabela de peças | — | sim |
 | Cadastrar usuários | — | sim |
@@ -215,19 +224,44 @@ Estas regras foram definidas pelo dono. **Não altere sem confirmar com ele.**
 | Tratar divergências | — | sim |
 | Zerar o sistema | — | sim |
 
-Regra de integridade: sempre deve existir pelo menos um gerente ativo.
+Regra de integridade: sempre deve existir pelo menos um administrador ativo.
 
-**Operador (papel operacional).** Opera o balcão — locação, devolução, vistoria,
-clientes e histórico — mas **não enxerga o financeiro**: a aba *Financeiro* fica
-oculta e o indicador de faturamento do dia some do painel.
+**Uma tela de acesso só (e-mail + senha).** Quem tem as credenciais da loja
+(`LOJA_EMAIL`/`LOJA_SENHA`) entra e recebe o papel que a conta já tiver no documento
+(sem conta, `administrador`); quem foi cadastrado na aba *Usuários* entra com o e-mail
+e a senha dele. Conta com `ativo === false` é recusada mesmo com a senha certa (e o
+servidor responde `conta_bloqueada`, não "credenciais inválidas"). Erros possíveis:
+`credenciais_ausentes` (400), `credenciais_invalidas` (401), `conta_bloqueada` (401),
+`loja_nao_configurada` (503).
 
-**Aba Usuários (exclusiva do gerente).** Criação e edição de usuários saíram de
-*Configurações* para uma aba própria, visível só para o gerente — é ali que se
-cadastra o nível abaixo dele (operador ou atendente), com PIN de 4 dígitos e
-situação ativo/bloqueado. Quem não é gerente não vê a aba; se chegar por atalho
-(`irPara('usuarios')`), é mandado de volta ao painel, e o botão de cadastrar
-continua atrás de `exigirGerente`. O atendente mantém o restante do acesso
-previsto na tabela acima.
+**Senha derivada, nunca guardada em claro.** O navegador calcula
+`PBKDF2-SHA256(senha, salt, 120000 iterações, 256 bits)` com um salt aleatório de
+16 bytes por usuário; o documento guarda `salt` e `hash` em hex e o servidor
+(`lib/auth.js`) refaz exatamente a mesma derivação para comparar
+(`crypto.pbkdf2Sync`). A comparação usa saída igual em tamanho, sem vazar diferença
+pelo tempo. Teste J do `npm test` prova que navegador e servidor derivam a mesma
+chave — se divergirem, ninguém entra pela conta cadastrada.
+
+**Sessão no aparelho.** Depois de entrar, o token vale 12 h e o sistema abre direto no
+painel: `arrancar` valida o token, `resolverSessao()` relê o papel pelo e-mail no
+documento e só cai na tela de login se não houver sessão ou ela tiver expirado. Só se
+pede a senha de novo ao expirar, ao sair ou em aparelho sem sessão.
+
+**Atendente.** Opera o balcão — locação, devolução, vistoria, clientes, histórico e
+caixa do dia — mas **não enxerga dinheiro nem cadastro**: as abas *Financeiro*,
+*Relatórios* e *Usuários* ficam ocultas (`aplicarPermissoes`), `irPara` manda de volta
+ao painel se ele chegar por atalho, `renderFinanceiro` e `renderRelatorios` têm trava
+própria e o indicador de faturamento do dia some do painel.
+
+**Aba Usuários (exclusiva do administrador).** Criação e edição de usuários saíram de
+*Configurações* para uma aba própria — é ali que se cadastra cada conta com **nome,
+e-mail, senha (mínimo de 6 caracteres, única no sistema), nível e situação
+ativo/bloqueado**. A edição deixa a senha em branco para manter a atual. O formulário
+exige que o sistema continue com pelo menos um administrador ativo. Quem não é
+administrador não vê a aba; se chegar por atalho (`irPara('usuarios')`), é mandado de
+volta ao painel, e o botão de cadastrar continua atrás de `exigirAdministrador`.
+
+**Aba Relatórios (exclusiva do administrador).** Ver seção 4.11.
 
 ### 4.8 Vistoria fotográfica
 
@@ -247,14 +281,14 @@ previsto na tabela acima.
 Mecanismo de controle interno contra locação não registrada — o risco identificado pelo dono foi **funcionário alugar e ficar com o dinheiro sem lançar no sistema**.
 
 - Todo veículo parado na loja fica com um lacre plástico numerado.
-- O estoque de lacres é registrado por faixa numérica pelo gerente. **Só números em estoque podem ser usados.**
+- O estoque de lacres é registrado por faixa numérica pelo administrador. **Só números em estoque podem ser usados.**
 - **Na saída**, o atendente informa o número do lacre que rompeu. O sistema compara com o esperado:
   - confere → segue;
   - divergente → **permite seguir, mas registra divergência** com veículo, esperado, informado, autor e horário. Não bloqueia de propósito: divergência pode ter causa legítima, e o valor está no registro, não no impedimento.
   - sem número → bloqueia.
 - **Na entrada**, informa o novo lacre aplicado. Validado contra estoque: recusa número inexistente, já rompido ou aplicado em outro veículo.
 - **Conferência cega no fechamento:** lista os veículos que deveriam estar na loja; o número esperado **só aparece depois** que o operador digita o que encontrou. Toda diferença gera divergência nomeando o veículo.
-- Divergências exigem apuração descrita pelo gerente para serem encerradas, e isso vai para a auditoria.
+- Divergências exigem apuração descrita pelo administrador para serem encerradas, e isso vai para a auditoria.
 
 **Premissa operacional, não técnica:** o controle só tem valor se os lacres ficarem com o dono e forem entregues por turno em quantidade controlada. Com acesso livre ao lote, o atendente rompe, entrega o veículo e aplica um lacre novo — e o sistema não vê nada. Isso está documentado para o cliente.
 
@@ -266,7 +300,7 @@ Segunda camada do mesmo controle. Enquanto a conferência de lacres olha só o q
 - A contagem é feita **por entrada de código**, não por lista marcável: o operador digita ou lê o código de cada veículo que encontrou fisicamente. Escolha deliberada — com 210 veículos, uma lista de checkboxes é lenta e convida a marcar tudo sem olhar.
 - A lista de pendentes começa **oculta**, atrás de um botão. Mesma razão da conferência cega de lacres.
 - Veículos com `status = 'rua'` são **justificados automaticamente** e não contam como faltantes.
-- Existe atalho "marcar tudo como encontrado", com confirmação. Foi incluído para conferência visual em bloco; o cliente foi orientado a reservar o inventário para o gerente, não para quem opera o balcão.
+- Existe atalho "marcar tudo como encontrado", com confirmação. Foi incluído para conferência visual em bloco; o cliente foi orientado a reservar o inventário para o administrador, não para quem opera o balcão.
 
 Dois resultados geram divergência:
 
@@ -278,6 +312,29 @@ Dois resultados geram divergência:
 O inventário **não altera o status de nenhum veículo automaticamente.** Só registra. A correção é decisão humana, via apuração da divergência.
 
 Histórico completo em Configurações: data, autor, total da frota, conferidos, na rua, faltantes com códigos e observações.
+
+### 4.11 Relatórios do mês
+
+Aba exclusiva do administrador, entre *Financeiro* e *Usuários*. Enquanto o
+*Financeiro* responde "deu lucro?", o *Relatórios* responde "como foi o mês?".
+
+- Seletor de mês (`type="month"`, padrão = mês corrente) redesenha a página ao trocar.
+- **KPIs:** viagens, faturamento, ticket médio e dias com movimento.
+- **Clientes que mais viajaram:** ranking com nº de viagens e faturamento; o
+  primeiro entra destacado. Limite de 8 linhas na tela.
+- **Melhor dia:** dias do mês ordenados por faturamento (desempate por nº de viagens),
+  com dia da semana ao lado. Limite de 8 linhas.
+- **Horário de pico:** as faixas de hora com movimento, ordenadas pela maior, com
+  barra proporcional (`n / máximo`) e a faixa seguinte indicada ("10h às 11h").
+- **Resumo em uma coluna:** viagens, faturamento, ticket médio, dias com movimento,
+  viagens por dia ativo, melhor dia, cliente destaque e hora mais movimentada.
+
+Cálculo (`relatorioDoMes(mes)`): soma `DB.locacoes` cujo `mesKey(inicio)` é o mês
+escolhido e que não estão estornadas; faturamento por `totalLoc()` (base + excedente +
+avaria); horas pelo `getHours()` do `inicio`. Mês vazio devolve zeros e `null`, e as
+três tabelas mostram linha de "sem movimento" — a tela nunca quebra. Defesa dupla:
+a aba já fica oculta para o atendente e `renderRelatorios()` retorna cedo se não for
+administrador.
 
 ---
 
@@ -318,8 +375,9 @@ Duas vias: **celular do cliente** (fluxo principal) e **balcão** (fallback). O 
 | **Frota** | Lista com filtro, lacre atual, status, nº de locações e faturamento por veículo; cadastro individual e em lote; botão de conferência da frota. |
 | **Clientes** | Busca por nome, CPF ou telefone; histórico e total gasto. |
 | **Histórico** | Locações com filtro por período; base, excedente, avaria e total; acesso às fotos de saída e entrada, ao contrato e ao estorno. |
-| **Financeiro** | Demonstrativo de fluxo do mês (entradas por origem, saídas por categoria, resultado, margem); custos fixos recorrentes; movimento dia a dia com destaque do melhor dia; faturamento por veículo, tipo, pacote e forma de pagamento; exportação CSV. |
-| **Usuários** | Lista da loja (nome, papel, último acesso); cadastro e edição de operador, atendente e gerente — PIN de 4 dígitos e situação ativo/bloqueado — mais a explicação de cada nível. Aba exclusiva do gerente. |
+| **Financeiro** | Demonstrativo de fluxo do mês (entradas por origem, saídas por categoria, resultado, margem); custos fixos recorrentes; movimento dia a dia com destaque do melhor dia; faturamento por veículo, tipo, pacote e forma de pagamento; exportação CSV. Exclusiva do administrador. |
+| **Relatórios** | Fechamento do mês numa tela: viagens, faturamento, ticket médio, dias com movimento, ranking de clientes, melhor dia, horário de pico com barra e resumo em uma coluna. Seletor de mês. Exclusiva do administrador (seção 4.11). |
+| **Usuários** | Lista da loja (nome, e-mail, papel, último acesso); cadastro e edição de conta — e-mail, senha (mínimo 6, única), nível Atendente ou Administrador e situação ativo/bloqueado — mais a explicação de cada nível. Aba exclusiva do administrador. |
 | **Configurações** | Empresa; tolerância; tabela de preços; tabela de peças; template do contrato; lacres; conferência da frota e histórico; divergências; trilha de auditoria; backup e restauração; sair da conta. |
 
 Wizard de locação em 5 passos: veículos (seleção múltipla) → cliente → período → vistoria e lacre → contrato e assinatura.
@@ -327,12 +385,12 @@ Wizard de locação em 5 passos: veículos (seleção múltipla) → cliente →
 Tema escuro e claro, alternável, preferência gravada por dispositivo. Escuro é o padrão: o painel é tela de vigilância, e os estados de cor precisam saltar.
 
 **Identidade visual — VeeLo Way · Mobilidade Urbana: amarelo e preto.** O logo
-(`assets/logo-veeloway.jpeg`) entra como favicon, na barra do topo, nas duas telas de
-acesso (loja e PIN) e na assinatura eletrônica que o cliente abre no celular. As cores
+(`assets/logo-veeloway.jpeg`) entra como favicon, na barra do topo, na tela de acesso
+(e-mail + senha) e na assinatura eletrônica que o cliente abre no celular. As cores
 vêm das variáveis do tema: `--brand` (amarelo) e `--ink` (preto usado por cima do
 amarelo), iguais nos dois temas; `--brand-fg` resolve o texto da marca em fundo claro,
 onde amarelo não teria contraste. Regra: **texto sobre amarelo é sempre `--ink`**, nunca
-branco — botão principal, aba ativa, cabeçalho de total e avatar de quem está no PIN.
+branco — botão principal, aba ativa e cabeçalho de total.
 O nome padrão da empresa também é a marca: lojas que ainda guardam o nome de fábrica
 ("Minha Locadora") são renomeadas para **VeeLo Way** quando o estado é carregado.
 
@@ -371,13 +429,13 @@ Além do custo, isso estoura o plano gratuito do Supabase (500 MB de banco, 5 GB
 
 Como paliativo, se precisar operar antes da refatoração: arquivar locações finalizadas com mais de 60 dias em tabela separada e mantê-las fora do `doc`.
 
-### 8.2 Autenticação de operador é simplificada
+### 8.2 Identidade mora no documento
 
-- PIN de 4 dígitos **em texto claro** dentro do `doc`.
-- Um único usuário Supabase Auth para a loja; a identidade do operador só existe na aplicação.
-- Consequência: o campo "quem fez" na auditoria é confiável para uso gerencial, mas não é prova forte. Para um controle antifraude — que é justamente a motivação do módulo de lacres —, isso é frágil.
+- E-mail, nível, `salt` e `hash` dos usuários vivem dentro do `doc` versionado — não há provedor de identidade por pessoa, nem sessão gerenciada por dispositivo.
+- O servidor assina e valida o token, mas o papel é relido do próprio documento: quem tem acesso à gravação do `doc` pode alterar níveis (o lock otimista e a auditoria mitigam, não eliminam).
+- Não há segundo fator. Para um controle antifraude — que é justamente a motivação do módulo de lacres —, isso continua não sendo prova forte.
 
-**Recomendação:** usuário Auth por operador, ou no mínimo hash do PIN (`bcrypt`) com verificação no servidor via RPC. E RLS por usuário nas tabelas normalizadas.
+**Recomendação:** provedor de identidade por pessoa (usuário real por atendente) com sessão gerenciada, MFA opcional e RLS por usuário nas tabelas normalizadas da seção 8.1. O formato `salt` + `hash` PBKDF2 já está pronto para ser carregado por um provedor sem mudar a tela de login.
 
 ### 8.3 Sem retenção nem limpeza de fotos
 
@@ -397,7 +455,7 @@ Ao receber UPDATE de outro dispositivo, o `DB` é trocado e as telas repintadas.
 - **Comprovante para o cliente** com número do contrato, impresso ou por WhatsApp — especificado, não construído. Transforma o cliente em conferência da locação registrada.
 - **Foto do documento e selfie do cliente** — especificado, não construído. Componente de captura já existe.
 - **Rastreador com bloqueio remoto nas 10 motos** — decisão de compra do cliente, fora do software. Faixa de mercado levantada: R$ 40 a R$ 60/mês por veículo.
-- **Sem testes automatizados no repositório.** Os cenários abaixo foram validados com scripts jsdom durante o desenvolvimento, mas não ficaram versionados. Vale reescrevê-los.
+- **Testes automatizados versionados.** `npm test` cobre as regras de dinheiro, sessão, senha, papéis, relatórios, identidade e o banco (transação descartada); `npm run verificar` repete a operação no site publicado. Os cenários abaixo estão no script — vale mantê-los em dia ao mudar regra.
 
 ---
 
@@ -422,7 +480,13 @@ Reproduza estes casos — cobrem as regras que mais custam dinheiro se quebrarem
 
 **Estorno**
 10. Estornar locação de R$ 60 → faturamento do mês volta a R$ 0,00, o registro continua na lista marcado como estornada, o veículo volta para a loja.
-11. Atendente não consegue estornar; gerente consegue.
+11. Atendente não consegue estornar nem abrir o financeiro; administrador consegue.
+
+**Acesso e relatórios**
+25. Senha errada devolve 401 e não abre sessão; conta bloqueada é recusada mesmo com a senha certa.
+26. Usuário cadastrado entra pelo e-mail (sem diferenciar maiúsculas); navegador e servidor derivam a mesma chave.
+27. Atendente não vê as abas Financeiro, Relatórios e Usuários — e, se chegar por atalho, volta para o painel.
+28. Relatório do mês conta só as viagens não estornadas daquele mês; mês vazio devolve zeros nas quatro tabelas.
 
 **Lacres**
 12. Saída sem informar lacre é bloqueada.
@@ -455,7 +519,7 @@ O ambiente Supabase **já está provisionado e testado**. O schema foi aplicado,
 
 1. **Criar o usuário da loja** — Supabase → Authentication → Users → Add user. E-mail e senha à escolha do cliente, com **Auto Confirm User marcado** (sem isso o login não passa). Essa senha é do cliente; não foi criada por terceiros de propósito.
 2. **Publicar o `index.html`** em qualquer host estático, com esse nome. Cloudflare Pages no plano gratuito permite uso comercial e serve bem — é arrastar o arquivo em Create a project → Upload assets. Netlify e similares também servem. Vercel Hobby **não**: os termos proíbem uso comercial.
-3. **Primeiro acesso:** login da loja → criar o gerente com PIN → criar a frota → preencher dados da empresa em Configurações → preencher `urlBase` com `https://SEU-DOMINIO/assinar` → cadastrar atendentes → registrar o lote de lacres e aplicar na frota.
+3. **Primeiro acesso:** entrar com `LOJA_EMAIL` / `LOJA_SENHA` → criar a frota → preencher dados da empresa em Configurações → preencher `urlBase` com `https://SEU-DOMINIO/assinar` → na aba **Usuários** cadastrar as contas da loja (e-mail, senha, nível) → registrar o lote de lacres e aplicar na frota.
 
 **Para rodar sem servidor** (desenvolvimento, demonstração, teste de mudança): abrir `app.html` no navegador. Mesma aplicação, dados em `localStorage`, nenhum risco para os dados reais.
 

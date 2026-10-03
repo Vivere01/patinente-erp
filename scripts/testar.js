@@ -9,12 +9,15 @@
    D. schema.sql e lib/schema-sql.js em sincronia (fonte única).
    E. Todos os módulos de api/ carregam (require com caminho errado só
       aparece no ar, como FUNCTION_INVOCATION_FAILED).
-   F. Papel operacional (sem financeiro, sem cadastro de usuário) e a foto
-      do documento do cliente com câmera + upload.
+   F. Níveis de acesso (administrador e atendente), login único com
+      e-mail + senha e a foto do documento com câmera + upload.
    G. Fechamento do caixa (entradas somadas por forma de pagamento) e a
       sincronização entre aparelhos (carga no acesso, sondagem, conflito).
-   H. Identidade visual VeeLo Way — logo no repositório, no topo, nos dois
-      logins, no favicon e na assinatura; amarelo e preto nos dois temas.
+   H. Identidade visual VeeLo Way — logo no repositório, no topo, no
+      login, no favicon e na assinatura; amarelo e preto nos dois temas.
+   I. Relatórios — a aba e o fechamento do mês (viagens, faturamento,
+      cliente destaque, melhor dia e horários de pico).
+   J. Senha — o navegador e o servidor derivam exatamente a mesma chave.
 
    Uso:  npm test
 */
@@ -68,6 +71,12 @@ function extrairLinha(html, nome){
   const m = new RegExp('const ' + nome + ' = .*;').exec(html);
   if(!m) throw new Error('constante ausente: ' + nome);
   return m[0];
+}
+/* extrairFuncao começa no "function", então o "async" à esquerda se perde. */
+function extrairAssincrona(html, nome){
+  const corpo = extrairFuncao(html, nome);
+  const ini = html.indexOf(corpo);
+  return (html.slice(ini - 6, ini) === 'async ' ? 'async ' : '') + corpo;
 }
 
 function testarRegrasDeDinheiro(){
@@ -138,6 +147,36 @@ function testarSessao(){
   ok(auth.conferirCredenciais('a@b.c', 'x').codigo === 'credenciais_invalidas' ||
      auth.conferirCredenciais('a@b.c', 'x').codigo === 'loja_nao_configurada',
      'senha errada não abre sessão');
+
+  /* --- senha dos usuários cadastrados no sistema --- */
+  const salt = auth.novoSalt();
+  const senha = 'senhaForte123';
+  const hash = auth.hashSenha(senha, salt);
+  ok(/^[0-9a-f]{64}$/.test(hash), 'hash sai em hex de 32 bytes');
+  ok(hash === auth.hashSenha(senha, salt) && hash !== auth.hashSenha(senha, auth.novoSalt()),
+     'mesma senha e mesmo salt dão o mesmo hash; salt novo muda tudo');
+  ok(auth.conferirHash(senha, salt, hash), 'senha certa confere');
+  ok(!auth.conferirHash('senhaErrada', salt, hash), 'senha errada não confere');
+  ok(!auth.conferirHash(senha, '', hash) && !auth.conferirHash(senha, salt, ''),
+     'sem salt ou sem hash não se confere nada');
+
+  const doc = { usuarios: [
+    { id:1, nome:'Ana', email:'ana@loja.com', papel:'administrador', ativo:true, salt, hash },
+    { id:2, nome:'Beto', email:'beto@loja.com', papel:'atendente', ativo:false, salt, hash }
+  ]};
+  const ana = auth.conferirUsuario(doc, 'ANA@Loja.com', senha);
+  ok(ana.ok === true && ana.papel === 'administrador',
+     'usuário do sistema entra pelo e-mail (sem diferenciar maiúsculas)', JSON.stringify(ana));
+  ok(auth.conferirUsuario(doc, 'ana@loja.com', 'outraSenha').ok === false,
+     'senha errada recusa o usuário do sistema');
+  ok(auth.conferirUsuario(doc, 'ninguem@loja.com', senha).ok === false,
+     'e-mail sem cadastro não entra');
+  ok(auth.conferirUsuario(doc, 'beto@loja.com', senha).ok === false,
+     'conta bloqueada não entra, mesmo com a senha certa');
+  ok(auth.usuarioNoDoc(doc, 'beto@loja.com').ativo === false,
+     'a conta bloqueada é achada pelo e-mail (o login avisa em vez de deixar passar)');
+  ok(auth.papelSeguro('gerente') === 'administrador' && auth.papelSeguro('operador') === 'atendente',
+     'o servidor também converte os papéis antigos');
 }
 
 /* ------------------------------------------------------------------ D */
@@ -179,64 +218,96 @@ function testarModulosApi(){
 }
 
 /* ------------------------------------------------------------------ F */
-/* Papel operacional (não enxerga o financeiro, não cadastra usuário) e a
-   foto do documento com câmera + upload — lidos do próprio index.html. */
+/* Os dois níveis de acesso (administrador e atendente), a tela única de
+   e-mail + senha e a foto do documento — lidos do próprio index.html. */
 function testarPapelEDocumento(){
-  console.log('\nF. Papel operacional e foto do documento do cliente');
+  console.log('\nF. Níveis de acesso, login e foto do documento');
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
   const corpo = f => extrairFuncao(html, f);
 
-  /* --- papel --- */
-  ok(/value="operador"/.test(html), 'o cadastro de usuário oferece o papel Operador');
+  /* --- uma tela de login só: e-mail + senha --- */
+  ok((html.match(/class="loginmarca"/g) || []).length === 1,
+     'existe uma única tela de acesso (não mais loja + PIN)');
+  ok(/id="loEmail"/.test(html) && /id="loSenha"/.test(html), 'o login pede e-mail e senha');
+  ok(!/pinpad|pindots|lgPin|usPin|puPin|telaPrimeiroUsuario|telaLoja/.test(html),
+     'o PIN de 4 dígitos e a tela de escolher usuário saíram do sistema');
+  ok(corpo('telaLogin').indexOf('Nuvem.entrar(') >= 0,
+     'quem entra abre sessão pela API com e-mail e senha');
+  ok(html.indexOf('function resolverSessao(') >= 0 &&
+     corpo('arrancar').indexOf('resolverSessao()') >= 0,
+     'com sessão válida o aparelho entra direto, sem pedir senha de novo');
+  ok(/ITERACOES_PBKDF2 = 120000/.test(html) && /iterations: ITERACOES_PBKDF2/.test(html),
+     'a senha é derivada com PBKDF2-SHA256, 120 mil iterações');
+
+  /* --- papéis: só administrador e atendente --- */
+  ok(!/value="operador"/.test(html) && !/value="gerente"/.test(html),
+     'o cadastro não oferece mais operador nem gerente');
+  ok(/value="administrador"/.test(html) && /value="atendente"/.test(html),
+     'o cadastro oferece os dois níveis: Administrador e Atendente');
   const ctx = vm.createContext({ console });
   vm.runInContext([
     'var SESSAO = null;',
     extrairLinha(html, 'PAPEIS'),
+    corpo('papelDe'),
     corpo('rotuloPapel'),
-    corpo('ehOperador')
+    corpo('ehAdministrador')
   ].join('\n'), ctx);
 
-  ok(ctx.rotuloPapel('operador') === 'Operador', 'rotuloPapel devolve "Operador"',
-     ctx.rotuloPapel('operador'));
-  ok(ctx.rotuloPapel('gerente') === 'Gerente' && ctx.rotuloPapel('atendente') === 'Atendente',
-     'papéis antigos continuam com o mesmo rótulo');
-
-  ctx.SESSAO = { papel:'operador' };
-  ok(ctx.ehOperador() === true, 'ehOperador reconhece o operador');
-  ctx.SESSAO = { papel:'gerente' };
-  ok(ctx.ehOperador() === false, 'gerente não é operador');
+  ok(ctx.rotuloPapel('administrador') === 'Administrador', 'rotuloPapel devolve "Administrador"',
+     ctx.rotuloPapel('administrador'));
+  ok(ctx.rotuloPapel('atendente') === 'Atendente', 'rotuloPapel devolve "Atendente"',
+     ctx.rotuloPapel('atendente'));
+  ok(ctx.papelDe('gerente') === 'administrador' && ctx.papelDe('operador') === 'atendente',
+     'os papéis antigos migram sozinhos para os dois níveis');
+  ctx.SESSAO = { papel:'administrador' };
+  ok(ctx.ehAdministrador() === true, 'ehAdministrador reconhece o administrador');
   ctx.SESSAO = { papel:'atendente' };
-  ok(ctx.ehOperador() === false, 'atendente não é operador');
+  ok(ctx.ehAdministrador() === false, 'atendente não é administrador');
+  ctx.SESSAO = null;
+  ok(!ctx.ehAdministrador(), 'sem sessão não há administrador');
 
-  /* --- o operador não enxerga o financeiro --- */
+  ok(corpo('aplicarMigracoes').indexOf('u.papel = papelDe(u.papel)') >= 0 &&
+     corpo('aplicarMigracoes').indexOf('delete u.pin') >= 0 &&
+     corpo('aplicarMigracoes').indexOf("u.email = String(") >= 0,
+     'a migração converte o papel antigo, apaga o PIN e completa o e-mail');
+
+  /* --- o atendente não vê dinheiro nem usuários --- */
   const irPara = corpo('irPara');
-  ok(irPara.indexOf("'financeiro' && ehOperador()") >= 0,
-     'irPara bloqueia a aba financeiro para o operador');
-  ok(corpo('aplicarPermissoes').indexOf('data-tab="financeiro"') >= 0 &&
-     (corpo('aplicarPermissoes').match(/ehOperador\(\) \? 'none'/g) || []).length === 1,
-     'aplicarPermissoes esconde a aba financeiro só para o operador');
-  ok(corpo('irPara').indexOf("'usuarios' && !ehGerente()") >= 0,
-     'irPara bloqueia a aba de usuários para quem não é gerente');
-  ok(/value="operador"/.test(html) && /<b>Operador<\/b> opera o balcão, mas não enxerga o financeiro/.test(html),
-     'o formulário oferece o nível abaixo do gerente e explica que ele não vê o financeiro');
-  ok(corpo('aplicarPermissoes').indexOf('data-tab="usuarios"') >= 0 &&
-     /abaUsr\.style\.display = ehGerente\(\)/.test(corpo('aplicarPermissoes')),
-     'a aba de usuários fica escondida de quem não é gerente');
+  ok(irPara.indexOf("(tab==='financeiro' || tab==='relatorios' || tab==='usuarios') && !ehAdministrador()") >= 0,
+     'irPara bloqueia financeiro, relatórios e usuários para quem não é administrador');
+  const perm = corpo('aplicarPermissoes');
+  ok(perm.indexOf("soAdmin('financeiro')") >= 0 && perm.indexOf("soAdmin('relatorios')") >= 0 &&
+     perm.indexOf("soAdmin('usuarios')") >= 0,
+     'aplicarPermissoes esconde as três abas do administrador');
+  ok(perm.indexOf("irPara('painel')") >= 0,
+     'quem está numa aba proibida volta para o painel');
   ok(/<button data-tab="usuarios">/.test(html) && /id="page-usuarios"/.test(html),
      'a aba Usuários existe com a página própria');
+  ok(/<button data-tab="relatorios">/.test(html) && /id="page-relatorios"/.test(html),
+     'a aba Relatórios existe com a página própria');
+
   ok((html.match(/id="cardUsuarios"/g) || []).length === 1 &&
      /<section class="page" id="page-usuarios"[\s\S]{0,1200}id="cardUsuarios"/.test(html),
-     'o card de usuários saiu de Configurações e mora na aba dele');
+     'o card de usuários mora na aba dele');
   ok(/<section class="page" id="page-usuarios"[\s\S]{0,1600}id="btnNovoUsuario"/.test(html),
      'a aba de usuários tem o botão de cadastrar');
-  ok(/if\(tab==='usuarios'\) renderUsuarios\(\)/.test(corpo('irPara')),
-     'entrar na aba de usuários redesenha a lista');
-  ok(corpo('renderFinanceiro').indexOf('if(ehOperador()) return;') >= 0,
-     'renderFinanceiro tem trava própria para o operador');
-  ok(corpo('renderPainel').indexOf('!ehOperador()) kpis.splice') >= 0,
-     'KPI de faturamento fica de fora do painel do operador');
-  ok(/#btnNovoUsuario'\)\.onclick[\s\S]{0,160}exigirGerente\('cadastrar usuários'\)/.test(html),
-     'cadastrar usuário continua exigindo gerente');
+  ok(irPara.indexOf("if(tab==='usuarios') renderUsuarios()") >= 0 &&
+     irPara.indexOf("if(tab==='relatorios') renderRelatorios()") >= 0,
+     'entrar numa aba redesenha a página dela');
+  ok(corpo('renderFinanceiro').indexOf('if(!ehAdministrador()) return;') >= 0,
+     'renderFinanceiro tem trava própria para o atendente');
+  ok(corpo('renderRelatorios').indexOf('if(!ehAdministrador()) return;') >= 0,
+     'renderRelatorios tem trava própria para o atendente');
+  ok(corpo('renderPainel').indexOf('!ehAdministrador()) kpis.splice') >= 0,
+     'KPI de faturamento fica de fora do painel do atendente');
+  ok(/#btnNovoUsuario'\)\.onclick[\s\S]{0,200}exigirAdministrador\('cadastrar usuários'\)/.test(html),
+     'cadastrar usuário exige administrador');
+  ok(/function conferirDadosUsuario\(/.test(html) &&
+     corpo('conferirDadosUsuario').indexOf('A senha precisa de pelo menos 6 caracteres') >= 0 &&
+     corpo('conferirDadosUsuario').indexOf('Já existe um usuário com este e-mail') >= 0,
+     'o formulário valida e-mail único e senha de pelo menos 6 caracteres');
+  ok(/id="usEmail"/.test(html) && /id="usSenha"/.test(html) && /id="usPin"/.test(html) === false,
+     'o formulário de usuário tem e-mail e senha, sem PIN');
 
   /* --- foto do documento --- */
   ok(/id="cfgDocFoto"/.test(html) && html.indexOf('DB.config.exigirDocFoto') >= 0,
@@ -321,7 +392,7 @@ function testarFechamentoESync(){
   ok(/visibilitychange/.test(html) && /document\.hidden\) this\.sondar\(\)/.test(html),
      'voltar para a aba confere a nuvem na hora, sem esperar os 5 s');
   const repintar = corpo('repintarTela');
-  ['renderCaixa','renderFrota','renderClientes','renderHistorico','renderFinanceiro','renderUsuarios','renderConfig']
+  ['renderCaixa','renderFrota','renderClientes','renderHistorico','renderFinanceiro','renderRelatorios','renderUsuarios','renderConfig']
     .forEach(fn=> ok(repintar.indexOf(fn) >= 0, 'repintarTela atualiza a aba de ' + fn));
 }
 
@@ -348,8 +419,8 @@ function testarIdentidadeVisual(){
      'index.html usa o logo como favicon');
   ok(/class="logomarca" src="assets\/logo-veeloway\.jpeg"/.test(html),
      'a barra do topo mostra o logo');
-  ok((html.match(/class="loginmarca"/g) || []).length === 2,
-     'as duas telas de acesso (loja e PIN) mostram o logo');
+  ok((html.match(/class="loginmarca"/g) || []).length === 1,
+     'a tela de acesso (e-mail + senha) mostra o logo');
   ok(/<img src="assets\/logo-veeloway\.jpeg"[^>]*><span id="empresa">/.test(assinar),
      'a tela de assinatura do cliente também leva o logo');
   ok(/<title>VeeLo Way/.test(html), 'o título da aba é a marca');
@@ -379,6 +450,99 @@ function testarIdentidadeVisual(){
      'o nome de fábrica só resta para ser renomeado, nunca exibido');
   ok(html.indexOf("DB.empresa.nome === 'Minha Locadora') DB.empresa.nome = 'VeeLo Way'") >= 0,
      'a loja existente é renomeada de "Minha Locadora" para a marca');
+}
+
+/* ------------------------------------------------------------------ I */
+/* A aba Relatórios responde o mês: quantas viagens, quanto faturou,
+   quem mais viajou, qual foi o melhor dia e quais horas são cheias. */
+function testarRelatorios(){
+  console.log('\nI. Relatórios — o mês numa tela só');
+  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  const corpo = f => extrairFuncao(html, f);
+
+  ok(/<button data-tab="relatorios">Relatórios<\/button>/.test(html),
+     'a navegação tem a aba Relatórios');
+  ok(/<section class="page" id="page-relatorios">/.test(html),
+     'a aba tem a página própria');
+  ok(/id="rMes"/.test(html) && /id="kpisRel"/.test(html) && /id="tbRelClientes"/.test(html) &&
+     /id="tbRelDias"/.test(html) && /id="tbRelHoras"/.test(html) && /id="tbRelResumo"/.test(html),
+     'a página tem o seletor de mês, os KPIs e as quatro tabelas');
+  ok(html.indexOf("relatorios:'renderRelatorios'") >= 0 &&
+     /if\(tab==='relatorios'\) renderRelatorios\(\)/.test(html),
+     'a aba é redesenhada ao entrar e quando os dados mudam');
+  ok(/<input[^>]*id="rMes"[^>]*type="month"|type="month"[^>]*id="rMes"/.test(html),
+     'o mês é escolhido num seletor de calendário');
+
+  /* --- o fechamento do mês, com um mês de exemplo --- */
+  const ctx = vm.createContext({ console });
+  vm.runInContext([
+    extrairFuncao(html, 'diaKey'),
+    extrairFuncao(html, 'mesKey'),
+    extrairFuncao(html, 'estornada'),
+    extrairFuncao(html, 'totalLoc'),
+    corpo('relatorioDoMes'),
+    'globalThis.DB = { locacoes: [] };',
+    'globalThis.R = { relatorioDoMes };'
+  ].join('\n'), ctx);
+
+  const t = s => Date.parse(s);
+  ctx.DB = { locacoes: [
+    { status:'ativa', inicio:t('2026-10-01T10:00:00'), clienteNome:'Ana',   valorBase:30 },
+    { status:'ativa', inicio:t('2026-10-01T10:30:00'), clienteNome:'Ana',   valorBase:20 },
+    { status:'ativa', inicio:t('2026-10-02T18:00:00'), clienteNome:'Beto',  valorBase:50 },
+    { status:'ativa', inicio:t('2026-10-05T18:00:00'), clienteNome:'Cleo',  valorBase:10, valorExcedente:5 },
+    { status:'ativa', inicio:t('2026-09-30T20:00:00'), clienteNome:'Zeca',  valorBase:999 },
+    { status:'estornada', inicio:t('2026-10-03T12:00:00'), clienteNome:'Ana', valorBase:700 }
+  ]};
+  const r = ctx.R.relatorioDoMes('2026-10');
+  ok(r.n === 4, 'só as viagens do mês, fora o estorno e a do mês passado', 'vieram ' + r.n);
+  igual(r.fat, 115, 'faturamento do mês soma base + excedente, sem estorno');
+  igual(r.ticket, 115/4, 'ticket médio é o faturamento pelas viagens');
+  ok(r.clientes.length === 3 && r.clientes[0].nome === 'Ana' && r.clientes[0].n === 2,
+     'a Ana aparece em primeiro por ter feito duas viagens');
+  ok(r.dias.length === 3 && r.dias[0].dia === '2026-10-01' && r.dias[0].n === 2,
+     'o melhor dia é o que concentra mais viagens/faturamento');
+  ok(r.diasComMovimento === 3, 'dias com movimento conta os dias com viagem');
+  ok(r.pico === 10 && r.horasPico[0].n === 2,
+     'a hora de pico é a em que mais se saiu (10h com duas saídas)');
+  ok(r.horas[18].n === 2 && r.horas[3].n === 0,
+     'as 24 faixas de hora ficam preenchidas (18h com duas, 3h vazia)');
+  ok(r.melhorDia === '2026-10-01', 'o melhor dia fica registrado no resumo');
+  const vazio = ctx.R.relatorioDoMes('2026-08');
+  ok(vazio.n === 0 && vazio.fat === 0 && vazio.ticket === 0 &&
+     vazio.clientes.length === 0 && vazio.dias.length === 0 && vazio.pico === null,
+     'mês sem viagens devolve zero em tudo, sem quebrar');
+}
+
+/* ------------------------------------------------------------------ J */
+/* A senha é derivada no navegador (WebCrypto) e no servidor (crypto do
+   Node). Se os dois não calcularem exatamente a mesma chave, ninguém
+   entra pelo usuário cadastrado na aba Usuários. */
+async function testarParidadeDaSenha(){
+  console.log('\nJ. Senha — navegador e servidor derivam a mesma chave');
+  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  const auth = require('../lib/auth');
+
+  const ctx = vm.createContext({ console, crypto, TextEncoder });
+  vm.runInContext([
+    extrairLinha(html, 'ITERACOES_PBKDF2'),
+    extrairFuncao(html, 'hexDe'),
+    extrairFuncao(html, 'bytesDeHex'),
+    extrairAssincrona(html, 'hashSenha'),
+    'globalThis.H = { hashSenha };'
+  ].join('\n'), ctx);
+
+  const salt = auth.novoSalt();
+  const senha = 'outraSenha456';
+  const noNavegador = await ctx.H.hashSenha(senha, salt);
+  const noServidor = auth.hashSenha(senha, salt);
+  ok(noNavegador === noServidor,
+     'o navegador e o servidor derivam a mesma chave',
+     noNavegador + ' x ' + noServidor);
+  ok(await ctx.H.hashSenha(senha + 'x', salt) !== noServidor,
+     'uma letra de diferença muda a chave');
+  ok(await ctx.H.hashSenha(senha, auth.novoSalt()) !== noServidor,
+     'outro salt muda a chave');
 }
 
 /* ------------------------------------------------------------------ C */
@@ -478,6 +642,10 @@ async function testarBanco(){
   catch(e){ reprovados++; console.log('  ✗ fechamento/sync: ' + e.message); }
   try{ testarIdentidadeVisual(); }
   catch(e){ reprovados++; console.log('  ✗ identidade visual: ' + e.message); }
+  try{ testarRelatorios(); }
+  catch(e){ reprovados++; console.log('  ✗ relatórios: ' + e.message); }
+  try{ await testarParidadeDaSenha(); }
+  catch(e){ reprovados++; console.log('  ✗ paridade de senha: ' + e.message); }
   await testarBanco();
 
   console.log('\n  ' + aprovados + ' aprovados, ' + reprovados + ' reprovados\n');
