@@ -121,6 +121,7 @@ tbody tr:hover td{background:var(--surface2)}
 .pill.loja{background:var(--ok-bg);color:var(--ok)}
 .pill.rua{background:var(--brand-bg);color:var(--brand-fg)}
 .pill.manut{background:var(--warn-bg);color:var(--warn)}
+.pill.pendente{background:#fff;color:var(--warn);border:1px solid var(--warn)}
 .pill.est{background:rgba(123,92,255,.16);color:#a78bfa}
 .empty{text-align:center;padding:44px;color:var(--muted2)}
 
@@ -335,6 +336,7 @@ tr.estornada td:last-child{opacity:1;text-decoration:none}
     <button data-tab="painel" class="active">Painel</button>
     <button data-tab="caixa">Caixa do dia</button>
     <button data-tab="frota">Frota</button>
+    <button data-tab="vistoria">Vistoria</button>
     <button data-tab="clientes">Clientes</button>
     <button data-tab="historico">Histórico</button>
 <button data-tab="financeiro">Financeiro</button>
@@ -355,6 +357,7 @@ tr.estornada td:last-child{opacity:1;text-decoration:none}
     <div id="avisoCaixa"></div>
     <div id="avisoInventario"></div>
     <div id="alertaAtraso"></div>
+    <div id="filaVistoria"></div>
     <div class="kpis" id="kpis"></div>
     <div class="pagehead"><h3 style="font-size:15px">Veículos na rua</h3>
       <div class="sp"></div>
@@ -408,6 +411,47 @@ tr.estornada td:last-child{opacity:1;text-decoration:none}
       </select>
     </div>
     <div class="card"><div class="tablewrap"><table id="tbFrota"></table></div></div>
+  </section>
+
+  <!-- ============ VISTORIA ============ -->
+  <section class="page" id="page-vistoria">
+    <div class="pagehead">
+      <h2>Vistoria</h2>
+      <div class="sp"></div>
+      <button class="btn sec" id="btnCopiarLinkVist">Copiar link</button>
+      <button class="btn sec" id="btnWhatsLinkVist">WhatsApp</button>
+      <button class="btn" id="btnNovaLinkVist">Gerar novo link</button>
+    </div>
+    <div class="card pad" style="margin-bottom:14px;display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
+      <div class="assqr" style="margin:0"><div id="vistQr"></div></div>
+      <div style="flex:1;min-width:260px">
+        <b style="font-size:13.5px">Link público da vistoria</b>
+        <p class="muted" style="font-size:12.5px;margin:5px 0 8px">É o mesmo link sempre. Passe para quem vai conferir a saída
+        (e para quem recebe a devolução): o celular abre a fila, registra fotos, lacre e horário e libera o veículo —
+        ou marca a chegada quando o cliente devolver.</p>
+        <div class="linkbox" id="vistLink"></div>
+        <p class="muted" style="font-size:12px;margin:8px 0 0">Quem tem o link <b>não entra no sistema</b>: só vê e registra a vistoria.</p>
+      </div>
+    </div>
+    <div class="card" style="margin-bottom:14px">
+      <div class="cabec"><span><b>Pago, aguardando liberação</b> — o relógio começa quando a liberação for confirmada</span>
+        <span class="muted" id="vistQtdPend" style="font-size:12.5px"></span></div>
+      <div class="tablewrap"><table id="tbVistPend"></table></div>
+    </div>
+    <div class="card" style="margin-bottom:14px">
+      <div class="cabec"><span><b>Na rua</b> — aguardando a chegada do cliente</span>
+        <span class="muted" id="vistQtdRua" style="font-size:12.5px"></span></div>
+      <div class="tablewrap"><table id="tbVistRua"></table></div>
+    </div>
+    <div class="card" style="margin-bottom:14px">
+      <div class="cabec"><span><b>Chegada registrada</b> — fechar a cobrança no balcão</span>
+        <span class="muted" id="vistQtdFecha" style="font-size:12.5px"></span></div>
+      <div class="tablewrap"><table id="tbVistFecha"></table></div>
+    </div>
+    <div class="card">
+      <div class="cabec"><span><b>Vistoriadas hoje</b></span></div>
+      <div class="tablewrap"><table id="tbVistHoje"></table></div>
+    </div>
   </section>
 
   <!-- ============ CLIENTES ============ -->
@@ -556,6 +600,22 @@ tr.estornada td:last-child{opacity:1;text-decoration:none}
           </label>
           <p class="muted" style="font-size:12px;margin:6px 0 0">Vira o padrão da locação. Na tela do cliente a atendente ainda pode ligar ou desligar essa exigência para aquela locação específica.</p>
           <button class="btn" id="btnSalvarEmpresa">Salvar</button>
+        </div>
+        <div class="card pad" style="margin-bottom:14px">
+          <h3 style="font-size:15px;margin-bottom:6px">Link da vistoria</h3>
+          <p class="muted" style="font-size:12px;margin:0 0 10px">Abre no celular de quem fotografa, confere o lacre e libera o veículo —
+          e também registra a chegada do cliente. Quem tem o link não entra no sistema.</p>
+          <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
+            <div class="assqr" style="margin:0"><div id="cfgVistQr"></div></div>
+            <div style="flex:1;min-width:220px">
+              <div class="linkbox" id="cfgVistLink"></div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+                <button class="btn sm sec" id="btnCopiarVist">Copiar link</button>
+                <button class="btn sm sec" id="btnWhatsVist">WhatsApp</button>
+                <button class="btn sm sec" id="btnNovoVist">Gerar novo link</button>
+              </div>
+            </div>
+          </div>
         </div>
         <div class="card pad">
           <h3 style="font-size:15px;margin-bottom:6px">Tabela de preços</h3>
@@ -852,7 +912,7 @@ function repintarTela(){
   if(typeof renderPainel==='function') renderPainel();
   const ativa = document.querySelector('.page.active');
   const aba = ativa ? String(ativa.id||'').replace('page-','') : '';
-  const mapa = { caixa:'renderCaixa', frota:'renderFrota', clientes:'renderClientes',
+  const mapa = { caixa:'renderCaixa', frota:'renderFrota', vistoria:'renderVistoria', clientes:'renderClientes',
                  historico:'renderHistorico', financeiro:'renderFinanceiro',
                  relatorios:'renderRelatorios', usuarios:'renderUsuarios', config:'renderConfig' };
   const nome = mapa[aba];
@@ -1060,6 +1120,9 @@ function aplicarMigracoes(){
   if(!DB.seq.foto) DB.seq.foto = 1;
   if(DB.config.exigirFoto === undefined) DB.config.exigirFoto = true;
   if(DB.config.exigirDocFoto === undefined) DB.config.exigirDocFoto = false;
+  /* token estável do link público de vistoria: o mesmo link serve para a
+     saída e para a chegada, e só muda se alguém pedir um novo. */
+  if(!DB.config.vistoriaToken) DB.config.vistoriaToken = tokenPublico(24);
   if(!DB.config.urlBase) DB.config.urlBase = '';   /* vazio = usa o próprio domínio */
   if(DB.contrato && (DB.contrato.indexOf('{{lista_veiculos}}')<0 || DB.contrato.indexOf('{{vistoria}}')<0))
   DB.contrato = CONTRATO_PADRAO;
@@ -1216,8 +1279,36 @@ function getTarifa(tipoId, tarifaId){ const t=getTipo(tipoId); return t.tarifas.
 function getVeiculo(id){ return DB.veiculos.find(v=>v.id===id); }
 function getCliente(id){ return DB.clientes.find(c=>c.id===id); }
 function locAtivas(){ return DB.locacoes.filter(l=>l.status==='ativa'); }
+function locPendentes(){ return DB.locacoes.filter(l=>l.status==='pendente'); }
+function locDevolvidas(){ return DB.locacoes.filter(l=>l.status==='devolvida'); }
 function estornada(l){ return l.status==='estornada'; }
 function locDoVeiculo(vid){ return DB.locacoes.find(l=>l.status==='ativa' && l.veiculoId===vid); }
+function locPendenteDoVeiculo(vid){ return DB.locacoes.find(l=>l.status==='pendente' && l.veiculoId===vid); }
+/* veículo travado: já pago, esperando a vistoria de liberação */
+function veiculoTravado(vid){ return !!locPendenteDoVeiculo(vid); }
+
+/* Link público da vistoria — um só, estável, escrito em Configurações e
+   mostrado também no fim do pagamento. */
+function linkVistoria(){
+  const base = (DB.config && DB.config.urlBase || '').trim();
+  const origem = base || location.origin;
+  return origem.replace(/\/+$/,'') + '/vistoria/' + (DB.config.vistoriaToken||'');
+}
+/* O dinheiro entra quando o pagamento acontece, não quando o veículo sai. */
+function tsCobranca(l){ return l.pagoEm || l.inicio; }
+
+/* Token público legível (sem 0/O/1/I), para o link da vistoria. */
+function tokenPublico(n){
+  const alf = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const buf = new Uint8Array(n||24);
+  const cripto = (typeof crypto!=='undefined' && crypto.getRandomValues) ? crypto
+               : (typeof msCrypto!=='undefined' ? msCrypto : null);
+  if(cripto) cripto.getRandomValues(buf);
+  else for(let i=0;i<buf.length;i++) buf[i] = Math.floor(Math.random()*256);
+  let s = '';
+  for(let i=0;i<buf.length;i++) s += alf[buf[i] % alf.length];
+  return s;
+}
 
 /* Excedente cobrado por fração de minuto, após a tolerância configurada.
    Cada minuto iniciado além da tolerância conta como minuto cheio. */
@@ -1240,6 +1331,7 @@ function irPara(tab){
   if(tab==='painel') renderPainel();
   if(tab==='caixa') renderCaixa();
   if(tab==='frota') renderFrota();
+  if(tab==='vistoria') renderVistoria();
   if(tab==='clientes') renderClientes();
   if(tab==='historico') renderHistorico();
   if(tab==='financeiro') renderFinanceiro();
@@ -1297,14 +1389,36 @@ function renderPainel(){
   const agora = Date.now();
   const emAtraso = ativas.filter(l => agora > l.fimPrevisto).length;
   const hoje = diaKey(agora);
-  const fatHoje = DB.locacoes.filter(l=>diaKey(l.inicio)===hoje).reduce((s,l)=>s+totalLoc(l),0);
+  /* dinheiro: conta no dia em que foi pago, mesmo que o veículo ainda
+     esteja esperando a vistoria de liberação */
+  const fatHoje = DB.locacoes.filter(l=>diaKey(tsCobranca(l))===hoje).reduce((s,l)=>s+totalLoc(l),0);
+
+  /* fila da vistoria: pago, esperando alguém confirmar a saída no celular */
+  const fila = $('#filaVistoria');
+  if(fila){
+    const pend = locPendentes();
+    fila.innerHTML = pend.length
+      ? '<div class="aviso" style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-bottom:14px">'+
+          '<div style="flex:1;min-width:250px">'+
+            '<b>'+pend.length+' veículo(s) pago(s), aguardando a vistoria de liberação</b>'+
+            '<div class="muted" style="font-size:12.5px;margin-top:3px">'+
+              pend.map(l=>esc(l.veiculoCodigo)).join(', ')+
+              ' — o relógio começa quando o celular confirmar a saída.</div>'+
+          '</div>'+
+          '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
+            '<a class="btn sm" href="'+esc(linkVistoria())+'" target="_blank" rel="noopener">Abrir o link da vistoria</a>'+
+            '<button class="btn sec sm" onclick="irPara(\'vistoria\')">Ver a fila</button>'+
+          '</div>'+
+        '</div>'
+      : '';
+  }
 
   const kpis = [
     kpi('Na rua', ativas.length, 'b'),
     kpi('Na loja', DB.veiculos.filter(v=>v.status==='loja').length, 'g'),
     kpi('Manutenção', DB.veiculos.filter(v=>v.status==='manutencao').length, 'w'),
     kpi('Tempo estourado', emAtraso, emAtraso?'r':''),
-    kpi('Locações hoje', DB.locacoes.filter(l=>diaKey(l.inicio)===hoje).length, '')
+    kpi('Locações hoje', DB.locacoes.filter(l=>diaKey(tsCobranca(l))===hoje).length, '')
   ];
   /* faturamento é dinheiro: quem opera não enxerga */
   if(!ehAdministrador()) kpis.splice(4, 0, kpi('Faturamento hoje', brl(fatHoje), 'g'));
@@ -1421,7 +1535,8 @@ function painelFotos(alvoId, lista, legendas){
     legendas.map((lg,i)=>{
       const f = lista[i];
       return '<div class="fotoslot'+(f?' cheio':'')+'" data-i="'+i+'">'+
-        (f ? '<img src="'+f.thumb+'" alt="'+esc(lg)+'">'+
+        (f ? (f.thumb ? '<img src="'+f.thumb+'" alt="'+esc(lg)+'">'
+                      : '<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:11px;color:var(--muted2)">carregando…</div>')+
              '<button class="rm" data-rm="'+i+'" title="refazer">×</button>'+
              '<div class="tag">'+esc(lg)+'</div>'
            : '<div style="font-size:20px">＋</div><div>'+esc(lg)+'</div>')+
@@ -1556,7 +1671,7 @@ function abrirWizard(veiculoId){
   if(!caixaAberto()) return exigirCaixa('liberar um veículo', ()=> abrirWizard(veiculoId));
   pararEsperaAssinatura();
   W = { passo:1, veiculos: veiculoId?[veiculoId]:[], clienteId:null, novoCliente:null,
-        duracao:null, pagamento:PAGAMENTOS[0], assinatura:null, obs:'', fotos:{}, lacres:{},
+        duracao:null, pagamento:PAGAMENTOS[0], assinatura:null, obs:'', _pad:null,
         docFoto:null, _docFotoCliente:null,
         exigirDocFoto: DB.config.exigirDocFoto===true };
   const ov = abrirModal(
@@ -1573,80 +1688,29 @@ function abrirWizard(veiculoId){
 
 function pintaWizard(){
   const ov = W.ov;
-  ov.querySelector('#wsteps').innerHTML = [1,2,3,4,5].map(n=>'<div class="'+(n<=W.passo?'on':'')+'"></div>').join('');
+  ov.querySelector('#wsteps').innerHTML = [1,2,3].map(n=>'<div class="'+(n<=W.passo?'on':'')+'"></div>').join('');
   const body = ov.querySelector('#wbody');
   const btn = ov.querySelector('#wavancar');
   const back = ov.querySelector('#wvoltar');
   back.textContent = W.passo===1 ? 'Cancelar' : 'Voltar';
-  btn.textContent = W.passo===5 ? 'Confirmar locação' : 'Avançar';
+  /* o terceiro passo é o fim do balcão: paga, assina e manda para vistoria */
+  btn.textContent = W.passo===3 ? 'Pagar e enviar para vistoria' : 'Avançar';
 
   if(W.passo===1){ body.innerHTML = passoVeiculo(); ligaPassoVeiculo(); }
   if(W.passo===2){ body.innerHTML = passoCliente(); ligaPassoCliente(); }
-  if(W.passo===3){ body.innerHTML = passoTarifa(); ligaPassoTarifa(); }
-  if(W.passo===4){ body.innerHTML = passoVistoria(); ligaPassoVistoria(); }
-  if(W.passo===5){ body.innerHTML = passoContrato(); ligaPassoContrato(); }
+  if(W.passo===3){
+    body.innerHTML = passoTarifa() +
+      '<hr style="border:none;border-top:1px dashed var(--line);margin:18px 0 16px">' +
+      passoContrato();
+    ligaPassoTarifa();
+    ligaPassoContrato();
+  }
 }
 
-/* ---- passo 4: vistoria fotográfica ---- */
+/* ---- vistoria de liberação (registrada pelo link público) ----
+   O balcão não fotografa mais a saída: quem vai liberar o veículo faz a
+   vistoria no celular e o relógio começa ali. */
 const LEG_VIST = ['Frente','Lateral','Detalhe / avaria'];
-function passoVistoria(){
-  W.veiculos.forEach(id=>{ if(!W.fotos[id]) W.fotos[id] = [null,null,null]; });
-  const obrig = DB.config.exigirFoto!==false;
-  return '<h4 style="margin-bottom:4px">4. Vistoria do veículo</h4>'+
-    '<p class="muted" style="font-size:12.5px;margin:0 0 6px">Fotografe o estado de cada veículo antes de entregar. '+
-    (obrig?'Pelo menos <b>uma foto por veículo</b> é obrigatória.':'As fotos são opcionais nesta configuração.')+'</p>'+
-    '<div class="fnota">Sem foto da saída não há como provar o estado do veículo se o cliente devolver danificado. É o seu único documento numa discussão de cobrança.</div>'+
-    W.veiculos.map(id=>{
-      const v = getVeiculo(id);
-      return '<div style="border:1px solid var(--line);border-radius:11px;padding:13px;margin-bottom:11px">'+
-        '<div style="font-weight:700;font-size:14px">'+esc(v.codigo)+
-        ' <span class="muted" style="font-weight:400;font-size:12.5px">· '+esc(getTipo(v.tipoId).nome)+'</span>'+
-        '<span id="vst-'+id+'" style="float:right;font-size:12px"></span></div>'+
-        (DB.config.exigirLacre!==false ?
-          '<div style="display:flex;gap:10px;align-items:end;margin-top:11px;flex-wrap:wrap">'+
-            '<label class="f" style="margin:0;width:190px"><span>Nº do lacre rompido</span>'+
-            '<input type="number" data-lac="'+id+'" value="'+esc(W.lacres[id]||'')+'" placeholder="leia no lacre"></label>'+
-            '<div data-lacres="'+id+'" style="font-size:12.5px;align-self:center;padding-bottom:10px"></div>'+
-          '</div>' : '')+
-        painelFotos('fot-'+id, W.fotos[id], LEG_VIST)+
-      '</div>';
-    }).join('')+
-    '<label class="f"><span>Observações da vistoria</span><input type="text" id="wObsVist" value="'+esc(W.obsVist||'')+'" placeholder="ex: risco no paralama dianteiro, bateria 100%"></label>';
-}
-function ligaPassoVistoria(){
-  const status = ()=>{
-    W.veiculos.forEach(id=>{
-      const n = W.fotos[id].filter(Boolean).length;
-      const el = $('#vst-'+id);
-      if(el) el.innerHTML = n ? '<span style="color:var(--ok)">✓ '+n+' foto(s)</span>'
-                              : '<span style="color:var(--danger)">sem foto</span>';
-    });
-  };
-  const repinta = ()=>{
-    W.obsVist = ($('#wObsVist')||{}).value || W.obsVist;
-    W.veiculos.forEach(id=>{
-      const box = $('#fot-'+id);
-      if(box) box.outerHTML = painelFotos('fot-'+id, W.fotos[id], LEG_VIST);
-    });
-    W.veiculos.forEach(id=> ligarFotos('fot-'+id, W.fotos[id], LEG_VIST, repinta));
-    status();
-  };
-  W.veiculos.forEach(id=> ligarFotos('fot-'+id, W.fotos[id], LEG_VIST, repinta));
-  $$('[data-lac]').forEach(inp=>{
-    const id = +inp.dataset.lac;
-    const conferir = ()=>{
-      W.lacres[id] = (inp.value||'').trim();
-      const cel = $('[data-lacres="'+id+'"]');
-      const esperado = numeroLacreDoVeiculo(id);
-      if(!W.lacres[id]){ cel.innerHTML=''; return; }
-      if(!esperado) cel.innerHTML = '<span class="pill manut">veículo sem lacre no sistema</span>';
-      else if(String(esperado) === W.lacres[id]) cel.innerHTML = '<span class="pill loja">confere</span>';
-      else cel.innerHTML = '<span class="pill est">divergente — esperado '+esc(esperado)+'</span>';
-    };
-    inp.oninput = conferir; conferir();
-  });
-  status();
-}
 
 /* ---- passo 1: veículos (seleção múltipla) ---- */
 function resumoSelecao(){
@@ -1670,7 +1734,8 @@ function ligaPassoVeiculo(){
   const pinta = ()=>{
     const q = ($('#wBusca').value||'').trim().toLowerCase();
     const tf = $('#wTipoFiltro').value;
-    let lista = DB.veiculos.filter(v=>v.status==='loja');
+    /* pago aguardando vistoria fica de fora: já está comprometido */
+    let lista = DB.veiculos.filter(v=>v.status==='loja' && !veiculoTravado(v.id));
     if(tf) lista = lista.filter(v=>v.tipoId===tf);
     if(q) lista = lista.filter(v=> (v.codigo+' '+(v.placa||'')).toLowerCase().includes(q));
     lista = lista.slice(0,300);
@@ -1700,7 +1765,7 @@ function ligaPassoVeiculo(){
   $('#wBusca').onkeydown = e=>{
     if(e.key==='Enter'){
       const q=($('#wBusca').value||'').trim().toLowerCase();
-      const achou = DB.veiculos.filter(v=>v.status==='loja' && v.codigo.toLowerCase()===q);
+      const achou = DB.veiculos.filter(v=>v.status==='loja' && !veiculoTravado(v.id) && v.codigo.toLowerCase()===q);
       if(achou.length===1){ alternarVeiculo(achou[0].id); $('#wBusca').value=''; pinta(); }
     }
   };
@@ -1870,9 +1935,11 @@ function totalDaDuracao(min){ return itensDaLocacao(min).reduce((s,i)=>s+i.valor
 
 function passoTarifa(){
   const durs = duracoesDisponiveis();
+  if(!W.duracao && durs.length) W.duracao = durs[0];   /* entra já marcado */
   const tps = tiposSelecionados();
-  return '<h4 style="margin-bottom:4px">3. Por quanto tempo?</h4>'+
-    '<p class="muted" style="font-size:12.5px;margin:0 0 12px">O mesmo período vale para os '+W.veiculos.length+' veículo(s). O preço soma conforme o tipo de cada um.</p>'+
+  return '<h4 style="margin-bottom:4px">3. Pagamento</h4>'+
+    '<p class="muted" style="font-size:12.5px;margin:0 0 12px">O cliente paga e assina aqui. O relógio começa quando a vistoria de liberação for confirmada no celular — o horário abaixo é a estimativa que vai para o contrato.</p>'+
+    '<div class="muted" style="font-size:12.5px;margin:0 0 6px">Por quanto tempo?</div>'+
     '<div class="tarifas" id="wTarifas">'+ durs.map(m=>{
       const lbl = tarifaPorMin(tps[0], m).label;
       return '<div class="tarifa'+(W.duracao===m?' sel':'')+'" data-min="'+m+'">'+
@@ -1894,7 +1961,7 @@ function ligaPassoTarifa(){
     itens.forEach(i=>{ porTipo[i.tipoNome] = porTipo[i.tipoNome]||{n:0,v:0};
                        porTipo[i.tipoNome].n++; porTipo[i.tipoNome].v+=i.valor; });
     $('#wResumo').innerHTML='<div class="resumo">'+
-      '<div class="l"><span>Início</span><b>'+hhmm(Date.now())+'</b></div>'+
+      '<div class="l"><span>Saída prevista</span><b>'+hhmm(Date.now())+'</b></div>'+
       '<div class="l"><span>Devolução prevista</span><b>'+hhmm(fim)+'</b></div>'+
       Object.entries(porTipo).map(([n,o])=>
         '<div class="l"><span>'+o.n+'× '+esc(n)+'</span><b>'+brl(o.v)+'</b></div>').join('')+
@@ -1967,12 +2034,12 @@ function passoContrato(){
   W._texto = montarContrato(d) + '\n\n' + tabelaPecasTexto(d.tps.map(t=>t.id));
   W._token = W._token || (Math.random().toString(36).slice(2,8) + Date.now().toString(36).slice(-4)).toUpperCase();
   W._link = urlAssinatura().replace(/\/+$/,'') + '/' + W._token;
-  return '<h4 style="margin-bottom:10px">5. Contrato e assinatura</h4>'+
+  return '<h4 style="margin-bottom:10px">Contrato e assinatura</h4>'+
     '<div class="resumo">'+
       '<div class="l"><span>Cliente</span><b>'+esc(d.cli.nome)+'</b></div>'+
       '<div class="l"><span>Levando</span><b>'+resumoSelecao()+'</b></div>'+
       '<div class="l"><span>Veículos</span><b>'+d.itens.map(i=>esc(i.codigo)).join(', ')+'</b></div>'+
-      '<div class="l"><span>Período</span><b>'+esc(d.label)+' — até '+hhmm(d.fim)+'</b></div>'+
+      '<div class="l"><span>Período (estimativa)</span><b>'+esc(d.label)+' — até '+hhmm(d.fim)+'</b></div>'+
       '<div class="l tot"><span>Pago via '+esc(W.pagamento)+'</span><span>'+brl(d.total)+'</span></div>'+
     '</div>'+
     '<div class="segmented" id="wCanal">'+
@@ -2221,21 +2288,6 @@ async function avancarWizard(){
   if(W.passo===3){
     if(!W.duracao) return toast('Escolha o período contratado.');
     W.pagamento = $('#wPgto').value;
-    W.passo=4; return pintaWizard();
-  }
-  if(W.passo===4){
-    W.obsVist = ($('#wObsVist')||{}).value.trim() || '';
-    if(DB.config.exigirFoto!==false){
-      const semFoto = W.veiculos.filter(id=> !(W.fotos[id]||[]).some(Boolean));
-      if(semFoto.length) return toast('Falta foto de: '+semFoto.map(id=>getVeiculo(id).codigo).join(', '));
-    }
-    if(DB.config.exigirLacre!==false){
-      const semLacre = W.veiculos.filter(id=> !(W.lacres[id]||'').trim());
-      if(semLacre.length) return toast('Informe o lacre de: '+semLacre.map(id=>getVeiculo(id).codigo).join(', '));
-    }
-    W.passo=5; return pintaWizard();
-  }
-  if(W.passo===5){
     if(W._pad && !W._pad.vazio()) W.assinatura = W._pad.dados();
     if(!W.assinatura) return toast('O cliente precisa assinar o contrato.');
     concluirLocacao();
@@ -2249,19 +2301,21 @@ function concluirLocacao(){
     DB.clientes.push(c); W.clienteId = c.id; W.novoCliente = null;
   }
   const d = dadosContrato();
+  const pagoAgora = Date.now();
   const grupo = {
     id: uid('grupo'),
     clienteId: W.clienteId, clienteNome: d.cli.nome, clienteCpf: d.cli.cpf,
+    /* estimativa: a liberação na vistoria grava a hora real de saída */
     inicio: d.ini, fimPrevisto: d.fim, duracao: W.duracao, tarifaLabel: d.label,
-    valorBase: d.total, pagamento: W.pagamento,
+    valorBase: d.total, pagamento: W.pagamento, pagoEm: pagoAgora,
     assinatura: W.assinatura, contrato: W._texto,
     assinaturaCanal: W.canal||'balcao', assinadoEm: W.assinadoEm||Date.now(),
-    assinaturaToken: W._token||'', obsSaida: W.obs||'', obsVistoria: W.obsVist||'',
+    assinaturaToken: W._token||'', obsSaida: W.obs||'', obsVistoria: '',
     docFoto: W.docFoto ? { id:W.docFoto.id, caminho:W.docFoto.caminho,
                            legenda:W.docFoto.legenda, ts:W.docFoto.ts } : null,
     exigiuDocFoto: W.exigirDocFoto===true,
     atendenteId: SESSAO?SESSAO.id:null, atendente: usuarioAtual(),
-    locacaoIds: [], status:'ativo'
+    locacaoIds: [], status:'aguardando_vistoria'
   };
   d.itens.forEach(i=>{
     const loc = {
@@ -2270,61 +2324,87 @@ function concluirLocacao(){
       clienteId: W.clienteId, clienteNome: d.cli.nome, clienteCpf: d.cli.cpf,
       tipoId: i.tipoId, tipoNome: i.tipoNome,
       tarifaId: i.tarifaId, tarifaLabel: i.tarifaLabel, minutos: i.minutos,
-      inicio: d.ini, fimPrevisto: d.fim, fimReal: null,
+      duracaoMin: W.duracao,
+      /* sai da loja quando a vistoria de liberação for confirmada */
+      inicio: null, fimPrevisto: null, fimReal: null,
+      pagoEm: pagoAgora, liberadaEm: null, vistoriadaEm: null, vistoriadoPor: null,
       valorBase: i.valor, valorExcedente: 0, minutosExcedente: 0,
       pagamento: W.pagamento, pagamentoExcedente: null,
-      obsSaida: W.obs||'', obsEntrada: '', obsVistoria: W.obsVist||'',
+      obsSaida: W.obs||'', obsEntrada: '', obsVistoria: '',
       atendenteSaida: usuarioAtual(), atendenteEntrada: '',
-      fotosSaida: (W.fotos[i.veiculoId]||[]).filter(Boolean).map(f=>({id:f.id, caminho:f.caminho, legenda:f.legenda, ts:f.ts})),
-      fotosEntrada: [],
-      danos: [], valorDanos: 0, status: 'ativa'
+      fotosSaida: [], fotosEntrada: [],
+      lacreEsperado: DB.config.exigirLacre!==false ? (numeroLacreDoVeiculo(i.veiculoId)||null) : null,
+      lacreSaida: null, lacreEntrada: null,
+      danos: [], valorDanos: 0, status: 'pendente'
     };
-    if(DB.config.exigirLacre!==false){
-      const informado = (W.lacres[i.veiculoId]||'').trim();
-      const esperado  = numeroLacreDoVeiculo(i.veiculoId);
-      loc.lacreSaida = informado;
-      loc.lacreEsperado = esperado ? String(esperado) : null;
-      if(esperado && String(esperado) !== informado){
-        registrarDivergencia('lacre_trocado',
-          i.codigo+' saiu com lacre '+informado+', mas o sistema tinha '+esperado,
-          {veiculoId:i.veiculoId, esperado:String(esperado), informado, locacaoId:loc.id});
-      } else if(!esperado){
-        registrarDivergencia('veiculo_sem_lacre',
-          i.codigo+' saiu sem lacre registrado no sistema (informado '+informado+')',
-          {veiculoId:i.veiculoId, informado, locacaoId:loc.id});
-      }
-      if(esperado) romperLacre(esperado, loc.id, i.veiculoId);
-      if(informado && (!esperado || String(esperado)!==informado)) romperLacre(informado, loc.id, i.veiculoId);
-    }
     DB.locacoes.push(loc);
     grupo.locacaoIds.push(loc.id);
-    getVeiculo(i.veiculoId).status = 'rua';
+    /* continua com status 'loja' por fora, mas travado para nova locação:
+       romper lacre, foto e divergência acontecem na hora da liberação */
   });
   DB.grupos.push(grupo);
   log('locacao', d.itens.map(i=>i.codigo).join(', ')+' — '+d.cli.nome+' — '+brl(d.total), grupo.id);
   persist();
   fecharModal(W.ov);
   renderPainel();
-  toast(d.itens.length>1 ? d.itens.length+' veículos liberados' : 'Locação registrada — '+d.itens[0].codigo);
-  perguntarImprimir(grupo);
+  if(typeof renderVistoria==='function') renderVistoria();
+  toast(d.itens.length>1 ? d.itens.length+' veículos enviados para a vistoria' : 'Enviado para a vistoria — '+d.itens[0].codigo);
+  mostrarLinkVistoria(grupo);
+}
+
+/* O balcão terminou aqui: mostra o link (e o QR) que a pessoa do celular
+   vai usar para fotografar, conferir o lacre e liberar o veículo. */
+function mostrarLinkVistoria(grupo){
+  const cods = locsDoGrupo(grupo.id).map(l=>l.veiculoCodigo).join(', ');
+  const link = linkVistoria();
+  const ov = abrirModal(
+    '<header><h3>Pago — enviado para a vistoria</h3><button class="x">&times;</button></header>'+
+    '<div class="body">'+
+      '<div class="resumo">'+
+        '<div class="l"><span>Cliente</span><b>'+esc(grupo.clienteNome)+'</b></div>'+
+        '<div class="l"><span>Veículos</span><b>'+esc(cods)+'</b></div>'+
+        '<div class="l"><span>Pacote ('+esc(grupo.tarifaLabel)+')</span><b>'+brl(grupo.valorBase)+'</b></div>'+
+        '<div class="l tot"><span>Pago via '+esc(grupo.pagamento)+'</span><span>'+brl(grupo.valorBase)+'</span></div>'+
+      '</div>'+
+      '<div class="fnota">Falta só a vistoria de saída. Ela é feita no celular por este link — fotos, lacre e horário — e é a confirmação que <b>inicia o relógio</b> da locação.</div>'+
+      '<div class="aviso"><div class="assqr"><div id="vlQr"></div></div>'+
+        '<div style="flex:1;min-width:210px">'+
+          '<b style="font-size:12.5px">Link público da vistoria</b>'+
+          '<p class="muted" style="font-size:12px;margin:4px 0 8px">É o mesmo link todo dia. Passe para quem vai conferir a saída — e ele também serve para registrar a chegada quando o cliente devolver.</p>'+
+          '<div class="linkbox" id="vlLink">'+esc(link)+'</div>'+
+          '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">'+
+            '<button class="btn sm" id="vlWhats">Enviar no WhatsApp</button>'+
+            '<button class="btn sec sm" id="vlCopiar">Copiar link</button>'+
+            '<button class="btn sec sm" id="vlAbrir">Abrir a fila</button>'+
+          '</div>'+
+        '</div>'+
+      '</div>'+
+      '<p class="muted" style="font-size:13px;margin:12px 0 0">Quer imprimir ou salvar o contrato assinado em PDF? Na janela de impressão escolha "Salvar como PDF".</p>'+
+    '</div>'+
+    '<footer><button class="btn sec" id="vlImprimir">Imprimir contrato</button><button class="btn" id="vlOk">Fechar</button></footer>');
+  try{
+    if(window.QRCode) new QRCode(ov.querySelector('#vlQr'), { text:link, width:132, height:132, correctLevel:QRCode.CorrectLevel.M });
+    else ov.querySelector('#vlQr').innerHTML = '<div class="qrfallback">QR indisponível<br>sem internet</div>';
+  }catch(e){ ov.querySelector('#vlQr').innerHTML = '<div class="qrfallback">QR indisponível</div>'; }
+  ov.querySelector('#vlOk').onclick = ()=> fecharModal(ov);
+  ov.querySelector('#vlImprimir').onclick = ()=>{ fecharModal(ov); imprimirContrato(grupo.id); };
+  ov.querySelector('#vlAbrir').onclick = ()=>{ fecharModal(ov); irPara('vistoria'); };
+  ov.querySelector('#vlWhats').onclick = ()=> window.open(
+    'https://wa.me/?text=' + encodeURIComponent('Vistoria de liberação — '+cods+'\n' + link), '_blank');
+  ov.querySelector('#vlCopiar').onclick = async ()=>{
+    try{ await navigator.clipboard.writeText(link); toast('Link copiado.'); }
+    catch(e){
+      const el = ov.querySelector('#vlLink');
+      if(el){ const r = document.createRange(); r.selectNodeContents(el);
+              const s = getSelection(); s.removeAllRanges(); s.addRange(r); }
+      toast('Selecione e copie o link.');
+    }
+  };
 }
 
 function getGrupo(id){ return DB.grupos.find(g=>g.id===id); }
 function locsDoGrupo(gid){ return DB.locacoes.filter(l=>l.grupoId===gid); }
 function ativasDoGrupo(gid){ return locsDoGrupo(gid).filter(l=>l.status==='ativa'); }
-
-function perguntarImprimir(grupo){
-  const n = grupo.locacaoIds.length;
-  const cods = locsDoGrupo(grupo.id).map(l=>l.veiculoCodigo).join(', ');
-  const ov = abrirModal(
-    '<header><h3>Locação criada</h3><button class="x">&times;</button></header>'+
-    '<div class="body"><p style="margin-top:0">'+(n>1?'<b>'+n+' veículos</b> liberados':'Veículo <b>'+esc(cods)+'</b> liberado')+
-    ' para <b>'+esc(grupo.clienteNome)+'</b>.<br><span class="muted">'+esc(cods)+'</span><br>Devolução prevista às <b>'+hhmm(grupo.fimPrevisto)+'</b>.</p>'+
-    '<p class="muted" style="font-size:13px">Quer imprimir ou salvar o contrato assinado em PDF? Na janela de impressão escolha "Salvar como PDF".</p></div>'+
-    '<footer><button class="btn sec" id="okFechar">Fechar</button><button class="btn" id="okImprimir">Imprimir contrato</button></footer>');
-  ov.querySelector('#okFechar').onclick = ()=> fecharModal(ov);
-  ov.querySelector('#okImprimir').onclick = ()=>{ fecharModal(ov); imprimirContrato(grupo.id); };
-}
 
 window.imprimirContrato = function(grupoId){
   const g = getGrupo(grupoId); if(!g) return;
@@ -2364,7 +2444,11 @@ window.estornarLocacao = function(locId){
       '<div class="resumo">'+
         '<div class="l"><span>Cliente</span><b>'+esc(loc.clienteNome)+'</b></div>'+
         '<div class="l"><span>Saída</span><b>'+dtFmt(loc.inicio)+'</b></div>'+
-        '<div class="l"><span>Situação</span><b>'+(loc.status==='ativa'?'na rua — o veículo volta para a loja':'já finalizada')+'</b></div>'+
+        '<div class="l"><span>Situação</span><b>'+
+          (loc.status==='ativa' ? 'na rua — o veículo volta para a loja'
+           : loc.status==='pendente' ? 'pago, aguardando a vistoria de liberação'
+           : loc.status==='devolvida' ? 'chegada registrada — fechar a cobrança no balcão'
+           : 'já finalizada')+'</b></div>'+
         '<div class="l tot"><span>Valor a estornar</span><span>'+brl(valor)+'</span></div>'+
       '</div>'+
       '<label class="f"><span>Motivo do estorno</span><select id="esMotivo">'+
@@ -2478,23 +2562,33 @@ function fecharGrupoSeCompleto(gid){
 /* ===================== DEVOLUÇÃO (entrada) ===================== */
 window.abrirDevolucao = function(locId){
   if(!caixaAberto()) return exigirCaixa('registrar a entrada', ()=> abrirDevolucao(locId));
-  const loc = DB.locacoes.find(l=>l.id===locId); if(!loc || loc.status!=='ativa') return;
+  const loc = DB.locacoes.find(l=>l.id===locId);
+  if(!loc || (loc.status!=='ativa' && loc.status!=='devolvida')) return;
+  /* Se a chegada já foi registrada pelo link (vistoria), o relógio parou
+     lá: o balcão só fecha a cobrança com a hora real. */
+  const chegada = loc.status==='devolvida';
   const agora = Date.now();
-  const ex = calcExcedente(loc, agora);
-  const usoMin = Math.max(0, Math.round((agora-loc.inicio)/60000));
+  const fim = loc.fimReal || agora;
+  const ex = calcExcedente(loc, fim);
+  const usoMin = Math.max(0, Math.round((fim-(loc.inicio||fim))/60000));
   const tipo = getTipo(loc.tipoId);
   const ov = abrirModal(
-    '<header><h3>Entrada — '+esc(loc.veiculoCodigo)+'</h3><button class="x">&times;</button></header>'+
+    '<header><h3>'+(chegada?'Fechar entrada — ':'Entrada — ')+esc(loc.veiculoCodigo)+'</h3><button class="x">&times;</button></header>'+
     '<div class="body">'+
+      (chegada ? '<div class="fnota">A chegada já foi registrada na vistoria às <b>'+hhmm(loc.fimReal)+'</b>'+
+        (loc.atendenteEntrada?' por '+esc(loc.atendenteEntrada):'')+
+        (loc.lacreEntrada? ' · lacre '+esc(loc.lacreEntrada):'')+
+        '. Confira as fotos, lance as peças e cobre o que for devido.</div>' : '')+
       '<div class="resumo">'+
         '<div class="l"><span>Cliente</span><b>'+esc(loc.clienteNome)+'</b></div>'+
         '<div class="l"><span>Saída</span><b>'+dtFmt(loc.inicio)+'</b></div>'+
         '<div class="l"><span>Devolução prevista</span><b>'+dtFmt(loc.fimPrevisto)+'</b></div>'+
         '<div class="l"><span>Tempo total de uso</span><b>'+usoMin+' min</b></div>'+
         '<div class="l"><span>Pacote ('+esc(loc.tarifaLabel)+') — já pago</span><b>'+brl(loc.valorBase)+'</b></div>'+
+        (loc.obsVistoria ? '<div class="l"><span>Obs. da vistoria</span><b>'+esc(loc.obsVistoria)+'</b></div>' : '')+
         (ex.valor>0
           ? '<div class="l" style="color:var(--danger)"><span>Excedente: '+ex.minutos+' min × '+brl(tipo.excedenteMin)+'</span><b>'+brl(ex.valor)+'</b></div>'
-          : '<div class="l" style="color:var(--ok)"><span>Sem excedente</span><b>'+(agora>loc.fimPrevisto?'dentro da tolerância':'no prazo')+'</b></div>')+
+          : '<div class="l" style="color:var(--ok)"><span>Sem excedente</span><b>'+(fim>loc.fimPrevisto?'dentro da tolerância':'no prazo')+'</b></div>')+
       '</div>'+
       '<label class="f"><span>Estado do veículo</span><select id="dEstado">'+
         '<option value="loja">OK — sem avarias, volta para a loja</option>'+
@@ -2531,6 +2625,14 @@ window.abrirDevolucao = function(locId){
     '<button class="btn sec" id="dCancel">Cancelar</button><button class="btn ok" id="dOk">Confirmar entrada</button></footer>');
 
   const fotosEnt = [null,null,null];
+  /* fotos e lacre que a vistoria do celular já registrou */
+  (loc.fotosEntrada||[]).slice(0,3).forEach((f,i)=>{
+    if(!f) return;
+    fotosEnt[i] = { id:f.id, caminho:f.caminho, legenda:f.legenda, ts:f.ts, thumb:null };
+    Fotos.obter(f.id, f.caminho).then(url=>{
+      if(url && fotosEnt[i]){ fotosEnt[i] = Object.assign({}, fotosEnt[i], { thumb:url }); pintaFotos(); }
+    }).catch(()=>{});
+  });
   const pintaFotos = ()=>{
     const box = ov.querySelector('#dFotosBox');
     box.innerHTML = painelFotos('dFotos', fotosEnt, LEG_VIST);
@@ -2539,15 +2641,19 @@ window.abrirDevolucao = function(locId){
   pintaFotos();
   ov.querySelector('#dEstornar').onclick = ()=>{ fecharModal(ov); estornarLocacao(loc.id); };
   const inpLac = ov.querySelector('#dLacre');
-  if(inpLac) inpLac.oninput = ()=>{
-    const n = (inpLac.value||'').trim(), cel = ov.querySelector('#dLacreMsg');
-    if(!n){ cel.innerHTML=''; return; }
-    const l = lacreDe(n);
-    if(!l) cel.innerHTML = '<span class="pill est">esse número não está no estoque</span>';
-    else if(l.status==='rompido') cel.innerHTML = '<span class="pill est">lacre já rompido, use outro</span>';
-    else if(l.status==='aplicado') cel.innerHTML = '<span class="pill est">lacre já está em outro veículo</span>';
-    else cel.innerHTML = '<span class="pill loja">lacre válido</span>';
-  };
+  if(inpLac){
+    if(loc.lacreEntrada && !inpLac.value) inpLac.value = loc.lacreEntrada;
+    inpLac.oninput = ()=>{
+      const n = (inpLac.value||'').trim(), cel = ov.querySelector('#dLacreMsg');
+      if(!n){ cel.innerHTML=''; return; }
+      const l = lacreDe(n);
+      if(!l) cel.innerHTML = '<span class="pill est">esse número não está no estoque</span>';
+      else if(l.status==='rompido') cel.innerHTML = '<span class="pill est">lacre já rompido, use outro</span>';
+      else if(l.status==='aplicado') cel.innerHTML = '<span class="pill est">lacre já está em outro veículo</span>';
+      else cel.innerHTML = '<span class="pill loja">lacre válido</span>';
+    };
+    if(loc.lacreEntrada) inpLac.dispatchEvent(new Event('input'));
+  }
 
   const danos = [];
   const totalDanos = ()=> danos.reduce((s,d)=>s+(+d.valor||0),0);
@@ -2585,7 +2691,9 @@ window.abrirDevolucao = function(locId){
   pintaDanos(); pintaTotais();
   ov.querySelector('#dCancel').onclick = ()=> fecharModal(ov);
   ov.querySelector('#dOk').onclick = ()=>{
-    const fim = Date.now();
+    /* o relógio parou na chegada da vistoria; sem chegada registrada,
+       para agora, na hora da confirmação do balcão */
+    const fim = loc.fimReal || Date.now();
     const ex2 = calcExcedente(loc, fim);
     loc.fimReal = fim;
     loc.minutosExcedente = ex2.minutos;
@@ -2595,7 +2703,7 @@ window.abrirDevolucao = function(locId){
     const aCobrar = ex2.valor + loc.valorDanos;
     loc.pagamentoExcedente = aCobrar>0 ? ((ov.querySelector('#dPgto')||{}).value||null) : null;
     loc.obsEntrada = ov.querySelector('#dObs').value.trim();
-    loc.atendenteEntrada = usuarioAtual();
+    if(!loc.atendenteEntrada) loc.atendenteEntrada = usuarioAtual();
     if(DB.config.exigirLacre!==false){
       const num = (((ov.querySelector('#dLacre')||{}).value)||'').trim();
       if(!num) return toast('Informe o número do novo lacre.');
@@ -2603,7 +2711,8 @@ window.abrirDevolucao = function(locId){
       if(r.erro) return toast(r.erro);
       loc.lacreEntrada = num;
     }
-    loc.fotosEntrada = fotosEnt.filter(Boolean).map(f=>({id:f.id, caminho:f.caminho, legenda:f.legenda, ts:f.ts}));
+    const feitas = fotosEnt.filter(Boolean).map(f=>({id:f.id, caminho:f.caminho, legenda:f.legenda, ts:f.ts}));
+    if(feitas.length) loc.fotosEntrada = feitas;   /* mantém as da vistoria */
     loc.status = 'finalizada';
     log('devolucao', loc.veiculoCodigo+(aCobrar>0?' — cobrado '+brl(aCobrar):' — sem cobrança'), loc.id);
     const v = getVeiculo(loc.veiculoId);
@@ -2611,6 +2720,7 @@ window.abrirDevolucao = function(locId){
     delete jaAlertou[loc.id];
     if(loc.grupoId) fecharGrupoSeCompleto(loc.grupoId);
     persist(); fecharModal(ov); renderPainel();
+    if(typeof renderVistoria==='function') renderVistoria();
     toast('Entrada registrada'+(aCobrar>0 ? ' — cobrar '+brl(aCobrar) : ''));
   };
 };
@@ -2635,17 +2745,132 @@ function renderFrota(){
     (total ? lista.map(v=>{
       const ls = DB.locacoes.filter(l=>l.veiculoId===v.id);
       const fat = ls.reduce((s,l)=>s+totalLoc(l),0);
+      const travado = veiculoTravado(v.id);
+      const stPill = travado ? '<span class="pill pendente">aguardando vistoria</span>'
+                             : '<span class="pill '+(v.status==='manutencao'?'manut':v.status)+'">'+stName[v.status]+'</span>';
       return '<tr><td><b>'+esc(v.codigo)+'</b></td><td>'+esc(getTipo(v.tipoId).nome)+'</td>'+
         '<td class="mono">'+(numeroLacreDoVeiculo(v.id) || (v.status==='loja'?'<span class="pill manut">sem lacre</span>':'—'))+'</td>'+
-        '<td><span class="pill '+(v.status==='manutencao'?'manut':v.status)+'">'+stName[v.status]+'</span></td>'+
+        '<td>'+stPill+'</td>'+
         '<td class="mono">'+ls.length+'</td><td class="mono">'+brl(fat)+'</td>'+
         '<td class="right">'+
-          (v.status==='loja' ? '<button class="btn sm" onclick="abrirWizard('+v.id+')">Locar</button> ' : '')+
+          (v.status==='loja' && !travado ? '<button class="btn sm" onclick="abrirWizard('+v.id+')">Locar</button> ' : '')+
+          (travado ? '<button class="btn sm sec" onclick="irPara(\'vistoria\')">Na fila</button> ' : '')+
           (v.status==='rua' && locDoVeiculo(v.id) ? '<button class="btn sm ok" onclick="abrirDevolucao('+locDoVeiculo(v.id).id+')">Entrada</button> ' : '')+
           '<button class="btn sm sec" onclick="editarVeiculo('+v.id+')">Editar</button></td></tr>';
     }).join('') : '<tr><td colspan="7" class="empty">Nenhum veículo. Use “Cadastrar em lote” para criar sua frota.</td></tr>')+
     '</tbody>'+(total>500?'<tfoot><tr><td colspan="7" class="muted" style="padding:10px">Exibindo 500 de '+total+' — refine a busca.</td></tr></tfoot>':'');
 }
+
+/* ===================== ABA VISTORIA =====================
+   O balcão só mostra o que está na fila e entrega o link. Quem fotografa,
+   confere o lacre e libera faz isso no celular, pelo link público. */
+let _qrToken = null;
+function pintarQr(sel, texto, chave){
+  const qr = $(sel); if(!qr) return;
+  if(qr.dataset.chave === chave && qr.firstChild) return;
+  qr.dataset.chave = chave;
+  qr.innerHTML = '';
+  try{
+    if(window.QRCode) new QRCode(qr, { text:texto, width:124, height:124, correctLevel:QRCode.CorrectLevel.M });
+    else qr.innerHTML = '<div class="qrfallback">QR indisponível<br>sem internet</div>';
+  }catch(e){ qr.innerHTML = '<div class="qrfallback">QR indisponível</div>'; }
+}
+function renderVistoria(){
+  const link = linkVistoria();
+  const box = $('#vistLink'); if(box) box.textContent = link;
+  pintarQr('#vistQr', link, DB.config.vistoriaToken);
+  _qrToken = DB.config.vistoriaToken;
+
+  const pend = locPendentes();
+  const pendGrupos = {};
+  pend.forEach(l=>{ (pendGrupos[l.grupoId] = pendGrupos[l.grupoId] || []).push(l); });
+  const agora = Date.now();
+  $('#vistQtdPend').textContent = pend.length ? pend.length+' aguardando' : '';
+  $('#tbVistPend').innerHTML =
+    '<thead><tr><th>Veículo</th><th>Tipo</th><th>Cliente</th><th>Pago há</th><th>Pacote</th><th>Estimativa</th></tr></thead><tbody>'+
+    (pend.length ? Object.values(pendGrupos).map(ls=>{
+      const l = ls[0];
+      const mins = Math.max(0, Math.round((agora - (l.pagoEm||agora))/60000));
+      return ls.map(x=>{
+        const v = getVeiculo(x.veiculoId)||{codigo:'?'};
+        return '<tr>'+
+          '<td><b>'+esc(v.codigo)+'</b></td>'+
+          '<td>'+esc(x.tipoNome)+'</td>'+
+          '<td>'+esc(x.clienteNome)+
+            (ls.length>1 ? ' <span class="muted" style="font-size:11.5px">+'+(ls.length-1)+' veículo(s)</span>' : '')+'</td>'+
+          '<td class="mono">'+(mins<1?'agora':mins+' min')+'</td>'+
+          '<td>'+esc(x.tarifaLabel)+'</td>'+
+          '<td class="mono">'+(x.duracaoMin ? x.duracaoMin+' min' : '—')+'</td>'+
+        '</tr>';
+      }).join('');
+    }).join('') : '<tr><td colspan="6" class="empty">Nada na fila — toda locação paga já foi liberada.</td></tr>')+'</tbody>';
+
+  const rua = locAtivas();
+  $('#vistQtdRua').textContent = rua.length ? rua.length+' na rua' : '';
+  $('#tbVistRua').innerHTML =
+    '<thead><tr><th>Veículo</th><th>Cliente</th><th>Liberado</th><th>Devolver até</th><th></th></tr></thead><tbody>'+
+    (rua.length ? rua.sort((a,b)=>(a.fimPrevisto||0)-(b.fimPrevisto||0)).map(l=>{
+      const atraso = agora > (l.fimPrevisto||0);
+      return '<tr>'+
+        '<td><b>'+esc(l.veiculoCodigo)+'</b></td>'+
+        '<td>'+esc(l.clienteNome)+'</td>'+
+        '<td class="mono">'+(l.inicio?hhmm(l.inicio):'—')+'</td>'+
+        '<td class="mono">'+(l.fimPrevisto?hhmm(l.fimPrevisto):'—')+
+          (atraso?' <span class="pill est">atrasado</span>':'')+'</td>'+
+        '<td class="right"><button class="btn sm sec" onclick="abrirDevolucao('+l.id+')">Fechar no balcão</button></td>'+
+      '</tr>';
+    }).join('') : '<tr><td colspan="5" class="empty">Nenhum veículo na rua.</td></tr>')+'</tbody>';
+
+  const fecha = locDevolvidas();
+  $('#vistQtdFecha').textContent = fecha.length ? fecha.length+' para fechar' : '';
+  $('#tbVistFecha').innerHTML =
+    '<thead><tr><th>Veículo</th><th>Cliente</th><th>Chegada</th><th>Estado</th><th></th></tr></thead><tbody>'+
+    (fecha.length ? fecha.map(l=>{
+      const ok = (l.fotosEntrada||[]).filter(Boolean).length;
+      return '<tr>'+
+        '<td><b>'+esc(l.veiculoCodigo)+'</b></td>'+
+        '<td>'+esc(l.clienteNome)+'</td>'+
+        '<td class="mono">'+(l.fimReal?hhmm(l.fimReal):'—')+'</td>'+
+        '<td>'+(ok ? '<span class="pill loja">'+ok+' foto(s)</span>' : '<span class="pill manut">sem foto</span>')+
+          (l.lacreEntrada ? ' <span class="mono" style="font-size:12px">lacre '+esc(l.lacreEntrada)+'</span>' : '')+'</td>'+
+        '<td class="right"><button class="btn sm ok" onclick="abrirDevolucao('+l.id+')">Fechar no balcão</button></td>'+
+      '</tr>';
+    }).join('') : '<tr><td colspan="5" class="empty">Nenhuma chegada registrada hoje.</td></tr>')+'</tbody>';
+
+  const hoje = diaKey(agora);
+  const feitos = DB.locacoes.filter(l=>l.vistoriadaEm && diaKey(l.vistoriadaEm)===hoje)
+                            .sort((a,b)=>b.vistoriadaEm-a.vistoriadaEm);
+  $('#tbVistHoje').innerHTML =
+    '<thead><tr><th>Veículo</th><th>Cliente</th><th>Liberado</th><th>Por</th><th>Fotos</th></tr></thead><tbody>'+
+    (feitos.length ? feitos.map(l=>'<tr>'+
+        '<td><b>'+esc(l.veiculoCodigo)+'</b></td>'+
+        '<td>'+esc(l.clienteNome)+'</td>'+
+        '<td class="mono">'+hhmm(l.vistoriadaEm)+'</td>'+
+        '<td>'+esc(l.vistoriadoPor||'link público')+'</td>'+
+        '<td class="mono">'+((l.fotosSaida||[]).length)+'</td>'+
+      '</tr>').join('') : '<tr><td colspan="5" class="empty">Nenhuma vistoria registrada hoje.</td></tr>')+'</tbody>';
+}
+$('#btnCopiarLinkVist') && ($('#btnCopiarLinkVist').onclick = async ()=>{
+  try{ await navigator.clipboard.writeText(linkVistoria()); toast('Link copiado.'); }
+  catch(e){ toast('Selecione o link acima e copie.'); }
+});
+$('#btnWhatsLinkVist') && ($('#btnWhatsLinkVist').onclick = ()=> window.open(
+  'https://wa.me/?text=' + encodeURIComponent('Link da vistoria ('+(DB.empresa.nome||'')+'): ' + linkVistoria()), '_blank'));
+function gerarNovoLinkVistoria(){
+  const ov = abrirModal(
+    '<header><h3>Gerar um novo link?</h3><button class="x">&times;</button></header>'+
+    '<div class="body"><div class="fnota">O link atual deixa de funcionar. Quem tiver salvo (no papel, no celular, no QR impresso) vai receber “link inválido”. Gere um novo só se o link vazou.</div></div>'+
+    '<footer><button class="btn sec" id="nvCancel">Cancelar</button><button class="btn danger" id="nvOk">Gerar novo link</button></footer>');
+  ov.querySelector('#nvCancel').onclick = ()=> fecharModal(ov);
+  ov.querySelector('#nvOk').onclick = ()=>{
+    DB.config.vistoriaToken = tokenPublico(24);
+    _qrToken = null;
+    $$('#vistQr,#cfgVistQr').forEach(el=>{ delete el.dataset.chave; });
+    persist(); fecharModal(ov); renderVistoria(); renderConfig();
+    toast('Novo link da vistoria gerado.');
+  };
+}
+$('#btnNovaLinkVist') && ($('#btnNovaLinkVist').onclick = gerarNovoLinkVistoria);
 ['#fFrotaBusca','#fFrotaTipo','#fFrotaStatus'].forEach(s=>{ $(s).oninput = renderFrota; $(s).onchange = renderFrota; });
 
 function formVeiculo(v){
@@ -2775,10 +3000,10 @@ function histFiltrado(){
   const de = $('#fHistDe').value, ate = $('#fHistAte').value;
   const q = ($('#fHistBusca').value||'').trim().toLowerCase();
   let lista = DB.locacoes.slice();
-  if(de)  lista = lista.filter(l=> diaKey(l.inicio) >= de);
-  if(ate) lista = lista.filter(l=> diaKey(l.inicio) <= ate);
+if(de)  lista = lista.filter(l=> diaKey(tsCobranca(l)) >= de);
+if(ate) lista = lista.filter(l=> diaKey(tsCobranca(l)) <= ate);
   if(q)   lista = lista.filter(l=> (l.veiculoCodigo+' '+l.clienteNome+' '+l.clienteCpf).toLowerCase().includes(q));
-  return lista.sort((a,b)=>b.inicio-a.inicio);
+  return lista.sort((a,b)=>(tsCobranca(b)||0)-(tsCobranca(a)||0));
 }
 function renderHistorico(){
   const lista = histFiltrado();
@@ -2830,8 +3055,8 @@ function renderFinanceiro(){
   const mes = $('#fMes').value;
   garantirFixos(mes);
   const hoje = diaKey(Date.now());
-  const doMes = DB.locacoes.filter(l=> mesKey(l.inicio)===mes);
-  const doDia = DB.locacoes.filter(l=> diaKey(l.inicio)===hoje);
+  const doMes = DB.locacoes.filter(l=> mesKey(tsCobranca(l))===mes);
+  const doDia = DB.locacoes.filter(l=> diaKey(tsCobranca(l))===hoje);
 
   const entradas = entradasDoMes(mes);
   const desp = saidasDoMes(mes);
@@ -2878,7 +3103,8 @@ function renderFinanceiro(){
   const diasDoMes = {};
   const reg = (dia)=> diasDoMes[dia] = diasDoMes[dia] || {ent:0, sai:0, n:0};
   DB.locacoes.forEach(l=>{
-    if(mesKey(l.inicio)===mes){ const r=reg(diaKey(l.inicio)); r.ent+=l.valorBase||0; r.n++; }
+    const quando = tsCobranca(l);
+    if(quando && mesKey(quando)===mes){ const r=reg(diaKey(quando)); r.ent+=l.valorBase||0; r.n++; }
     if(l.fimReal && mesKey(l.fimReal)===mes){ const r=reg(diaKey(l.fimReal)); r.ent+=(l.valorExcedente||0)+(l.valorDanos||0); }
   });
   desp.forEach(d=>{ reg(d.dia).sai += d.valor; });
@@ -2940,13 +3166,14 @@ function renderFinanceiro(){
 $('#fMes').onchange = renderFinanceiro;
 $('#btnExpFin').onclick = ()=>{
   const mes = $('#fMes').value;
-  const doMes = DB.locacoes.filter(l=> mesKey(l.inicio)===mes);
+  const doMes = DB.locacoes.filter(l=> mesKey(tsCobranca(l))===mes);
   const desp = saidasDoMes(mes);
   const linhas=[['DEMONSTRATIVO DE FLUXO — '+mes],[],['Dia','Locacoes','Entradas','Saidas','Resultado']];
   const dias={};
   const reg=d=>dias[d]=dias[d]||{ent:0,sai:0,n:0};
   DB.locacoes.forEach(l=>{
-    if(mesKey(l.inicio)===mes){const r=reg(diaKey(l.inicio)); r.ent+=l.valorBase||0; r.n++;}
+    const pago = tsCobranca(l);
+    if(pago && mesKey(pago)===mes){const r=reg(diaKey(pago)); r.ent+=l.valorBase||0; r.n++;}
     if(l.fimReal&&mesKey(l.fimReal)===mes){const r=reg(diaKey(l.fimReal)); r.ent+=(l.valorExcedente||0)+(l.valorDanos||0);}
   });
   desp.forEach(d=>{ reg(d.dia).sai+=d.valor; });
@@ -2967,7 +3194,7 @@ $('#btnExpFin').onclick = ()=>{
    cheias. Só o administrador enxerga esta aba.
    ===================================================================== */
 function relatorioDoMes(mes){
-  const doMes = DB.locacoes.filter(l=> mesKey(l.inicio)===mes && !estornada(l));
+  const doMes = DB.locacoes.filter(l=> mesKey(tsCobranca(l))===mes && !estornada(l));
   const clientes = {}, dias = {};
   const horas = [];
   for(let h=0; h<24; h++) horas.push({ h:h, n:0 });
@@ -2977,9 +3204,11 @@ function relatorioDoMes(mes){
     fat += v;
     const nome = String(l.clienteNome || 'Sem cliente');
     const c = clientes[nome] = clientes[nome] || {n:0, fat:0}; c.n++; c.fat += v;
-    const d = diaKey(l.inicio);
+    const ts = tsCobranca(l);
+    if(!ts) return;
+    const d = diaKey(ts);
     const dd = dias[d] = dias[d] || {n:0, fat:0}; dd.n++; dd.fat += v;
-    horas[new Date(l.inicio).getHours()].n++;
+    horas[new Date(ts).getHours()].n++;
   });
   const listaClientes = Object.keys(clientes)
     .map(nome=>({ nome:nome, n:clientes[nome].n, fat:clientes[nome].fat }))
@@ -3099,14 +3328,16 @@ function diaSemana(dia){
   return new Date(a,m-1,d).toLocaleDateString('pt-BR',{weekday:'short'});
 }
 
-/* --- entradas: a base entra no dia da saída; excedente e avarias no dia da devolução --- */
+/* --- entradas: a base entra no dia em que foi paga; excedente e avarias
+       no dia da devolução --- */
 function entradasDoDia(dia){
   const itens = [];
   DB.locacoes.forEach(l=>{
     if(estornada(l)) return;
-    if(diaKey(l.inicio)===dia && l.valorBase)
+    const pago = tsCobranca(l);
+    if(pago && diaKey(pago)===dia && l.valorBase)
       itens.push({ desc:'Locação '+l.veiculoCodigo+' — '+l.tarifaLabel, valor:l.valorBase,
-                   forma:l.pagamento||'Dinheiro', tipo:'locacao', hora:l.inicio });
+                   forma:l.pagamento||'Dinheiro', tipo:'locacao', hora:pago });
     if(l.fimReal && diaKey(l.fimReal)===dia){
       if(l.valorExcedente) itens.push({ desc:'Excedente '+l.veiculoCodigo+' — '+l.minutosExcedente+' min',
         valor:l.valorExcedente, forma:l.pagamentoExcedente||'Dinheiro', tipo:'excedente', hora:l.fimReal });
@@ -3127,7 +3358,8 @@ function saidasDoDia(dia){
 function entradasDoMes(mes){
   let t=0; DB.locacoes.forEach(l=>{
     if(estornada(l)) return;
-    if(mesKey(l.inicio)===mes) t += l.valorBase||0;
+    const pago = tsCobranca(l);
+    if(pago && mesKey(pago)===mes) t += l.valorBase||0;
     if(l.fimReal && mesKey(l.fimReal)===mes) t += (l.valorExcedente||0)+(l.valorDanos||0);
   }); return t;
 }
@@ -3166,7 +3398,7 @@ function renderCaixa(){
     kpi('Saídas pagas', brl(sai.pagas), sai.pagas?'r':''),
     kpi('Resultado do dia', brl(ent.total - sai.pagas), (ent.total-sai.pagas)>=0?'g':'r'),
     kpi('Dinheiro em caixa', cx? brl(esperado) : '—', ''),
-    kpi('Locações', DB.locacoes.filter(l=>diaKey(l.inicio)===dia).length, '')
+    kpi('Locações', DB.locacoes.filter(l=>diaKey(tsCobranca(l))===dia).length, '')
   ].join('');
 
   // barra de abertura / fechamento
@@ -3426,6 +3658,9 @@ function renderConfig(){
   $('#cfgContrato').value = DB.contrato;
   $('#cfgLacre').checked = DB.config.exigirLacre!==false;
   $('#cfgInvDias').value = DB.config.inventarioDias || 7;
+  const lv = linkVistoria();
+  const cl = $('#cfgVistLink'); if(cl) cl.textContent = lv;
+  pintarQr('#cfgVistQr', lv, DB.config.vistoriaToken);
   renderLacres(); renderInventarios(); renderDivergencias(); renderUsuarios(); renderAuditoria();
   if($('#pecTipo').options.length !== DB.tipos.length)
     $('#pecTipo').innerHTML = DB.tipos.map(t=>'<option value="'+t.id+'">'+esc(t.nome)+'</option>').join('');
@@ -3452,6 +3687,15 @@ $('#btnSalvarEmpresa').onclick = ()=>{
   DB.config.exigirLacre = $('#cfgLacre').checked;
   persist(); aplicarMarca(); toast('Dados salvos.');
 };
+
+/* link da vistoria em Configurações */
+$('#btnCopiarVist') && ($('#btnCopiarVist').onclick = async ()=>{
+  try{ await navigator.clipboard.writeText(linkVistoria()); toast('Link copiado.'); }
+  catch(e){ toast('Selecione o link acima e copie.'); }
+});
+$('#btnWhatsVist') && ($('#btnWhatsVist').onclick = ()=> window.open(
+  'https://wa.me/?text=' + encodeURIComponent('Link da vistoria ('+(DB.empresa.nome||'')+'): ' + linkVistoria()), '_blank'));
+$('#btnNovoVist') && ($('#btnNovoVist').onclick = gerarNovoLinkVistoria);
 
 function renderPecas(){
   const tp = $('#pecTipo').value || DB.tipos[0].id;

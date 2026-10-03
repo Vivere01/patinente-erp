@@ -1,7 +1,9 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "rewrites": [
-    { "source": "/assinar/:token", "destination": "/assinar.html?token=:token" }
+    { "source": "/assinar/:token", "destination": "/assinar.html?token=:token" },
+    { "source": "/vistoria/:token", "destination": "/vistoria.html?token=:token" },
+    { "source": "/vistoria", "destination": "/vistoria.html" }
   ],
   "headers": [
     {

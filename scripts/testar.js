@@ -18,6 +18,8 @@
    I. Relatórios — a aba e o fechamento do mês (viagens, faturamento,
       cliente destaque, melhor dia e horários de pico).
    J. Senha — o navegador e o servidor derivam exatamente a mesma chave.
+   K. Vistoria — o balcão cobra e assina, o celular (link público) fotografa,
+      libera o veículo e marca a chegada; a cobrança fecha no balcão.
 
    Uso:  npm test
 */
@@ -356,6 +358,7 @@ function testarFechamentoESync(){
   vm.runInContext([
     extrairFuncao(html, 'diaKey'),
     extrairFuncao(html, 'estornada'),
+    extrairFuncao(html, 'tsCobranca'),
     extrairFuncao(html, 'entradasDoDia'),
     'globalThis.DB = { locacoes: [] };',
     'globalThis.C = { entradasDoDia, diaKey };'
@@ -479,6 +482,7 @@ function testarRelatorios(){
     extrairFuncao(html, 'diaKey'),
     extrairFuncao(html, 'mesKey'),
     extrairFuncao(html, 'estornada'),
+    extrairFuncao(html, 'tsCobranca'),
     extrairFuncao(html, 'totalLoc'),
     corpo('relatorioDoMes'),
     'globalThis.DB = { locacoes: [] };',
@@ -627,6 +631,106 @@ async function testarBanco(){
   }
 }
 
+/* ------------------------------------------------------------------ K */
+function testarVistoria(){
+  console.log('\nK. Vistoria — o balcão paga, o celular libera');
+  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  const corpo = f => extrairFuncao(html, f);
+  const pagina = fs.readFileSync(path.join(__dirname, '..', 'vistoria.html'), 'utf8');
+  const api = fs.readFileSync(path.join(__dirname, '..', 'api', 'vistoria.js'), 'utf8');
+  const vercel = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'vercel.json'), 'utf8'));
+
+  /* --- a fila mora no sistema, com aba própria --- */
+  ok(/<button data-tab="vistoria">Vistoria<\/button>/.test(html), 'a navegação tem a aba Vistoria');
+  ok(/<section class="page" id="page-vistoria">/.test(html), 'a aba tem a página própria');
+  ok(html.indexOf("vistoria:'renderVistoria'") >= 0 && /if\(tab==='vistoria'\) renderVistoria\(\)/.test(html),
+     'a aba é redesenhada ao entrar e quando os dados mudam');
+  ok(corpo('renderVistoria').indexOf('linkVistoria()') >= 0, 'a aba mostra o link público da vistoria');
+  ok(html.indexOf('function pintarQr(') >= 0 && pagina.indexOf('QRCode') < 0,
+     'o QR Code fica no balcão; o celular só lê o link');
+
+  /* --- três passos no balcão --- */
+  const pw = corpo('pintaWizard');
+  ok(/\[1,2,3\]\.map/.test(pw), 'o wizard tem exatamente três passos');
+  ok(pw.indexOf("W.passo===3 ? 'Pagar e enviar para vistoria'") >= 0,
+     'o último botão é "Pagar e enviar para vistoria"');
+  ok(pw.indexOf('passoTarifa()') >= 0 && pw.indexOf('passoContrato()') >= 0,
+     'pagamento e contrato juntos no passo 3');
+  ok(html.indexOf('function passoVistoria(') < 0 && html.indexOf('W.fotos') < 0,
+     'a vistoria de saída saiu do balcão (sem passo 4 e sem fotos no wizard)');
+  ok(html.indexOf('function perguntarImprimir(') < 0, 'o fim do pagamento é o link da vistoria, não só a impressão');
+
+  /* --- o que o balcão grava --- */
+  const cl = corpo('concluirLocacao');
+  ok(cl.indexOf("status: 'pendente'") >= 0, 'a locação fica pendente até a vistoria');
+  ok(cl.indexOf('pagoEm: pagoAgora') >= 0, 'a hora do pagamento fica guardada para o dinheiro do dia');
+  ok(cl.indexOf("status:'aguardando_vistoria'") >= 0, 'o contrato criado fica aguardando vistoria');
+  ok(cl.indexOf("getVeiculo(i.veiculoId).status = 'rua'") < 0,
+     'o veículo não sai da loja antes de alguém confirmar a liberação');
+  ok(cl.indexOf('mostrarLinkVistoria(grupo)') >= 0, 'o fim do pagamento entrega o link da vistoria');
+  const ml = corpo('mostrarLinkVistoria');
+  ok(ml.indexOf('window.QRCode') >= 0 && ml.indexOf('linkVistoria()') >= 0,
+     'a tela final mostra o QR Code e o link para passar adiante');
+
+  /* --- travas --- */
+  ok(/filter\(v=>v\.status==='loja' && !veiculoTravado\(v\.id\)\)/.test(html),
+     'veículo pago não aparece na lista do passo 1');
+  ok(corpo('locPendenteDoVeiculo').indexOf("status==='pendente'") >= 0 &&
+     corpo('veiculoTravado').indexOf('locPendenteDoVeiculo') >= 0,
+     'a trava é a locação pendente do veículo');
+  ok(html.indexOf('pill pendente') >= 0 && html.indexOf('aguardando vistoria') >= 0,
+     'a Frota mostra o veículo travado como aguardando vistoria');
+  ok(/kpi\('Locações hoje'/.test(html) && /filaVistoria/.test(html),
+     'o Painel avisa que tem veículo pago esperando liberação');
+
+  /* --- chegada e fechamento no balcão --- */
+  ok(/loc\.status!=='ativa' && loc\.status!=='devolvida'/.test(html),
+     'a tela de entrada aceita a chegada já registrada no celular');
+  ok(html.indexOf('loc.fimReal || agora') >= 0 && html.indexOf('loc.fimReal || Date.now()') >= 0,
+     'o tempo de uso usa a hora real da chegada');
+  ok(html.indexOf('const chegada = loc.status===\'devolvida\';') >= 0,
+     'a tela avisa que a chegada veio da vistoria');
+  ok(/Fotos\.obter\(f\.id, f\.caminho\)/.test(html), 'as fotos da vistoria aparecem na tela do balcão');
+
+  /* --- link e token --- */
+  ok(corpo('aplicarMigracoes').indexOf('vistoriaToken') >= 0, 'a migração gera o token do link');
+  ok(html.indexOf("'/vistoria/'") >= 0, 'linkVistoria aponta para /vistoria/{token}');
+  ok(html.indexOf('function tokenPublico(') >= 0, 'o token é gerado no próprio aparelho');
+
+  /* --- o dinheiro continua no dia em que entrou --- */
+  ['entradasDoDia','entradasDoMes','relatorioDoMes'].forEach(f=>
+    ok(corpo(f).indexOf('tsCobranca(') >= 0, f + ' conta pelo dia em que foi pago'));
+  const ctx = vm.createContext({ console });
+  vm.runInContext([corpo('tsCobranca'), 'globalThis.T = { tsCobranca };'].join('\n'), ctx);
+  igual(ctx.T.tsCobranca({ pagoEm: 1000, inicio: 500 }), 1000, 'pago agora vale a hora do pagamento');
+  igual(ctx.T.tsCobranca({ inicio: 500 }), 500, 'registro antigo continua usando a hora da saída');
+
+  /* --- a API pública --- */
+  ok(api.indexOf('tokenValido') >= 0 && api.indexOf("acao !== 'liberar' && acao !== 'chegada'") >= 0,
+     'a API só aceita liberar e registrar chegada');
+  ok(api.indexOf("loc.status = 'ativa'") >= 0 && api.indexOf("loc.status = 'devolvida'") >= 0,
+     'liberar torna a locação ativa; a chegada marca como devolvida');
+  ok(api.indexOf('salvar_estado') >= 0, 'a gravação passa pelo lock otimista do documento');
+  const pub = extrairFuncao(api, 'payload');
+  ok(pub.indexOf('clienteCpf') < 0 && pub.indexOf('contrato') < 0 && pub.indexOf('assinatura') < 0,
+     'o payload público não leva CPF nem o contrato');
+  ok(api.indexOf('foto_obrigatoria') >= 0 && api.indexOf('lacre_obrigatorio') >= 0,
+     'foto e lacre são exigidos quando a configuração pede');
+  ok(api.indexOf('lacre_trocado') >= 0 && api.indexOf('divergir(') >= 0,
+     'divergência de lacre continua sendo registrada na saída');
+
+  /* --- a página do celular --- */
+  ok(pagina.indexOf("qs.get('token')") >= 0, 'a página lê o token do link');
+  ok(pagina.indexOf('capture="environment"') >= 0, 'a câmera do celular abre direto na foto');
+  ok(pagina.indexOf('Vistoriado e liberar') >= 0 && pagina.indexOf('Registrar chegada') >= 0,
+     'a página faz a liberação e a chegada');
+  ok(pagina.indexOf('/api/vistoria') >= 0 && pagina.indexOf('noindex') >= 0,
+     'a página fala só com a API e não é indexada');
+  ok(pagina.indexOf('senha') < 0 && pagina.indexOf('type="password"') < 0,
+     'a página pública não tem tela de login');
+  ok(vercel.rewrites.some(r => r.source === '/vistoria/:token'), 'o link /vistoria/{token} chega na página');
+}
+
 (async () => {
   try{ testarRegrasDeDinheiro(); }
   catch(e){ reprovados++; console.log('  ✗ não consegui ler as regras do index.html: ' + e.message); }
@@ -646,6 +750,8 @@ async function testarBanco(){
   catch(e){ reprovados++; console.log('  ✗ relatórios: ' + e.message); }
   try{ await testarParidadeDaSenha(); }
   catch(e){ reprovados++; console.log('  ✗ paridade de senha: ' + e.message); }
+  try{ testarVistoria(); }
+  catch(e){ reprovados++; console.log('  ✗ vistoria: ' + e.message); }
   await testarBanco();
 
   console.log('\n  ' + aprovados + ' aprovados, ' + reprovados + ' reprovados\n');

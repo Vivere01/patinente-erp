@@ -9,7 +9,7 @@
 
 ## 1. O que é
 
-Sistema de balcão para locação por tempo de equipamentos de mobilidade elétrica. Cobre o ciclo completo: saída do veículo, contrato com assinatura eletrônica, vistoria fotográfica, controle de lacre, devolução com cobrança de excedente e avaria, caixa diário e demonstrativo financeiro.
+Sistema de balcão para locação por tempo de equipamentos de mobilidade elétrica. Cobre o ciclo completo: pagamento e contrato com assinatura eletrônica no balcão, vistoria de saída e de chegada pelo link público no celular (fotos, lacre e horário), controle de lacre, devolução com cobrança de excedente e avaria, caixa diário e demonstrativo financeiro.
 
 Foi construído como protótipo validado com o dono da operação. **Toda regra de negócio aqui descrita foi acordada e testada com ele** — não são suposições. O que precisa de decisão técnica está marcado como tal na seção 8.
 
@@ -263,12 +263,40 @@ volta ao painel, e o botão de cadastrar continua atrás de `exigirAdministrador
 
 **Aba Relatórios (exclusiva do administrador).** Ver seção 4.11.
 
-### 4.8 Vistoria fotográfica
+### 4.8 Vistoria fotográfica (link público no celular)
 
-- Até 3 fotos por veículo na saída (frente, lateral, detalhe) e 3 na entrada.
-- Mínimo de **1 foto por veículo obrigatória**, configurável em `config.exigirFoto`.
-- Compressão no cliente: maior lado 800px, JPEG qualidade 0,55 (~50 KB/foto).
-- Existe para sustentar a cobrança de avaria. O contrato tem cláusula em que o cliente declara ter visto as imagens e concordar que retratam o estado do equipamento.
+A vistoria saiu do balcão: quem fotografar e conferir o lacre é o **celular**, pelo link
+público `/vistoria/{token}`. O token é gerado uma vez (`config.vistoriaToken`), fica em
+**Configurações → Link da vistoria** com QR Code para escanear, e é o mesmo todo dia —
+quem tem o link **não entra no sistema**: só enxerga a fila e grava a vistoria. O
+payload público não leva CPF, usuários nem o contrato, e o token é comparado sem vazar
+diferença pelo tempo.
+
+- **Saída — "Vistoriado e liberar".** O balcão encerra a locação em **3 passos**
+  (veículos → cliente → pagamento, contrato e assinatura); o botão final é
+  **"Pagar e enviar para vistoria"**: grava `pagoEm`, contrato e assinatura, marca a
+  locação como **pendente** e o grupo como `aguardando_vistoria`. O veículo **continua
+  na loja, porém travado** para nova locação (`veiculoTravado` = existe locação
+  pendente daquele veículo), `lacreEsperado` é salvo e **nenhum relógio corre**. A tela
+  final entrega o link com QR. No celular: até 3 fotos (Frente, Lateral, Detalhe),
+  lacre rompido e observações → a locação vira `ativa` com a hora real de saída, o
+  veículo sai para `rua`, `fotosSaida` é gravada em `public.fotos` e o relógio começa a
+  contar. Divergência de lacre continua **permitida e registrada** (seção 4.9).
+- **Chegada — "Registrar chegada".** Pelo mesmo link: fotos da entrega, novo lacre,
+  estado (loja / manutenção) e observações → a locação vira `devolvida` com `fimReal`
+  naquela hora (o relógio para) e o veículo volta para `loja`. **A cobrança de
+  excedente e de avaria continua sendo fechada no balcão**, na tela de entrada, que já
+  lê `fotosEntrada`, `lacreEntrada`, `obsVistoria` e a hora registrada no celular.
+- Mínimo de **1 foto por veículo**, configurável em `config.exigirFoto`; lacre é
+  obrigatório enquanto `config.exigirLacre` estiver ligado (seção 4.9).
+- Compressão no cliente: maior lado 900px, JPEG qualidade 0,55; no servidor o limite é
+  600 KB por imagem e o caminho é `vistoria/{locacaoId}/…` (URL assinada de 6 h).
+- A página `vistoria.html` não tem tela de login, é `noindex`, relê a fila a cada 8 s e
+  **não redesenha** enquanto houver foco em foto ou em campo digitando. A gravação
+  (`api/vistoria.js`) passa pelo lock otimista (`salvar_estado`) e só aceita `liberar`
+  e `chegada`; token/ação/locação inválidos respondem 401/400/404.
+- Existe para sustentar a cobrança de avaria. O contrato tem cláusula em que o cliente
+  declara ter visto as imagens e concordar que retratam o estado do equipamento.
 - **Foto do documento do cliente.** Na tela do cliente da locação anexa-se a imagem da
   CNH, RG ou passaporte — pela câmera do aparelho **ou por upload** de arquivo já
   existente (foto, scan ou arquivo). A obrigatoriedade é configurável em dois níveis:
@@ -372,15 +400,19 @@ Duas vias: **celular do cliente** (fluxo principal) e **balcão** (fallback). O 
 |---|---|
 | **Painel** | KPIs; faixa de alerta do atraso mais crítico; veículos na rua agrupados por contrato, com cronômetro, barra de progresso e estado (em uso / terminando nos últimos 10 min / atrasado); alerta sonoro e notificação do navegador ao estourar. |
 | **Caixa do dia** | Seletor de data; abertura com fundo de troco; entradas por forma de pagamento; saídas com categoria; fechamento com conferência de dinheiro; conferência cega de lacres; impressão do fechamento com linhas de assinatura. |
-| **Frota** | Lista com filtro, lacre atual, status, nº de locações e faturamento por veículo; cadastro individual e em lote; botão de conferência da frota. |
+| **Frota** | Lista com filtro, lacre atual, status, nº de locações e faturamento por veículo; cadastro individual e em lote; botão de conferência da frota. Veículo com locação pendente aparece travado, com pill *aguardando vistoria* e atalho para a fila. |
+| **Vistoria** | Fila do celular/balcão em quatro blocos: pago aguardando liberação, na rua, chegada registrada (fechar no balcão) e vistoriadas hoje; link público com QR, copiar, WhatsApp e gerar novo link. |
 | **Clientes** | Busca por nome, CPF ou telefone; histórico e total gasto. |
 | **Histórico** | Locações com filtro por período; base, excedente, avaria e total; acesso às fotos de saída e entrada, ao contrato e ao estorno. |
 | **Financeiro** | Demonstrativo de fluxo do mês (entradas por origem, saídas por categoria, resultado, margem); custos fixos recorrentes; movimento dia a dia com destaque do melhor dia; faturamento por veículo, tipo, pacote e forma de pagamento; exportação CSV. Exclusiva do administrador. |
 | **Relatórios** | Fechamento do mês numa tela: viagens, faturamento, ticket médio, dias com movimento, ranking de clientes, melhor dia, horário de pico com barra e resumo em uma coluna. Seletor de mês. Exclusiva do administrador (seção 4.11). |
 | **Usuários** | Lista da loja (nome, e-mail, papel, último acesso); cadastro e edição de conta — e-mail, senha (mínimo 6, única), nível Atendente ou Administrador e situação ativo/bloqueado — mais a explicação de cada nível. Aba exclusiva do administrador. |
-| **Configurações** | Empresa; tolerância; tabela de preços; tabela de peças; template do contrato; lacres; conferência da frota e histórico; divergências; trilha de auditoria; backup e restauração; sair da conta. |
+| **Configurações** | Empresa; tolerância; tabela de preços; tabela de peças; template do contrato; lacres; conferência da frota e histórico; divergências; **link da vistoria (QR, copiar, WhatsApp, gerar novo)**; trilha de auditoria; backup e restauração; sair da conta. |
 
-Wizard de locação em 5 passos: veículos (seleção múltipla) → cliente → período → vistoria e lacre → contrato e assinatura.
+Wizard de locação em **3 passos**: veículos (seleção múltipla) → cliente → pagamento,
+contrato e assinatura. O botão final **"Pagar e enviar para vistoria"** grava o
+pagamento, deixa a locação pendente, trava o veículo e entrega o link público da
+vistoria (seção 4.8).
 
 Tema escuro e claro, alternável, preferência gravada por dispositivo. Escuro é o padrão: o painel é tela de vigilância, e os estados de cor precisam saltar.
 
@@ -455,7 +487,7 @@ Ao receber UPDATE de outro dispositivo, o `DB` é trocado e as telas repintadas.
 - **Comprovante para o cliente** com número do contrato, impresso ou por WhatsApp — especificado, não construído. Transforma o cliente em conferência da locação registrada.
 - **Foto do documento e selfie do cliente** — especificado, não construído. Componente de captura já existe.
 - **Rastreador com bloqueio remoto nas 10 motos** — decisão de compra do cliente, fora do software. Faixa de mercado levantada: R$ 40 a R$ 60/mês por veículo.
-- **Testes automatizados versionados.** `npm test` cobre as regras de dinheiro, sessão, senha, papéis, relatórios, identidade e o banco (transação descartada); `npm run verificar` repete a operação no site publicado. Os cenários abaixo estão no script — vale mantê-los em dia ao mudar regra.
+- **Testes automatizados versionados.** `npm test` cobre as regras de dinheiro, sessão, senha, papéis, relatórios, identidade, vistoria (partes A a K) e o banco (transação descartada); `npm run verificar` repete a operação no site publicado (inclui a vistoria pública). Os cenários abaixo estão no script — vale mantê-los em dia ao mudar regra.
 
 ---
 
@@ -503,8 +535,12 @@ Reproduza estes casos — cobrem as regras que mais custam dinheiro se quebrarem
 24. Alterar `inventarioDias` muda o vencimento do aviso.
 
 **Vistoria**
-16. Com `exigirFoto` ativo, não avança sem pelo menos 1 foto por veículo.
-17. A ressalva digitada na vistoria aparece no corpo do contrato assinado.
+16. Com `exigirFoto` ativo, a liberação pelo celular não avança sem pelo menos 1 foto por veículo.
+17. A observação digitada na vistoria do celular aparece na tela de entrada do balcão.
+29. "Pagar e enviar para vistoria" grava a locação como pendente, o veículo fica travado na loja e nenhum relógio corre até a liberação.
+30. Sem sessão e sem token (ou com token errado) a fila não abre (401); o payload público não traz CPF, usuários nem contrato.
+31. Liberar torna a locação ativa com a hora real, tira o veículo para a rua e começa a contagem; a chegada para o relógio na hora do celular e devolve o veículo para a loja.
+32. Com `exigirLacre` ligado, a vistoria não libera nem registra chegada sem informar o lacre.
 
 **Concorrência**
 18. Gravar com versão defasada retorna `ok=false`, não sobrescreve, e o cliente assume o estado do servidor.

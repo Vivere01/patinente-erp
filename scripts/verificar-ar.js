@@ -2,7 +2,8 @@
 
    Confere, contra o Postgres real, a sequência inteira de operação:
    login → estado com lock → histórico → foto → contrato assinado →
-   limpeza → identidade no ar → usuário do sistema (e-mail + senha).
+   limpeza → identidade no ar → usuário do sistema (e-mail + senha) →
+   vistoria pública pelo link do celular.
    Usa as rotas da API como usa o navegador, e confere o HTML
    publicado no fim.
 
@@ -196,6 +197,53 @@ const JPG = '/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE
   check(voltar.status === 200 && JSON.stringify(depois.body.doc) === JSON.stringify(original),
         'documento restaurado, idêntico ao de antes (v' + (depois.body && depois.body.versao) + ')',
         JSON.stringify(depois.body).slice(0, 120));
+
+  console.log('\n10. vistoria pública (o link do celular)');
+  const gv = await j('/api/estado', { headers: cabecalho(t) });
+  const docV = (gv.body && gv.body.doc) || {};
+  let tokenV = (docV.config && docV.config.vistoriaToken) || '';
+  if(tokenV.length < 12){
+    /* primeira execução: o aparelho do balcão cria o token quando abre a
+       aba; aqui criamos o mesmo jeito, e só uma vez. */
+    tokenV = 'VIST' + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 6).toUpperCase();
+    const docT = Object.assign({}, docV, { config: Object.assign({}, docV.config, { vistoriaToken: tokenV }) });
+    const wt = await post(t, '/api/estado', { doc: docT, versao: Number(gv.body.versao), por: 'verificacao' });
+    check(wt.status === 200 && wt.body.ok === true, 'token do link da vistoria criado no documento',
+          JSON.stringify(wt.body).slice(0, 120));
+  }else{
+    check(true, 'token do link da vistoria já existe no documento', tokenV.length + ' caracteres');
+  }
+
+  const fila = await j('/api/vistoria?token=' + encodeURIComponent(tokenV));
+  check(fila.status === 200 && fila.body.ok === true && Array.isArray(fila.body.pendentes) &&
+        Array.isArray(fila.body.naRua),
+        'com o link certo a fila vem do servidor', JSON.stringify(fila.body).slice(0, 140));
+  check(fila.status === 200 && fila.body.pendentes.every(p => p.clienteCpf === undefined) &&
+        fila.body.usuarios === undefined && fila.body.contrato === undefined,
+        'a fila pública não entrega CPF, usuários nem contrato');
+
+  const tokenRuim = await j('/api/vistoria?token=LINKINVALIDO0000');
+  check(tokenRuim.status === 401, 'token errado não abre a fila (401)', 'veio ' + tokenRuim.status);
+
+  const postRuim = await post(null, '/api/vistoria', { token: 'LINKINVALIDO0000', acao: 'liberar', locacaoId: 1 });
+  check(postRuim.status === 401, 'POST com token errado é recusado (401)', 'veio ' + postRuim.status);
+
+  const acaoRuim = await post(null, '/api/vistoria', { token: tokenV, acao: 'qualquer', locacaoId: 1 });
+  check(acaoRuim.status === 400, 'ação desconhecida é recusada (400)', 'veio ' + acaoRuim.status);
+
+  const locInexistente = await post(null, '/api/vistoria',
+    { token: tokenV, acao: 'liberar', locacaoId: 99999999, fotos: ['data:image/jpeg;base64,' + JPG], lacre: '1' });
+  check(locInexistente.status === 404, 'locação inexistente responde 404 (nada é gravado)', 'veio ' + locInexistente.status);
+
+  const pagV = await fetch(BASE + '/vistoria/' + tokenV);
+  const txtV = pagV.status === 200 ? await pagV.text() : '';
+  check(pagV.status === 200 && txtV.indexOf('Vistoriado e liberar') >= 0 && txtV.indexOf('Registrar chegada') >= 0,
+        '/vistoria/{token} serve a página do celular', 'status ' + pagV.status);
+
+  const rotaV = await fetch(BASE + '/vistoria');
+  const txtR = rotaV.status === 200 ? await rotaV.text() : '';
+  check(rotaV.status === 200 && txtR.indexOf('capture="environment"') >= 0,
+        '/vistoria também chega na página (e ela pede a câmera)', 'status ' + rotaV.status);
 
   console.log('\n  ' + aprovados + ' aprovados, ' + reprovados + ' reprovados\n');
   process.exit(reprovados ? 1 : 0);

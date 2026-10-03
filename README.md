@@ -1,9 +1,10 @@
 # patinente-erp
 
 Sistema de balcão para locação por tempo de patinetes e motos elétricas. Cobre o ciclo
-completo: saída do veículo, contrato com assinatura eletrônica, vistoria fotográfica,
-controle de lacre, devolução com excedente e avaria, caixa diário, inventário de frota e
-demonstrativo financeiro.
+completo: pagamento e contrato com assinatura eletrônica no balcão, **vistoria de saída e
+de chegada pelo link público no celular** (fotos, lacre e horário), controle de lacre,
+devolução com excedente e avaria, caixa diário, inventário de frota e demonstrativo
+financeiro.
 
 A especificação completa (regras de negócio, telas, dívida técnica e cenários de teste)
 está em [`ESPECIFICACAO-TECNICA.md`](./ESPECIFICACAO-TECNICA.md). **Não altere regra de
@@ -138,6 +139,29 @@ checkbox **“exigir nesta locação”** que sobe ou derruba a exigência daque
 locação só — para a atendente exigir na alta temporada ou diante de um cliente
 suspeito. A foto fica na ficha do cliente e volta sozinha na locação seguinte.
 
+### Vistoria (o celular faz, o balcão cobra)
+
+A locação tem **três passos**: veículos → cliente → **pagamento, contrato e assinatura**.
+O botão final é **“Pagar e enviar para vistoria”**: o dinheiro entra na hora (o Caixa do
+dia e os Relatórios contam pelo dia do pagamento), a locação fica **pendente**, o veículo
+continua na loja mas **travado** para nova locação, e a tela final entrega o **link
+público da vistoria** com QR Code para passar adiante.
+
+- **Link único e estável** — `/vistoria/{token}`, o mesmo todo dia, guardado em
+  **Configurações → Link da vistoria** (com QR, copiar, WhatsApp e *Gerar novo link*).
+  Quem tem o link **não entra no sistema**: só vê a fila e registra a vistoria.
+- **No celular** (aba **Vistoria**, ou o link) há quatro blocos: *pago aguardando
+  liberação*, *na rua*, *chegada registrada* (fechar no balcão) e *vistoriadas hoje*.
+- **Liberar** = fotos + lacre rompido + observações → **“Vistoriado e liberar”**: a
+  locação vira ativa com a hora real de saída, o veículo sai para a rua, o lacre esperado
+  é rompido e o relógio **começa a contar**. Divergência de lacre continua sendo
+  registrada.
+- **Chegada** = fotos do retorno + novo lacre + estado do veículo → fica **“chegada
+  registrada”** (o relógio parou naquela hora). A cobrança de excedente e de avaria é
+  fechada **no balcão**, na tela de entrada, que já mostra as fotos e a hora do celular.
+- A página `vistoria.html` atualiza sozinha a cada 8 s, mas **não redesenha** enquanto
+  alguém estiver fotografando ou digitando.
+
 ---
 
 ## Identidade visual
@@ -184,8 +208,8 @@ O código continua público no repositório.
 ## Testes
 
 ```bash
-npm test        # verificações locais (partes A a J)
-npm run verificar   # 30 verificações contra o site publicado
+npm test        # verificações locais (partes A a K)
+npm run verificar   # 39 verificações contra o site publicado
 ```
 
 - **A. Regras de dinheiro** — lê as funções do próprio `index.html` e confere os cenários
@@ -218,11 +242,19 @@ npm run verificar   # 30 verificações contra o site publicado
 - **J. Paridade da senha** — o navegador (WebCrypto) e o servidor (crypto do Node)
   derivam exatamente a mesma chave a partir do mesmo salt: se divergirem, ninguém entra
   pelo usuário cadastrado.
+- **K. Vistoria** — o passo final da locação fecha em três passos, publica o link com QR
+  e grava a locação como **pendente** (sem tirar o veículo da loja e sem quebrar o
+  lacre); o veículo pendente fica travado; o link público só pede token (sem sessão),
+  o payload não leva CPF, usuários nem contrato; `api/vistoria.js` libera (ativa +
+  veículo na rua) e registra a chegada (devolvida + hora parada), exige foto e lacre
+  conforme a configuração, registra divergência de lacre e grava com lock otimista;
+  e a página `vistoria.html` lê o token do link, abre a câmera e fala só com a API.
 - **`verificar-ar`** — roda a operação inteira no site publicado: login, estado com
   lock, histórico, foto com link assinado, contrato assinado no celular, limpeza, a
   identidade no ar (página, login por e-mail, aba Relatórios e o logo servido como
-  imagem) e o usuário do sistema (criar conta, entrar pelo e-mail, recusar senha
-  errada e conta bloqueada, e devolver o documento intacto).
+  imagem), o usuário do sistema (criar conta, entrar pelo e-mail, recusar senha
+  errada e conta bloqueada, e devolver o documento intacto) e a vistoria pública
+  (token, fila sem CPF, recusa de token/ação/locação inválidos e a página do celular).
   Usa `LOJA_EMAIL`/`LOJA_SENHA` do `.env.local` (ou `node scripts/verificar-ar.js URL EMAIL SENHA`)
   e apaga os artefatos de teste ao final.
 
@@ -240,6 +272,8 @@ npm run verificar   # 30 verificações contra o site publicado
 | `/api/fotos` | GET/POST | ✓ | Grava vistoria e emite link temporário assinado (6 h). |
 | `/api/assinaturas` | POST | ✓ | Publica o contrato congelado para o celular do cliente. |
 | `/api/assinaturas/{token}` | GET/POST | token | Contrato para leitura e gravação da assinatura. |
+| `/api/vistoria` | GET/POST | token | Fila pública da vistoria (sem CPF/usuários) e gravação de liberação/chegada. |
+| `/vistoria/{token}` | GET | — | Página da vistoria no celular (`vistoria.html`, sem login). |
 | `/api/admin/banco` | POST | ✓ | Manutenção: `aplicar` (schema), `conferir` (regras, transação descartada), `limpar` (só artefatos de teste). |
 
 ---
