@@ -49,6 +49,11 @@ Navegador (single-file HTML, sem build, sem framework)
 - **Estado como documento único versionado.** Permitiu migrar de `localStorage` para servidor trocando apenas duas funções, sem reescrever a aplicação. O lock otimista resolve concorrência entre dispositivos sem perda silenciosa: se a versão enviada não é a atual, o servidor recusa e devolve o estado novo. **Testado.**
 - **`eventos` append-only no banco, não na aplicação.** As tabelas `eventos` e `snapshots` não têm policy de UPDATE nem DELETE. Sem policy, a operação é negada pelo RLS. A imutabilidade é garantida pelo Postgres, não por código de aplicação.
 - **Login por e-mail + senha, dois níveis.** A sessão é um token HMAC assinado em `lib/auth.js`. A senha nunca vai para o servidor em texto claro nem fica guardada assim: o navegador deriva PBKDF2-SHA256 com salt de 16 bytes e 120 mil iterações, e o documento guarda só `salt` + `hash` — o servidor refaz a derivação e compara na hora de entrar. Existem dois níveis, **Administrador** e **Atendente**; os papéis antigos (`gerente`, `operador`) são convertidos na migração e o PIN de 4 dígitos foi removido. Ver seção 4.7 e a pendência da seção 8.2.
+- **Bibliotecas só na CDN, sem build.** `qrcodejs` (QR do balcão e das etiquetas),
+  `jspdf` (folha de etiquetas em PDF) e `@zxing/library` (leitor da etiqueta no
+  celular, carregada sob demanda e só quando a câmera abre). São três `<script>` de
+  terceiros, todos só no navegador: sem internet a tela avisa (não quebra), e o PDF cai
+  para a folha de impressão. Ver seções 4.8 e 4.12.
 
 ---
 
@@ -279,9 +284,25 @@ diferença pelo tempo.
   na loja, porém travado** para nova locação (`veiculoTravado` = existe locação
   pendente daquele veículo), `lacreEsperado` é salvo e **nenhum relógio corre**. A tela
   final entrega o link com QR. No celular: até 3 fotos (Frente, Lateral, Detalhe),
-  lacre rompido e observações → a locação vira `ativa` com a hora real de saída, o
-  veículo sai para `rua`, `fotosSaida` é gravada em `public.fotos` e o relógio começa a
-  contar. Divergência de lacre continua **permitida e registrada** (seção 4.9).
+  **leitura da etiqueta do patinete** e observações → a locação vira `ativa` com a hora
+  real de saída, o veículo sai para `rua`, `fotosSaida` é gravada em `public.fotos` e o
+  relógio começa a contar. **Não há campo de lacre na saída**: o lacre rompido é o que
+  já estava registrado para aquele veículo, aplicado pelo servidor e lançado no estoque
+  como `rompido` (seção 4.9) — a etiqueta escaneada identificou o veículo físico, então
+  não há mais o que conferir nem divergência a registrar.
+- **Etiqueta do patinete (QR ou código de barras).** A etiqueta colada no veículo leva
+  **só o código** (`PAT-001`), gerado na aba **QR Codes** (seção 4.12). No cartão da
+  vistoria há um botão **Escanear código do patinete** (e no topo da página, **Escanear
+  patinete**): abre um visor escuro com mira e a câmera lê pela **ZXing**
+  (`BrowserMultiFormatReader.decodeFromVideoDevice`, CDN carregada sob demanda e
+  parada ao fechar). Sem permissão de câmera ou em aparelho sem leitor, o rodapé do
+  visor oferece **Digitar o código** — a etiqueta é curta (`PAT-001`). A leitura é
+  normalizada (espaços, caixa, prefixo `veeloway:` e link) e **conferida no servidor**
+  nos dois casos (`liberar` e `chegada`): código vazio → `400 veiculo_nao_escaneado`;
+  código de outro patinete → `409 veiculo_incorreto`, com o código lido e o esperado na
+  mensagem. Lido certo, o cartão mostra "✓ PAT-001 identificado", pulsa e o servidor
+  grava. Ler de cima (botão do topo) localiza o cartão na fila pelo código e preenche a
+  identificação sozinho.
 - **Chegada — "Registrar chegada".** Pelo mesmo link: fotos da entrega, novo lacre,
   estado (loja / manutenção) e observações → a locação vira `devolvida` com `fimReal`
   naquela hora (o relógio para) e o veículo volta para `loja`. **A cobrança de
@@ -294,7 +315,9 @@ diferença pelo tempo.
 - A página `vistoria.html` não tem tela de login, é `noindex`, relê a fila a cada 8 s e
   **não redesenha** enquanto houver foco em foto ou em campo digitando. A gravação
   (`api/vistoria.js`) passa pelo lock otimista (`salvar_estado`) e só aceita `liberar`
-  e `chegada`; token/ação/locação inválidos respondem 401/400/404.
+  e `chegada`; token/ação/locação inválidos respondem 401/400/404. A logo dessa página
+  (e da assinatura) entra em caminho **absoluto** (`/assets/…`): as duas abrem sob
+  `/vistoria/{token}` e `/assinar/{token}`, onde o caminho relativo daria 404.
 - Existe para sustentar a cobrança de avaria. O contrato tem cláusula em que o cliente
   declara ter visto as imagens e concordar que retratam o estado do equipamento.
 - **Foto do documento do cliente.** Na tela do cliente da locação anexa-se a imagem da
@@ -310,10 +333,15 @@ Mecanismo de controle interno contra locação não registrada — o risco ident
 
 - Todo veículo parado na loja fica com um lacre plástico numerado.
 - O estoque de lacres é registrado por faixa numérica pelo administrador. **Só números em estoque podem ser usados.**
-- **Na saída**, o atendente informa o número do lacre que rompeu. O sistema compara com o esperado:
-  - confere → segue;
-  - divergente → **permite seguir, mas registra divergência** com veículo, esperado, informado, autor e horário. Não bloqueia de propósito: divergência pode ter causa legítima, e o valor está no registro, não no impedimento.
-  - sem número → bloqueia.
+- **Na saída**, o atendente **não digita lacre**: a vistoria exige a leitura da etiqueta
+  do patinete (seção 4.8) e o sistema aplica sozinho o lacre que já está registrado para
+  aquele veículo (`lacreAplicadoNo` → `loc.lacreSaida`, `lacreEsperado` e
+  `status: rompido` no estoque). **Não existe mais divergência `lacre_trocado` nem
+  `veiculo_sem_lacre`** — o veículo está identificado pela etiqueta, não pelo número
+  digitado. O lacre do balcão (digitação + conferência contra o esperado) continua
+  existindo na **entrada** pela vistoria do celular e na tela de devolução do balcão.
+  - sem etiqueta lida → bloqueia (`400 veiculo_nao_escaneado`);
+  - etiqueta de outro patinete → bloqueia (`409 veiculo_incorreto`).
 - **Na entrada**, informa o novo lacre aplicado. Validado contra estoque: recusa número inexistente, já rompido ou aplicado em outro veículo.
 - **Conferência cega no fechamento:** lista os veículos que deveriam estar na loja; o número esperado **só aparece depois** que o operador digita o que encontrou. Toda diferença gera divergência nomeando o veículo.
 - Divergências exigem apuração descrita pelo administrador para serem encerradas, e isso vai para a auditoria.
@@ -364,6 +392,38 @@ três tabelas mostram linha de "sem movimento" — a tela nunca quebra. Defesa d
 a aba já fica oculta para o atendente e `renderRelatorios()` retorna cedo se não for
 administrador.
 
+### 4.12 Etiquetas QR da frota
+
+A aba **QR Codes** (entre *Frota* e *Vistoria*) gera a etiqueta colada em cada
+patinete. O QR leva **só o código do veículo** (`PAT-001`) — é o que o celular da
+vistoria lê e o que o servidor confere (seção 4.8). Prefixar o conteúdo mudaria o que o
+servidor espera, então o texto é exatamente `v.codigo`.
+
+- **Fonte do QR:** `qrFonte(texto)` cria um `QRCode` temporário (qrcodejs, `CorrectLevel.M`)
+  e lê a matriz do modelo interno (`_oQRCode.getModuleCount()` / `isDark(r,c)`), com
+  cache por texto. **Fallback:** se a matriz não estiver acessível, guarda o `<canvas>`
+  gerado (660 px) e o usa como imagem. Sem `window.QRCode` (sem internet) devolve
+  `null` e a tela mostra *“QR indisponível”* em vez de quebrar.
+- **Saídas da mesma folha A4** (3 × 6 células de 70 × 49,5 mm, etiqueta de 66 × 46 mm):
+  - **PDF** — jsPDF (`jspdf.umd.min.js` via CDN, `unit:'mm'`, `format:'a4'`); cada
+    módulo escuro do QR vira um `rect` **vetorial**, com os módulos contíguos da mesma
+    linha fundidos num retângulo só (`run-length`), o que reduz o tamanho do arquivo.
+  - **SVG** — montado à mão a partir da mesma matriz: um único `<path>` por etiqueta,
+    `viewBox` em unidades de módulo, `shape-rendering="crispEdges"`. Folha inteira num
+    arquivo só, com a altura em nº de páginas.
+  - **PNG** — `canvas` a 200 dpi, até 2 folhas (36 etiquetas) por arquivo; acima disso
+    avisa para usar o PDF.
+  - **Imprimir folha** — a mesma grade em HTML no `#printarea` do sistema (QR em
+    `<svg>`), com `page-break` por folha, e `window.print()`. É o fallback quando o
+    jsPDF não carregar.
+- **Na Frota**, a linha de cada veículo tem o botão **Etiqueta** (`baixarEtiqueta(id)`),
+  que baixa o PNG daquele patinete (66 × 46 mm a 300 dpi).
+- **Cadastrar em lote** termina oferecendo **“Gerar etiquetas”**: grava os ids criados
+  em `etqFoco`, abre a aba e filtra a grade só para aquela frota nova (o botão *Ver toda
+  a frota* limpa o filtro).
+- A grade mostra até 60 pré-visualizações (SVG) e informa a quantidade de etiquetas e
+  de folhas A4; busca por código e filtro por tipo.
+
 ---
 
 ## 5. Contrato
@@ -400,8 +460,9 @@ Duas vias: **celular do cliente** (fluxo principal) e **balcão** (fallback). O 
 |---|---|
 | **Painel** | KPIs; faixa de alerta do atraso mais crítico; veículos na rua agrupados por contrato, com cronômetro, barra de progresso e estado (em uso / terminando nos últimos 10 min / atrasado); alerta sonoro e notificação do navegador ao estourar. |
 | **Caixa do dia** | Seletor de data; abertura com fundo de troco; entradas por forma de pagamento; saídas com categoria; fechamento com conferência de dinheiro; conferência cega de lacres; impressão do fechamento com linhas de assinatura. |
-| **Frota** | Lista com filtro, lacre atual, status, nº de locações e faturamento por veículo; cadastro individual e em lote; botão de conferência da frota. Veículo com locação pendente aparece travado, com pill *aguardando vistoria* e atalho para a fila. |
-| **Vistoria** | Fila do celular/balcão em quatro blocos: pago aguardando liberação, na rua, chegada registrada (fechar no balcão) e vistoriadas hoje; link público com QR, copiar, WhatsApp e gerar novo link. |
+| **Frota** | Lista com filtro, lacre atual, status, nº de locações e faturamento por veículo; cadastro individual e em lote; botão de conferência da frota; **botão *Etiqueta* por linha** (PNG da etiqueta QR daquele patinete). Veículo com locação pendente aparece travado, com pill *aguardando vistoria* e atalho para a fila. |
+| **QR Codes** | Etiquetas da frota: grade de pré-visualização com busca e filtro por tipo, contagem de etiquetas e de folhas A4, e quatro saídas da mesma folha (3 × 6): **Baixar PDF**, **PNG**, **SVG** e **Imprimir folha**. Clicar em *Ver toda a frota* limpa o filtro do atalho do lote. |
+| **Vistoria** | Fila do celular/balcão em quatro blocos: pago aguardando liberação, na rua, chegada registrada (fechar no balcão) e vistoriadas hoje; link público com QR, copiar, WhatsApp e gerar novo link. No celular, cada cartão tem **Escanear código do patinete** e há **Escanear patinete** no topo (seção 4.8). |
 | **Clientes** | Busca por nome, CPF ou telefone; histórico e total gasto. |
 | **Histórico** | Locações com filtro por período; base, excedente, avaria e total; acesso às fotos de saída e entrada, ao contrato e ao estorno. |
 | **Financeiro** | Demonstrativo de fluxo do mês (entradas por origem, saídas por categoria, resultado, margem); custos fixos recorrentes; movimento dia a dia com destaque do melhor dia; faturamento por veículo, tipo, pacote e forma de pagamento; exportação CSV. Exclusiva do administrador. |
@@ -418,7 +479,9 @@ Tema escuro e claro, alternável, preferência gravada por dispositivo. Escuro �
 
 **Identidade visual — VeeLo Way · Mobilidade Urbana: amarelo e preto.** O logo
 (`assets/logo-veeloway.jpeg`) entra como favicon, na barra do topo, na tela de acesso
-(e-mail + senha) e na assinatura eletrônica que o cliente abre no celular. As cores
+(e-mail + senha), na assinatura eletrônica que o cliente abre no celular e na página da
+vistoria — nestas duas últimas em caminho **absoluto** (`/assets/…`), porque abrem sob
+`/assinar/{token}` e `/vistoria/{token}`, onde o relativo daria 404. As cores
 vêm das variáveis do tema: `--brand` (amarelo) e `--ink` (preto usado por cima do
 amarelo), iguais nos dois temas; `--brand-fg` resolve o texto da marca em fundo claro,
 onde amarelo não teria contraste. Regra: **texto sobre amarelo é sempre `--ink`**, nunca
@@ -521,8 +584,8 @@ Reproduza estes casos — cobrem as regras que mais custam dinheiro se quebrarem
 28. Relatório do mês conta só as viagens não estornadas daquele mês; mês vazio devolve zeros nas quatro tabelas.
 
 **Lacres**
-12. Saída sem informar lacre é bloqueada.
-13. Informar lacre diferente do esperado: permite seguir e gera divergência nomeando veículo, esperado e informado.
+12. Saída sem ler a etiqueta do patinete é bloqueada (`400 veiculo_nao_escaneado`).
+13. Etiqueta de outro patinete na saída é recusada (`409 veiculo_incorreto`, com os dois códigos na mensagem); com a certa, o lacre já registrado para o veículo é aplicado sozinho e lançado como `rompido` no estoque — nenhuma divergência é criada.
 14. Entrada recusa lacre inexistente, já rompido e aplicado em outro veículo.
 15. Conferência cega com um número trocado gera divergência apontando o veículo correto.
 
@@ -540,7 +603,15 @@ Reproduza estes casos — cobrem as regras que mais custam dinheiro se quebrarem
 29. "Pagar e enviar para vistoria" grava a locação como pendente, o veículo fica travado na loja e nenhum relógio corre até a liberação.
 30. Sem sessão e sem token (ou com token errado) a fila não abre (401); o payload público não traz CPF, usuários nem contrato.
 31. Liberar torna a locação ativa com a hora real, tira o veículo para a rua e começa a contagem; a chegada para o relógio na hora do celular e devolve o veículo para a loja.
-32. Com `exigirLacre` ligado, a vistoria não libera nem registra chegada sem informar o lacre.
+32. Com `exigirLacre` ligado, a vistoria não registra chegada sem o novo lacre (`400 lacre_obrigatorio`); a saída não depende de lacre, depende da etiqueta escaneada.
+33. Sem ler a etiqueta, a liberação não sai (`400 veiculo_nao_escaneado`); lendo o código de outro patinete, `409 veiculo_incorreto`.
+34. Leitura com espaço, caixa diferente ou link (`https://…/PAT-001`) conta como o mesmo código; o cartão mostra a identificação e o cartão pisca.
+
+**Etiquetas QR da frota**
+35. A aba QR Codes lista a frota (busca e filtro por tipo), informa nº de etiquetas e folhas A4 e mostra as pré-visualizações em SVG.
+36. Baixar PDF gera A4 com 3 × 6 etiquetas e QR em retângulos vetoriais; Imprimir folha usa o `#printarea` com quebra de página; PNG sai até 2 folhas por arquivo; SVG sai folha inteira (todas as páginas).
+37. Cada linha da Frota baixa a etiqueta daquele patinete em PNG (66 × 46 mm); "Cadastrar em lote" abre a oferta de etiquetas e filtra a grade pela frota nova, com *Ver toda a frota* para voltar.
+38. Sem internet, a tela avisa “QR indisponível” em vez de quebrar, e o PDF cai para a folha de impressão.
 
 **Concorrência**
 18. Gravar com versão defasada retorna `ok=false`, não sobrescreve, e o cliente assume o estado do servidor.

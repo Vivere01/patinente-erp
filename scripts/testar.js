@@ -405,6 +405,7 @@ function testarIdentidadeVisual(){
   const raiz = path.join(__dirname, '..');
   const html = fs.readFileSync(path.join(raiz, 'index.html'), 'utf8');
   const assinar = fs.readFileSync(path.join(raiz, 'assinar.html'), 'utf8');
+  const vistoria = fs.readFileSync(path.join(raiz, 'vistoria.html'), 'utf8');
   const logo = path.join(raiz, 'assets', 'logo-veeloway.jpeg');
 
   /* o arquivo da marca existe mesmo e é imagem */
@@ -424,8 +425,15 @@ function testarIdentidadeVisual(){
      'a barra do topo mostra o logo');
   ok((html.match(/class="loginmarca"/g) || []).length === 1,
      'a tela de acesso (e-mail + senha) mostra o logo');
-  ok(/<img src="assets\/logo-veeloway\.jpeg"[^>]*><span id="empresa">/.test(assinar),
+  ok(/<img src="\/assets\/logo-veeloway\.jpeg"[^>]*><span id="empresa">/.test(assinar),
      'a tela de assinatura do cliente também leva o logo');
+  ok(/<img src="\/assets\/logo-veeloway\.jpeg"[^>]*><span id="empresa">/.test(vistoria) &&
+     /<link rel="icon" href="\/assets\/logo-veeloway\.jpeg">/.test(vistoria),
+     'a página da vistoria usa a logo em caminho absoluto (ela abre em /vistoria/{token})');
+  ok(assinar.indexOf('href="/assets/logo-veeloway.jpeg"') >= 0,
+     'a página de assinatura também é absoluta (ela abre em /assinar/{token})');
+  ok(vistoria.indexOf('src="assets/') < 0 && assinar.indexOf('src="assets/') < 0,
+     'nenhuma das duas telas sob caminho relativo (daria 404)');
   ok(/<title>VeeLo Way/.test(html), 'o título da aba é a marca');
 
   /* amarelo e preto nos dois temas */
@@ -716,8 +724,13 @@ function testarVistoria(){
      'o payload público não leva CPF nem o contrato');
   ok(api.indexOf('foto_obrigatoria') >= 0 && api.indexOf('lacre_obrigatorio') >= 0,
      'foto e lacre são exigidos quando a configuração pede');
-  ok(api.indexOf('lacre_trocado') >= 0 && api.indexOf('divergir(') >= 0,
-     'divergência de lacre continua sendo registrada na saída');
+  ok(api.indexOf("acao === 'chegada' && !lacre") >= 0,
+     'o lacre novo só é exigido na chegada');
+  ok(api.indexOf('codigoLido') >= 0 && api.indexOf('veiculo_nao_escaneado') >= 0 &&
+     api.indexOf('veiculo_incorreto') >= 0,
+     'a API exige o código escaneado da etiqueta e confere com o cartão');
+  ok(api.indexOf('loc.lacreSaida = esperado') >= 0 && api.indexOf('divergir(') < 0,
+     'na saída o lacre sai sozinho: sem campo para trocar e sem divergência');
   ok(api.indexOf('String(l.id) === String(locId)') >= 0 && api.indexOf('mesmaLoc') >= 0,
      'a API acha a locação mesmo com o id chegando como texto do cartão');
   ok(pagina.indexOf('locacaoId: String(locId)') >= 0,
@@ -732,7 +745,54 @@ function testarVistoria(){
      'a página fala só com a API e não é indexada');
   ok(pagina.indexOf('senha') < 0 && pagina.indexOf('type="password"') < 0,
      'a página pública não tem tela de login');
+
+  /* --- a etiqueta identifica o patinete --- */
+  ok(pagina.indexOf('decodeFromVideoDevice') >= 0 && pagina.indexOf('ZXing') >= 0,
+     'o celular lê a etiqueta pela câmera (QR ou tarja de código)');
+  ok(pagina.indexOf('data-escanear') >= 0 && pagina.indexOf('btnScanTopo') >= 0,
+     'tem botão de escanear dentro do cartão e no topo da tela');
+  ok(pagina.indexOf('Digitar o código') >= 0,
+     'sem câmera dá para digitar o código da etiqueta');
+  ok(pagina.indexOf('Lacre rompido nesta saída') < 0 && pagina.indexOf('veiculo: c.veiculo') >= 0,
+     'a saída não pede mais lacre digitado: manda o código escaneado');
+  ok((pagina.match(/blocoScan\(l\.locacaoId, l\.codigo\)/g) || []).length === 2,
+     'os dois cartões (saída e chegada) identificam o patinete pelo QR');
   ok(vercel.rewrites.some(r => r.source === '/vistoria/:token'), 'o link /vistoria/{token} chega na página');
+}
+
+/* ------------------------------------------------------------------ L */
+/* A aba QR Codes gera a etiqueta de cada patinete: o QR carrega só o
+   código (PAT-001) e é o que o celular lê na vistoria. */
+function testarEtiquetas(){
+  console.log('\nL. QR Codes — a etiqueta de cada patinete');
+  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  const corpo = f => extrairFuncao(html, f);
+
+  ok(/<button data-tab="etiquetas">QR Codes<\/button>/.test(html), 'a navegação tem a aba QR Codes');
+  ok(/<section class="page" id="page-etiquetas">/.test(html), 'a aba tem a página própria');
+  ok(html.indexOf("etiquetas:'renderEtiquetas'") >= 0 && /if\(tab==='etiquetas'\) renderEtiquetas\(\)/.test(html),
+     'a aba é redesenhada ao entrar e quando os dados mudam');
+  ok(/jspdf\/2\.5\.1\/jspdf\.umd\.min\.js/.test(html), 'o PDF da folha sai pelo jsPDF, ao lado do gerador de QR');
+
+  const qf = corpo('qrFonte');
+  ok(qf.indexOf('_oQRCode') >= 0 && qf.indexOf('getModuleCount') >= 0 && qf.indexOf('isDark') >= 0,
+     'a matriz do QR vem do próprio gerador (linha nítida, sem borrado)');
+  ok(qf.indexOf("d.querySelector('canvas')") >= 0 && html.indexOf('f.cv.toDataURL') >= 0,
+     'quando a matriz não der, a etiqueta usa a imagem gerada');
+  ok(html.indexOf('function qrSvg(') >= 0 && html.indexOf('function folhaSvg(') >= 0,
+     'o SVG é montado a partir da matriz (vetor de verdade)');
+  ok(/unit:'mm', format:'a4'/.test(html) && html.indexOf('ETQ_COL = 3, ETQ_LIN = 6') >= 0,
+     'o PDF é A4 com 3 x 6 etiquetas por folha');
+  ok(corpo('folhaImpressao').indexOf('window.print()') >= 0 && html.indexOf('#printarea .etq') >= 0,
+     'a folha de impressão sai pelo #printarea do sistema');
+  ok(html.indexOf('onclick="baixarEtiqueta(') >= 0 && corpo('baixarEtiqueta').indexOf('.png') >= 0,
+     'cada linha da Frota baixa a etiqueta daquele patinete em PNG');
+  ok(html.indexOf('oferecerEtiquetas(criados)') >= 0,
+     'cadastrar em lote já oferece as etiquetas da frota nova');
+  ok(corpo('etiquetasLista').indexOf('etqFoco') >= 0 && corpo('renderEtiquetas').indexOf('etiquetasLista') >= 0,
+     'a grade mostra a frota filtrada (ou só a que acabou de sair do lote)');
+  ok(html.indexOf('QR indisponível') >= 0 && html.indexOf('new QRCode(') >= 0,
+     'sem internet avisa em vez de quebrar a tela');
 }
 
 (async () => {
@@ -756,6 +816,8 @@ function testarVistoria(){
   catch(e){ reprovados++; console.log('  ✗ paridade de senha: ' + e.message); }
   try{ testarVistoria(); }
   catch(e){ reprovados++; console.log('  ✗ vistoria: ' + e.message); }
+  try{ testarEtiquetas(); }
+  catch(e){ reprovados++; console.log('  ✗ etiquetas: ' + e.message); }
   await testarBanco();
 
   console.log('\n  ' + aprovados + ' aprovados, ' + reprovados + ' reprovados\n');

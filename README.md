@@ -2,7 +2,8 @@
 
 Sistema de balcão para locação por tempo de patinetes e motos elétricas. Cobre o ciclo
 completo: pagamento e contrato com assinatura eletrônica no balcão, **vistoria de saída e
-de chegada pelo link público no celular** (fotos, lacre e horário), controle de lacre,
+de chegada pelo link público no celular** (fotos, etiqueta escaneada e horário),
+**etiquetas QR da frota** (PDF, PNG, SVG e folha de impressão), controle de lacre,
 devolução com excedente e avaria, caixa diário, inventário de frota e demonstrativo
 financeiro.
 
@@ -152,15 +153,37 @@ público da vistoria** com QR Code para passar adiante.
   Quem tem o link **não entra no sistema**: só vê a fila e registra a vistoria.
 - **No celular** (aba **Vistoria**, ou o link) há quatro blocos: *pago aguardando
   liberação*, *na rua*, *chegada registrada* (fechar no balcão) e *vistoriadas hoje*.
-- **Liberar** = fotos + lacre rompido + observações → **“Vistoriado e liberar”**: a
-  locação vira ativa com a hora real de saída, o veículo sai para a rua, o lacre esperado
-  é rompido e o relógio **começa a contar**. Divergência de lacre continua sendo
-  registrada.
-- **Chegada** = fotos do retorno + novo lacre + estado do veículo → fica **“chegada
-  registrada”** (o relógio parou naquela hora). A cobrança de excedente e de avaria é
-  fechada **no balcão**, na tela de entrada, que já mostra as fotos e a hora do celular.
+  Cada cartão tem um botão **Escanear código do patinete** (e há outro **Escanear
+  patinete** no topo): a câmera lê o QR ou a tarja da etiqueta — ZXing carregado sob
+  demanda — e, sem câmera, dá para **digitar o código**. O código lido é conferido no
+  servidor contra o do cartão: código de outro patinete é recusado na hora.
+- **Liberar** = fotos + etiqueta escaneada + observações → **“Vistoriado e liberar”**: a
+  locação vira ativa com a hora real de saída, o veículo sai para a rua, o **lacre já
+  registrado para aquele patinete é rompido sozinho** (não há campo de lacre na saída:
+  quem escaneou a etiqueta identificou o veículo) e o relógio **começa a contar**.
+- **Chegada** = fotos do retorno + novo lacre digitado + estado do veículo → fica
+  **“chegada registrada”** (o relógio parou naquela hora). A cobrança de excedente e de
+  avaria é fechada **no balcão**, na tela de entrada, que já mostra as fotos e a hora do
+  celular.
 - A página `vistoria.html` atualiza sozinha a cada 8 s, mas **não redesenha** enquanto
-  alguém estiver fotografando ou digitando.
+  alguém estiver fotografando ou digitando. Ela usa a logo em caminho **absoluto**
+  (`/assets/…`), porque o link abre em `/vistoria/{token}`.
+
+### QR Codes (etiquetas da frota)
+
+A aba **QR Codes** gera a etiqueta de cada patinete. O QR leva **só o código**
+(`PAT-001`) — é exatamente o que o celular da vistoria lê e o que o servidor confere.
+
+- **Quatro saídas da mesma folha A4** (3 × 6 etiquetas de 66 × 46 mm): **Baixar PDF**
+  (jsPDF, QR em retângulos vetoriais), **PNG**, **SVG** e **Imprimir folha**
+  (pelo `#printarea` do sistema — serve quando o jsPDF não carregar).
+- A matriz do QR vem do próprio gerador (`qrcodejs`), lendo módulo a módulo: a linha
+  sai **nítida** no PDF e no SVG, sem borrado de imagem. Se a matriz não estiver
+  disponível, a etiqueta cai para a imagem gerada.
+- **Na Frota**, cada linha tem o botão **Etiqueta** — baixa o PNG daquele patinete.
+- **Cadastrar em lote** já termina oferecendo **“Gerar etiquetas”** da frota nova
+  (o filtro fica só nos códigos recém-criados, com *Ver toda a frota* para voltar).
+- Sem conexão a tela avisa **“QR indisponível”** em vez de quebrar.
 
 ---
 
@@ -208,8 +231,8 @@ O código continua público no repositório.
 ## Testes
 
 ```bash
-npm test        # verificações locais (partes A a K)
-npm run verificar   # 48 verificações contra o site publicado
+npm test        # verificações locais (partes A a L)
+npm run verificar   # 55 verificações contra o site publicado
 ```
 
 - **A. Regras de dinheiro** — lê as funções do próprio `index.html` e confere os cenários
@@ -233,9 +256,10 @@ npm run verificar   # 48 verificações contra o site publicado
   nuvem: carga no acesso, sondagem de 5 s, confirmação ao voltar para a aba, conflito de
   versão recarregando o estado do servidor e repintura da aba aberta.
 - **H. Identidade visual** — o logo está no repositório e é um JPEG válido; aparece no
-  favicon, no topo, na tela de acesso e na assinatura; amarelo e preto nos dois
-  temas, sem texto branco por cima do amarelo e sem resquício do azul antigo; e o nome
-  padrão da empresa é a marca, não "Minha Locadora".
+  favicon, no topo, na tela de acesso, na assinatura e na vistoria (nestas duas em
+  caminho absoluto, já que abrem em `/assinar/{token}` e `/vistoria/{token}`); amarelo e
+  preto nos dois temas, sem texto branco por cima do amarelo e sem resquício do azul
+  antigo; e o nome padrão da empresa é a marca, não "Minha Locadora".
 - **I. Relatórios** — a aba existe e é redesenhada ao entrar; e o fechamento do mês é
   calculado num mês de exemplo (viagens fora estorno, faturamento, ticket, cliente
   destaque, melhor dia, hora de pico) e devolve zero em tudo num mês vazio.
@@ -246,17 +270,25 @@ npm run verificar   # 48 verificações contra o site publicado
   e grava a locação como **pendente** (sem tirar o veículo da loja e sem quebrar o
   lacre); o veículo pendente fica travado; o link público só pede token (sem sessão),
   o payload não leva CPF, usuários nem contrato; `api/vistoria.js` libera (ativa +
-  veículo na rua) e registra a chegada (devolvida + hora parada), exige foto e lacre
-  conforme a configuração, registra divergência de lacre e grava com lock otimista;
-  e a página `vistoria.html` lê o token do link, abre a câmera e fala só com a API.
+  veículo na rua) e registra a chegada (devolvida + hora parada), **exige o código
+  escaneado da etiqueta** (400 sem código, 409 se for outro patinete), aplica o lacre
+  da saída sozinho, exige o lacre novo na chegada, exige foto conforme a configuração e
+  grava com lock otimista; e a página `vistoria.html` lê o token do link, abre o visor
+  da câmera (ZXing) para escanear a etiqueta e fala só com a API.
+- **L. QR Codes** — a aba existe, é redesenhada ao entrar, o PDF sai pelo jsPDF em A4
+  3 × 6, a matriz do QR é lida do gerador (linha nítida no SVG), a folha de impressão
+  usa o `#printarea`, cada linha da Frota baixa a etiqueta em PNG, o lote oferece as
+  etiquetas da frota nova e sem conexão a tela avisa em vez de quebrar.
 - **`verificar-ar`** — roda a operação inteira no site publicado: login, estado com
   lock, histórico, foto com link assinado, contrato assinado no celular, limpeza, a
   identidade no ar (página, login por e-mail, aba Relatórios e o logo servido como
   imagem), o usuário do sistema (criar conta, entrar pelo e-mail, recusar senha
-  errada e conta bloqueada, e devolver o documento intacto) e a vistoria pública
-  (token, fila sem CPF, recusa de token/ação/locação inválidos, a página do celular e
-  o ciclo inteiro — liberar e chegar pelo link numa locação de teste, que sai do
-  documento ao final).
+  errada e conta bloqueada, e devolver o documento intacto), a vistoria pública
+  (token, fila sem CPF, recusa de token/ação/locação inválidos, a página do celular com
+  logo em caminho absoluto, a aba QR Codes publicada) e o ciclo inteiro — liberar e
+  chegar pelo link numa locação de teste, **com o código escaneado conferido no
+  servidor** (400 sem código, 409 de outro patinete), o lacre da saída aplicado
+  sozinho, o lacre novo exigido na chegada e a locação saindo do documento ao final).
   Usa `LOJA_EMAIL`/`LOJA_SENHA` do `.env.local` (ou `node scripts/verificar-ar.js URL EMAIL SENHA`)
   e apaga os artefatos de teste ao final.
 

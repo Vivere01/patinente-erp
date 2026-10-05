@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex,nofollow">
 <title>VeeLo Way — vistoria</title>
-<link rel="icon" href="assets/logo-veeloway.jpeg">
+<link rel="icon" href="/assets/logo-veeloway.jpeg">
 <style>
   :root{
     --bg:#f3f3f3; --card:#ffffff; --line:#e4e4e4; --text:#0d0d0d; --muted:#5e5e5e;
@@ -74,11 +74,35 @@
   .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:18px;background:var(--ink);color:#fff;
     padding:12px 18px;border-radius:12px;font-size:13.5px;font-weight:600;z-index:40;max-width:92vw;
     box-shadow:0 8px 30px rgba(0,0,0,.28)}
+  .scanbox{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-top:6px;border:1px solid var(--line);
+    border-radius:12px;padding:10px;background:#fbfcfe}
+  .scanbox .btn.sec{flex:1;min-width:170px}
+  .scanst{font-size:12.5px;font-weight:700;color:var(--muted)}
+  .scanst.ok{color:var(--ok)} .scanst.erro{color:var(--danger)}
+  .visor{position:fixed;inset:0;background:#0b0b0b;z-index:70;display:flex;flex-direction:column}
+  .visor .vtop{display:flex;align-items:center;gap:10px;padding:14px 16px;color:#fff;font-weight:750;font-size:14.5px;
+    border-bottom:1px solid #222}
+  .visor .vtop button{margin-left:auto;background:#222;color:#fff;border:1px solid #333;border-radius:10px;
+    padding:8px 13px;font-weight:700;font-size:13.5px}
+  .vwrap{position:relative;flex:1;min-height:230px;background:#000;overflow:hidden}
+  .vwrap video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000}
+  .mira{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(70vw,270px);height:min(70vw,270px);
+    border:3px solid var(--brand);border-radius:20px;box-shadow:0 0 0 2000px rgba(0,0,0,.45);pointer-events:none}
+  .vmsg{padding:12px 18px 4px;color:#fff;font-size:13.5px;text-align:center;min-height:34px}
+  .vmanual{display:none;gap:8px;padding:8px 16px 0}
+  .vmanual.on{display:flex}
+  .vmanual input{flex:1;padding:11px 12px;font-size:16px;border:1px solid #333;border-radius:10px;background:#000;color:#fff}
+  .vmanual button{border:0;border-radius:10px;padding:0 18px;font-weight:800;background:var(--brand);color:var(--ink)}
+  .vbot{display:flex;gap:9px;padding:12px 16px calc(14px + env(safe-area-inset-bottom))}
+  .vbot button{flex:1;border:1px solid #333;border-radius:11px;padding:13px 10px;font-weight:700;background:#1c1c1c;
+    color:#fff;font-size:14px}
+  .acende{animation:acende .9s ease 2}
+  @keyframes acende{0%,100%{box-shadow:0 0 0 0 rgba(255,229,0,0)}50%{box-shadow:0 0 0 6px rgba(255,229,0,.9)}}
 </style>
 </head>
 <body>
 <header>
-  <div class="marca"><img src="assets/logo-veeloway.jpeg" alt="VeeLo Way"><span id="empresa">VeeLo Way</span></div>
+  <div class="marca"><img src="/assets/logo-veeloway.jpeg" alt="VeeLo Way"><span id="empresa">VeeLo Way</span></div>
   <div class="sub">Vistoria de saída e de chegada — este aparelho não entra no sistema</div>
 </header>
 
@@ -87,6 +111,7 @@
 
   <div class="barra" id="barra">
     <span id="situacao">Carregando a fila…</span>
+    <button class="btn mini" id="btnScanTopo">Escanear patinete</button>
     <button class="btn mini" id="btnAtualizar">Atualizar</button>
   </div>
 
@@ -102,7 +127,7 @@
   <div id="hoje"></div>
 </main>
 
-<div class="rodape">Link público da vistoria. Fotografe, confira o lacre e marque o horário — a cobrança é fechada no balcão.</div>
+<div class="rodape">Link público da vistoria. Escaneie a etiqueta do patinete, fotografe e marque o horário — a cobrança é fechada no balcão.</div>
 <input type="file" id="arquivo" accept="image/*" capture="environment" class="escondido">
 
 <script>
@@ -130,7 +155,7 @@
 
   let dados = null, sujo = false, postando = false, carregando = false;
   const fotos = {};     /* locacaoId -> [foto, foto, foto] */
-  const campos = {};    /* locacaoId -> { lacre, obs, estado } */
+  const campos = {};    /* locacaoId -> { veiculo, lacre, obs, estado, scanErro } */
   const LEG = ['Frente','Lateral','Detalhe'];
 
   function aviso(txt, tipo){
@@ -149,6 +174,197 @@
   }
   function travar(){
     document.querySelectorAll('.btn').forEach(b=>{ if(b.id!=='btnAtualizar') b.disabled = postando; });
+  }
+
+  /* ---------------- leitor da etiqueta do patinete ---------------- */
+  let visorLeitor = null, visorTimer = null, visorModo = null, zxingP = null;
+
+  function carregarZxing(){
+    if(window.ZXing) return Promise.resolve(window.ZXing);
+    if(!zxingP){
+      zxingP = new Promise((ok, erro)=>{
+        const s = document.createElement('script');
+        s.src = 'https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js';
+        s.async = true;
+        s.onload = ()=> window.ZXing ? ok(window.ZXing) : erro(new Error('leitor indisponível'));
+        s.onerror = ()=> erro(new Error('sem internet para baixar o leitor'));
+        document.head.appendChild(s);
+      });
+      zxingP.catch(()=>{ zxingP = null; });
+    }
+    return zxingP;
+  }
+
+  function normalizarCodigo(txt){
+    let t = String(txt==null?'':txt).trim();
+    const m = t.match(/^https?:\/\/[^\s]+\/([^\/\s#?]+)[^\s]*$/);
+    if(m) t = m[1];
+    return t.replace(/^veeloway:/i,'').trim();
+  }
+
+  function codigoDaLoc(locId){
+    const achar = arr => (arr||[]).find(x => String(x.locacaoId) === String(locId));
+    const l = achar(dados && dados.pendentes) || achar(dados && dados.naRua);
+    return l ? String(l.codigo) : '';
+  }
+
+  function acharPorCodigo(cod){
+    if(!dados) return null;
+    const alvo = String(cod).toUpperCase();
+    const achar = arr => (arr||[]).find(x => String(x.codigo).toUpperCase() === alvo);
+    const p = achar(dados.pendentes); if(p) return { loc:p, onde:'pendente' };
+    const r = achar(dados.naRua);      if(r) return { loc:r, onde:'rua' };
+    const h = achar(dados.liberadas) || achar(dados.chegadas);
+    if(h) return { loc:h, onde:'hoje' };
+    return null;
+  }
+
+  function visorHtml(){
+    return '<div class="visor" id="visor">'+
+      '<div class="vtop"><span>Escanear o código do patinete</span>'+
+        '<button type="button" id="vFecha">Fechar</button></div>'+
+      '<div class="vwrap"><video id="vVideo" playsinline muted autoplay></video><div class="mira"></div></div>'+
+      '<div class="vmsg" id="vMsg">Aponte a câmera para o QR ou a tarja de código da etiqueta.</div>'+
+      '<div class="vmanual" id="vManual"><input type="text" id="vCodigo" placeholder="código da etiqueta, ex.: PAT-001" '+
+        'autocapitalize="characters"><button type="button" id="vConfirma">OK</button></div>'+
+      '<div class="vbot"><button type="button" id="vDigitar">Digitar o código</button>'+
+        '<button type="button" id="vFecha2">Cancelar</button></div>'+
+    '</div>';
+  }
+
+  function mostrarMensagem(txt, erro){
+    const m = $('#vMsg'); if(!m) return;
+    m.textContent = txt;
+    m.style.color = erro ? '#ff9aa6' : '#fff';
+  }
+
+  function pararVideo(){
+    try{ if(visorLeitor && typeof visorLeitor.reset === 'function') visorLeitor.reset(); }catch(e){}
+    const v = $('#vVideo');
+    if(v && v.srcObject){ try{ v.srcObject.getTracks().forEach(t=>t.stop()); }catch(e){} }
+    visorLeitor = null;
+  }
+
+  function fecharVisor(){
+    clearTimeout(visorTimer);
+    pararVideo();
+    const el = $('#visor'); if(el) el.remove();
+    visorModo = null;
+  }
+
+  function abrirVisor(modo){
+    if(postando) return;
+    if($('#visor')) fecharVisor();
+    visorModo = modo || { tipo:'topo' };
+    document.body.insertAdjacentHTML('beforeend', visorHtml());
+    $('#vFecha').onclick = fecharVisor;
+    $('#vFecha2').onclick = fecharVisor;
+    $('#vDigitar').onclick = ()=>{ $('#vManual').classList.toggle('on'); $('#vCodigo').focus(); };
+    $('#vConfirma').onclick = ()=>{ const t = $('#vCodigo').value; if(t.trim()) aoLer(t); };
+    $('#vCodigo').addEventListener('keydown', ev=>{
+      if(ev.key === 'Enter' && ev.target.value.trim()) aoLer(ev.target.value);
+    });
+    clearTimeout(visorTimer);
+    visorTimer = setTimeout(()=>{
+      if(!$('#visor')) return;
+      mostrarMensagem('Tempo esgotado. Toque em Escanear de novo — ou digite o código.', true);
+      pararVideo();
+    }, 60000);
+    carregarZxing().then(iniciarVideo).catch(()=>{
+      mostrarMensagem('Não consegui abrir a câmera aqui. Toque em Digitar o código.', true);
+      const m = $('#vManual'); if(m) m.classList.add('on');
+      pararVideo();
+    });
+  }
+
+  function iniciarVideo(ZX){
+    const video = $('#vVideo');
+    const aoLerResposta = res=>{
+      if(!res) return;
+      const txt = res.getText ? res.getText() : String(res.text || '');
+      if(txt) aoLer(txt);
+    };
+    const semCamera = ()=>{
+      mostrarMensagem('Sem permissão de câmera. Toque em Digitar o código.', true);
+      const m = $('#vManual'); if(m) m.classList.add('on');
+    };
+    try{
+      visorLeitor = new ZX.BrowserMultiFormatReader();
+      let p = null;
+      /* prefere a câmera de trás; se esta versão não tiver o método, usa o comum */
+      try{
+        if(typeof visorLeitor.decodeFromConstraints === 'function'){
+          p = visorLeitor.decodeFromConstraints({ audio:false, video:{ facingMode:{ ideal:'environment' } } },
+                                                 video, aoLerResposta);
+        }
+      }catch(e){ p = null; }
+      if(!p) p = visorLeitor.decodeFromVideoDevice(null, video, aoLerResposta);
+      if(p && typeof p.catch === 'function') p.catch(semCamera);
+      return p;
+    }catch(e){
+      semCamera();
+      return Promise.resolve();
+    }
+  }
+
+  function acender(locId){
+    const cards = document.querySelectorAll('[data-card]');
+    for(let i=0;i<cards.length;i++){
+      if(String(cards[i].dataset.card) === String(locId)){
+        cards[i].scrollIntoView({behavior:'smooth', block:'center'});
+        cards[i].classList.add('acende');
+        setTimeout(()=>cards[i].classList.remove('acende'), 2000);
+        return;
+      }
+    }
+  }
+
+  function aoLer(txt){
+    const lido = normalizarCodigo(txt);
+    if(!lido) return;
+    const modo = visorModo;
+    fecharVisor();
+    if(modo && modo.tipo === 'cartao'){
+      const esperado = String(modo.codigo || '');
+      const c = campos[modo.loc] || (campos[modo.loc] = { veiculo:'', obs:'' });
+      if(!esperado || lido.toUpperCase() !== esperado.toUpperCase()){
+        c.veiculo = ''; c.scanErro = lido;
+        render();
+        aviso('O código lido é <b>' + esc(lido) + '</b>, mas este cartão é <b>' +
+          esc(esperado || 'outro patinete') + '</b>. Escaneie a etiqueta certa.', 'erro');
+        toast('Código de outro patinete.');
+        return;
+      }
+      c.veiculo = esperado; c.scanErro = '';
+      render();
+      aviso('');
+      toast(esperado + ' identificado ✓');
+      if(navigator.vibrate){ try{ navigator.vibrate(45); }catch(e){} }
+      acender(modo.loc);
+      return;
+    }
+    achouPorCodigo(lido);
+  }
+
+  function achouPorCodigo(lido){
+    const a = acharPorCodigo(lido);
+    if(!a){
+      aviso('O código <b>' + esc(lido) + '</b> não está na fila de hoje.', 'erro');
+      toast('Patinete não está na fila.');
+      return;
+    }
+    if(a.onde === 'hoje'){
+      toast(lido + ' já passou pela vistoria hoje.');
+      $('#hoje').scrollIntoView({behavior:'smooth', block:'center'});
+      return;
+    }
+    const c = campos[a.loc.locacaoId] || (campos[a.loc.locacaoId] = { veiculo:'', obs:'' });
+    c.veiculo = String(a.loc.codigo || lido); c.scanErro = '';
+    aviso('');
+    render();
+    acender(a.loc.locacaoId);
+    toast(a.loc.codigo + ' identificado ✓');
+    if(navigator.vibrate){ try{ navigator.vibrate(45); }catch(e){} }
   }
 
   /* ---------------- câmera ---------------- */
@@ -209,11 +425,21 @@
     return '<input type="text" inputmode="'+(qual==='lacre'?'numeric':'text')+'" data-loc="'+esc(locId)+'" data-campo="'+qual+'" '+
       'placeholder="'+esc(ph)+'" value="'+esc(val||'')+'">';
   }
+  function blocoScan(locId, codigo){
+    const c = campos[locId] || (campos[locId] = { veiculo:'', obs:'' });
+    const ok = c.veiculo && String(c.veiculo).toUpperCase() === String(codigo).toUpperCase();
+    return '<div class="scanbox">'+
+      '<button type="button" class="btn sec" data-escanear="'+esc(locId)+'">Escanear código do patinete</button>'+
+      '<span class="scanst '+(ok?'ok':(c.scanErro?'erro':''))+'">'+
+        (ok ? '✓ ' + esc(codigo) + ' identificado'
+            : (c.scanErro ? '✗ lido ' + esc(c.scanErro) + ' — escaneie de novo'
+                          : 'aguardando a leitura da etiqueta'))+
+      '</span></div>';
+  }
 
   function cardLiberar(l){
-    const c = campos[l.locacaoId] || (campos[l.locacaoId] = {lacre:'', obs:''});
+    const c = campos[l.locacaoId] || (campos[l.locacaoId] = { veiculo:'', obs:'' });
     const exigirFoto = dados.exigirFoto !== false;
-    const exigirLacre = dados.exigirLacre !== false;
     const atraso = Date.now() - (l.pagoEm||0);
     return '<div class="card" data-card="'+esc(l.locacaoId)+'">'+
       '<div class="cab"><div><div class="cod">'+esc(l.codigo)+'</div>'+
@@ -226,8 +452,7 @@
         (l.obsSaida ? '<div class="l"><span>Obs. da saída</span><b>'+esc(l.obsSaida)+'</b></div>' : '')+
       '</div>'+
       grade(l.locacaoId)+
-      (exigirLacre ? '<label class="campo">Lacre rompido nesta saída (obrigatório)'+
-        campo(l.locacaoId, 'lacre', 'número que está no veículo', c.lacre)+'</label>' : '')+
+      blocoScan(l.locacaoId, l.codigo)+
       '<label class="campo">Observações da vistoria'+campo(l.locacaoId, 'obs', 'ex: risco no paralama, bateria 100%', c.obs)+'</label>'+
       '<div class="acoes"><button class="btn" data-liberar="'+esc(l.locacaoId)+'">Vistoriado e liberar</button></div>'+
       (exigirFoto ? '<div class="tipo" style="margin-top:8px">Ao menos uma foto é obrigatória.</div>' : '')+
@@ -235,7 +460,7 @@
   }
 
   function cardChegada(l){
-    const c = campos[l.locacaoId] || (campos[l.locacaoId] = {lacre:'', estado:'loja', obs:''});
+    const c = campos[l.locacaoId] || (campos[l.locacaoId] = { veiculo:'', lacre:'', estado:'loja', obs:'' });
     const exigirFoto = dados.exigirFoto !== false;
     const exigirLacre = dados.exigirLacre !== false;
     return '<div class="card" data-card="'+esc(l.locacaoId)+'">'+
@@ -250,6 +475,7 @@
         '<div class="l"><span>Saiu</span><b>'+(l.inicio?hhmm(l.inicio):'—')+' · '+esc(l.tarifaLabel||'')+'</b></div>'+
       '</div>'+
       grade(l.locacaoId)+
+      blocoScan(l.locacaoId, l.codigo)+
       (exigirLacre ? '<label class="campo">Novo lacre aplicado (obrigatório)'+
         campo(l.locacaoId, 'lacre', 'número que você acabou de colocar', c.lacre)+'</label>' : '')+
       '<label class="campo">Estado do veículo'+
@@ -359,7 +585,13 @@
       return false;
     }
     const c = campos[locId] || {};
-    if(dados.exigirLacre !== false && !(c.lacre||'').trim()){
+    const esperado = codigoDaLoc(locId);
+    if(!c.veiculo || String(c.veiculo).toUpperCase() !== String(esperado).toUpperCase()){
+      aviso('Escaneie a etiqueta do patinete (' + esc(esperado) + ') antes de continuar.', 'erro');
+      toast('Escaneie o código do patinete.');
+      return false;
+    }
+    if(acao === 'chegada' && dados.exigirLacre !== false && !(c.lacre||'').trim()){
       aviso('Informe o número do lacre.', 'erro');
       return false;
     }
@@ -367,20 +599,28 @@
   }
 
   document.addEventListener('click', e=>{
+    const bs = e.target.closest && e.target.closest('[data-escanear]');
     const bl = e.target.closest && e.target.closest('[data-liberar]');
     const bc = e.target.closest && e.target.closest('[data-chegada]');
+    if(bs){
+      if(postando) return;
+      const id = bs.dataset.escanear;
+      abrirVisor({ tipo:'cartao', loc:id, codigo:codigoDaLoc(id) });
+    }
     if(bl){
       const id = bl.dataset.liberar;
       const fs = (fotos[id]||[]).filter(Boolean);
       if(!validar('liberar', id, fs)) return;
-      enviar('liberar', id, { fotos: fs, lacre: (campos[id]||{}).lacre||'', obs: (campos[id]||{}).obs||'' });
+      const c = campos[id] || {};
+      enviar('liberar', id, { fotos: fs, veiculo: c.veiculo||'', obs: c.obs||'' });
     }
     if(bc){
       const id = bc.dataset.chegada;
       const fs = (fotos[id]||[]).filter(Boolean);
       if(!validar('chegada', id, fs)) return;
-      enviar('chegada', id, { fotos: fs, lacre: (campos[id]||{}).lacre||'',
-                              estado: (campos[id]||{}).estado||'loja', obs: (campos[id]||{}).obs||'' });
+      const c = campos[id] || {};
+      enviar('chegada', id, { fotos: fs, veiculo: c.veiculo||'', lacre: c.lacre||'',
+                              estado: c.estado||'loja', obs: c.obs||'' });
     }
   });
 
@@ -388,7 +628,7 @@
     const el = e.target;
     if(!el.dataset || !el.dataset.campo || !el.dataset.loc) return;
     const id = el.dataset.loc;
-    const c = campos[id] || (campos[id] = {lacre:'', obs:'', estado:'loja'});
+    const c = campos[id] || (campos[id] = { veiculo:'', lacre:'', obs:'', estado:'loja' });
     c[el.dataset.campo] = el.value;
     sujo = true;
   });
@@ -396,12 +636,13 @@
     const el = e.target;
     if(!el.dataset || !el.dataset.campo || !el.dataset.loc) return;
     const id = el.dataset.loc;
-    const c = campos[id] || (campos[id] = {lacre:'', obs:'', estado:'loja'});
+    const c = campos[id] || (campos[id] = { veiculo:'', lacre:'', obs:'', estado:'loja' });
     c[el.dataset.campo] = el.value;
     sujo = true;
   });
 
   $('#btnAtualizar').onclick = ()=>{ if(postando) return; buscar(); };
+  $('#btnScanTopo').onclick = ()=> abrirVisor({ tipo:'topo' });
 
   /* o celular não perde o que já fotografou: só recarrega sozinho quando
      ninguém está mexendo em nada */

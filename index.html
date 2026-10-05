@@ -320,8 +320,27 @@ tr.estornada td:last-child{opacity:1;text-decoration:none}
   #printarea{display:block;position:absolute;inset:0;padding:26px;font-size:12px}
 }
 
+/* ===================== ETIQUETAS (QR CODES) ===================== */
+.etqgrade{display:flex;flex-wrap:wrap;gap:12px;padding:14px}
+.etqprev{width:134px;height:98px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--text);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:6px;overflow:hidden}
+.etqprev svg,.etqprev img{width:62px;height:62px;display:block}
+.etqprev b{font-size:12.5px;letter-spacing:.01em}
+.etqprev span{font-size:10px;color:var(--muted);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media print{
+  #printarea .folha{width:100%;display:flex;flex-wrap:wrap;page-break-after:always;page-break-inside:avoid}
+  #printarea .folha:last-child{page-break-after:auto}
+  #printarea .etqcell{width:70mm;height:49.5mm;box-sizing:border-box;display:flex;align-items:center;justify-content:center}
+  #printarea .etq{width:66mm;height:46mm;box-sizing:border-box;border:.3mm solid #000;padding:1.5mm 2mm;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.8mm;overflow:hidden;color:#000}
+  #printarea .etq svg,#printarea .etq img{width:32mm;height:32mm;display:block}
+  #printarea .etq b{font-size:13pt;line-height:1.1;font-weight:bold}
+  #printarea .etq span{font-size:8pt;line-height:1.1;color:#000}
+}
+
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </head>
 <body>
 
@@ -336,6 +355,7 @@ tr.estornada td:last-child{opacity:1;text-decoration:none}
     <button data-tab="painel" class="active">Painel</button>
     <button data-tab="caixa">Caixa do dia</button>
     <button data-tab="frota">Frota</button>
+    <button data-tab="etiquetas">QR Codes</button>
     <button data-tab="vistoria">Vistoria</button>
     <button data-tab="clientes">Clientes</button>
     <button data-tab="historico">Histórico</button>
@@ -411,6 +431,30 @@ tr.estornada td:last-child{opacity:1;text-decoration:none}
       </select>
     </div>
     <div class="card"><div class="tablewrap"><table id="tbFrota"></table></div></div>
+  </section>
+
+  <!-- ============ QR CODES (ETIQUETAS) ============ -->
+  <section class="page" id="page-etiquetas">
+    <div class="pagehead">
+      <h2>QR Codes da frota</h2>
+      <div class="sp"></div>
+      <button class="btn sec" id="btnEtqImprimir">Imprimir folha</button>
+      <button class="btn sec" id="btnEtqPng">PNG</button>
+      <button class="btn sec" id="btnEtqSvg">SVG</button>
+      <button class="btn" id="btnEtqPdf">Baixar PDF</button>
+    </div>
+    <div class="card pad" style="margin-bottom:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+      <input type="text" id="fEtqBusca" placeholder="Buscar código" style="max-width:220px">
+      <select id="fEtqTipo" style="max-width:190px"><option value="">Todos os tipos</option></select>
+      <span class="muted" id="etqInfo" style="font-size:12.5px"></span>
+      <div class="sp"></div>
+      <button class="btn sm sec" id="btnEtqFoco" style="display:none">Ver toda a frota</button>
+    </div>
+    <div class="card">
+      <div class="cabec"><span><b>Etiquetas</b> — o QR de cada patinete é exatamente o código que o celular lê na vistoria</span>
+        <span class="muted" id="etqQtd" style="font-size:12.5px"></span></div>
+      <div id="etqGrade" class="etqgrade"></div>
+    </div>
   </section>
 
   <!-- ============ VISTORIA ============ -->
@@ -912,7 +956,7 @@ function repintarTela(){
   if(typeof renderPainel==='function') renderPainel();
   const ativa = document.querySelector('.page.active');
   const aba = ativa ? String(ativa.id||'').replace('page-','') : '';
-  const mapa = { caixa:'renderCaixa', frota:'renderFrota', vistoria:'renderVistoria', clientes:'renderClientes',
+  const mapa = { caixa:'renderCaixa', frota:'renderFrota', etiquetas:'renderEtiquetas', vistoria:'renderVistoria', clientes:'renderClientes',
                  historico:'renderHistorico', financeiro:'renderFinanceiro',
                  relatorios:'renderRelatorios', usuarios:'renderUsuarios', config:'renderConfig' };
   const nome = mapa[aba];
@@ -1331,6 +1375,7 @@ function irPara(tab){
   if(tab==='painel') renderPainel();
   if(tab==='caixa') renderCaixa();
   if(tab==='frota') renderFrota();
+  if(tab==='etiquetas') renderEtiquetas();
   if(tab==='vistoria') renderVistoria();
   if(tab==='clientes') renderClientes();
   if(tab==='historico') renderHistorico();
@@ -2756,9 +2801,325 @@ function renderFrota(){
           (v.status==='loja' && !travado ? '<button class="btn sm" onclick="abrirWizard('+v.id+')">Locar</button> ' : '')+
           (travado ? '<button class="btn sm sec" onclick="irPara(\'vistoria\')">Na fila</button> ' : '')+
           (v.status==='rua' && locDoVeiculo(v.id) ? '<button class="btn sm ok" onclick="abrirDevolucao('+locDoVeiculo(v.id).id+')">Entrada</button> ' : '')+
+          '<button class="btn sm sec" onclick="baixarEtiqueta('+v.id+')">Etiqueta</button> '+
           '<button class="btn sm sec" onclick="editarVeiculo('+v.id+')">Editar</button></td></tr>';
     }).join('') : '<tr><td colspan="7" class="empty">Nenhum veículo. Use “Cadastrar em lote” para criar sua frota.</td></tr>')+
     '</tbody>'+(total>500?'<tfoot><tr><td colspan="7" class="muted" style="padding:10px">Exibindo 500 de '+total+' — refine a busca.</td></tr></tfoot>':'');
+}
+
+/* ===================== ABA QR CODES (ETIQUETAS) =====================
+   A etiqueta é o cartãozinho colado no patinete. O QR leva só o código
+   (PAT-001) — é exatamente o que o celular da vistoria lê e o que o
+   servidor confere na liberação. Sai em PNG, SVG, PDF e folha A4. */
+let etqFoco = null;                 /* ids do atalho do lote: null = frota toda */
+const ETQ_COL = 3, ETQ_LIN = 6;     /* etiquetas por folha A4 */
+const ETQ_MM_L = 66, ETQ_MM_A = 46; /* tamanho de cada etiqueta */
+const ETQ_PX = 300/25.4;            /* 300 dpi */
+
+const _qrFonte = {};
+function qrFonte(texto){
+  const t = String(texto == null ? '' : texto);
+  if(Object.prototype.hasOwnProperty.call(_qrFonte, t)) return _qrFonte[t];
+  let f = null;
+  if(window.QRCode){
+    try{
+      const d = document.createElement('div');
+      new QRCode(d, { text:t, width:660, height:660, correctLevel:QRCode.CorrectLevel.M });
+      const o = d._oQRCode;
+      if(o && typeof o.getModuleCount === 'function' && typeof o.isDark === 'function'){
+        const n = o.getModuleCount(), m = [];
+        for(let r=0;r<n;r++){
+          const linha = [];
+          for(let c=0;c<n;c++) linha.push(!!o.isDark(r,c));
+          m.push(linha);
+        }
+        f = { m:m };
+      }else{
+        const cv = d.querySelector('canvas');
+        if(cv) f = { cv:cv };
+      }
+    }catch(e){ f = null; }
+  }
+  _qrFonte[t] = f;
+  return f;
+}
+
+function qrSvg(texto, px){
+  const f = qrFonte(texto);
+  if(!f) return '<span class="qrfallback">QR indisponível</span>';
+  if(f.m){
+    const n = f.m.length;
+    let d = '';
+    for(let r=0;r<n;r++){
+      let c = 0;
+      while(c < n){
+        if(!f.m[r][c]){ c++; continue; }
+        const ini = c;
+        while(c < n && f.m[r][c]) c++;
+        d += 'M' + ini + ' ' + r + 'h' + (c-ini) + 'v1h-' + (c-ini) + 'z';
+      }
+    }
+    return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 '+n+' '+n+'" width="'+px+'" height="'+px+'" '+
+      'shape-rendering="crispEdges"><rect width="'+n+'" height="'+n+'" fill="#ffffff"/>'+
+      '<path d="'+d+'" fill="#000000"/></svg>';
+  }
+  return '<img src="'+f.cv.toDataURL('image/png')+'" width="'+px+'" height="'+px+'" alt="QR '+esc(texto)+'" '+
+    'style="image-rendering:pixelated">';
+}
+
+function textoCortado(g, txt, max){
+  let t = String(txt == null ? '' : txt);
+  if(g.measureText(t).width <= max) return t;
+  while(t.length > 1 && g.measureText(t + '…').width > max) t = t.slice(0, -1);
+  return t + '…';
+}
+
+function etiquetaCanvas(e, w, h){
+  const cv = document.createElement('canvas');
+  cv.width = Math.max(1, Math.round(w)); cv.height = Math.max(1, Math.round(h));
+  const g = cv.getContext('2d');
+  const W = cv.width, H = cv.height;
+  g.fillStyle = '#fff'; g.fillRect(0, 0, W, H);
+  const f = qrFonte(e.codigo);
+  const pad = Math.round(W*0.06);
+  const qr = Math.min(W - pad*2, Math.round(H*0.60));
+  const qx = Math.round((W - qr)/2), qy = pad;
+  if(f && f.m){
+    const n = f.m.length, cell = qr/n;
+    g.fillStyle = '#fff'; g.fillRect(qx, qy, qr, qr);
+    g.fillStyle = '#000';
+    for(let r=0;r<n;r++){
+      let c = 0;
+      while(c < n){
+        if(!f.m[r][c]){ c++; continue; }
+        const ini = c;
+        while(c < n && f.m[r][c]) c++;
+        g.fillRect(qx + Math.round(ini*cell), qy + Math.round(r*cell),
+                   Math.max(1, Math.round((c-ini)*cell)), Math.max(1, Math.round(cell)));
+      }
+    }
+  }else if(f && f.cv){
+    g.drawImage(f.cv, qx, qy, qr, qr);
+  }
+  const y0 = qy + qr;
+  g.textAlign = 'center'; g.textBaseline = 'alphabetic';
+  g.fillStyle = '#000';
+  g.font = 'bold ' + Math.round(H*0.14) + 'px Arial, sans-serif';
+  g.fillText(textoCortado(g, e.codigo, W - pad*2), W/2, y0 + Math.round(H*0.16));
+  g.fillStyle = '#333';
+  g.font = Math.round(H*0.095) + 'px Arial, sans-serif';
+  g.fillText(textoCortado(g, e.tipoNome || '', W - pad*2), W/2, y0 + Math.round(H*0.27));
+  g.strokeStyle = '#000';
+  g.lineWidth = Math.max(1, Math.round(H*0.008));
+  g.strokeRect(g.lineWidth/2, g.lineWidth/2, W - g.lineWidth, H - g.lineWidth);
+  return cv;
+}
+
+function folhaCanvas(etqs, dpi, maxPag){
+  const px = (dpi || 200)/25.4;
+  const porPagina = ETQ_COL*ETQ_LIN;
+  const paginas = Math.max(1, Math.min(maxPag || 99, Math.ceil(etqs.length/porPagina)));
+  const cv = document.createElement('canvas');
+  cv.width = Math.round(210*px);
+  cv.height = Math.round(297*paginas*px);
+  const g = cv.getContext('2d');
+  g.fillStyle = '#fff'; g.fillRect(0, 0, cv.width, cv.height);
+  const cw = cv.width/ETQ_COL, ch = (297*px)/ETQ_LIN, m = Math.round(1.5*px);
+  etqs.slice(0, paginas*porPagina).forEach((e, i)=>{
+    const cel = etiquetaCanvas(e, cw - 2*m, ch - 2*m);
+    g.drawImage(cel, (i%ETQ_COL)*cw + m, Math.floor(i/ETQ_COL)%ETQ_LIN*ch + m +
+      Math.floor(i/(ETQ_COL*ETQ_LIN))*(297*px));
+  });
+  return cv;
+}
+
+function folhaSvg(etqs){
+  const porPagina = ETQ_COL*ETQ_LIN;
+  const paginas = Math.max(1, Math.ceil(etqs.length/porPagina));
+  const W = 210, H = 297*paginas, cw = W/ETQ_COL, ch = 297/ETQ_LIN;
+  let s = '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" '+
+    'width="210mm" height="'+H+'mm" viewBox="0 0 '+W+' '+H+'">'+
+    '<rect width="'+W+'" height="'+H+'" fill="#ffffff"/>';
+  etqs.forEach((e, i)=>{
+    const idx = i % porPagina, pagina = Math.floor(i/porPagina);
+    const b = 1.5, lw = cw - 2*b, lh = ch - 2*b;
+    const x = (idx%ETQ_COL)*cw + b, y = pagina*297 + Math.floor(idx/ETQ_COL)*ch + b;
+    const f = qrFonte(e.codigo);
+    const qrMm = Math.min(lw - 4, lh*0.60), qx = (lw - qrMm)/2;
+    s += '<g transform="translate('+x.toFixed(2)+','+y.toFixed(2)+')">'+
+      '<rect x="0" y="0" width="'+lw.toFixed(2)+'" height="'+lh.toFixed(2)+'" fill="none" stroke="#000" stroke-width="0.3"/>';
+    if(f && f.m){
+      const n = f.m.length, k = qrMm/n;
+      let d = '';
+      for(let r=0;r<n;r++){
+        let c = 0;
+        while(c < n){
+          if(!f.m[r][c]){ c++; continue; }
+          const ini = c;
+          while(c < n && f.m[r][c]) c++;
+          d += 'M' + ini + ' ' + r + 'h' + (c-ini) + 'v1h-' + (c-ini) + 'z';
+        }
+      }
+      s += '<g transform="translate('+qx.toFixed(2)+',2) scale('+k.toFixed(5)+')">'+
+        '<rect width="'+n+'" height="'+n+'" fill="#ffffff"/><path d="'+d+'" fill="#000000"/></g>';
+    }else if(f && f.cv){
+      const u = f.cv.toDataURL('image/png');
+      s += '<image x="'+qx.toFixed(2)+'" y="2" width="'+qrMm.toFixed(2)+'" height="'+qrMm.toFixed(2)+
+        '" href="'+u+'" xlink:href="'+u+'" style="image-rendering:pixelated"/>';
+    }
+    s += '<text x="'+(lw/2).toFixed(2)+'" y="'+(2+qrMm+5.5).toFixed(2)+'" text-anchor="middle" '+
+      'font-family="Arial,Helvetica,sans-serif" font-size="5" font-weight="bold" fill="#000">'+esc(e.codigo)+'</text>';
+    s += '<text x="'+(lw/2).toFixed(2)+'" y="'+(2+qrMm+9.5).toFixed(2)+'" text-anchor="middle" '+
+      'font-family="Arial,Helvetica,sans-serif" font-size="3" fill="#000">'+esc(e.tipoNome||'')+'</text>';
+    s += '</g>';
+  });
+  return s + '</svg>';
+}
+
+function folhaImpressao(etqs){
+  const porPagina = ETQ_COL*ETQ_LIN;
+  const pag = [];
+  for(let i=0;i<etqs.length;i+=porPagina) pag.push(etqs.slice(i, i+porPagina));
+  $('#printarea').innerHTML = pag.map(pg=>
+    '<div class="folha">'+pg.map(e=>
+      '<div class="etqcell"><div class="etq">'+qrSvg(e.codigo, '32mm')+
+      '<b>'+esc(e.codigo)+'</b><span>'+esc(e.tipoNome||'')+'</span></div></div>').join('')+
+    '</div>').join('');
+  window.print();
+}
+
+function baixarArquivo(nome, blob){
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = nome;
+  document.body.appendChild(a); a.click();
+  setTimeout(()=>{ if(a.parentNode) a.parentNode.removeChild(a); URL.revokeObjectURL(a.href); }, 5000);
+}
+
+function dataUrlBlob(u){
+  const p = String(u).split(','), bin = atob(p[1]), arr = new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) arr[i] = bin.charCodeAt(i);
+  return new Blob([arr], { type:'image/png' });
+}
+
+function etiquetasLista(){
+  let lista = DB.veiculos.slice();
+  if(etqFoco) lista = lista.filter(v => etqFoco.indexOf(v.id) >= 0);
+  const q = (($('#fEtqBusca')||{}).value || '').trim().toLowerCase();
+  const tp = ($('#fEtqTipo')||{}).value;
+  if(q) lista = lista.filter(v => v.codigo.toLowerCase().indexOf(q) >= 0);
+  if(tp) lista = lista.filter(v => v.tipoId === tp);
+  lista.sort((a,b)=>a.codigo.localeCompare(b.codigo,'pt-BR',{numeric:true}));
+  return lista.map(v => ({ id:v.id, codigo:v.codigo, tipoNome:getTipo(v.tipoId).nome }));
+}
+
+function etiquetaHtml(e){
+  return '<div class="etqprev" title="'+esc(e.codigo)+'">'+qrSvg(e.codigo, 62)+
+    '<b>'+esc(e.codigo)+'</b><span>'+esc(e.tipoNome||'')+'</span></div>';
+}
+
+function renderEtiquetas(){
+  const sel = $('#fEtqTipo');
+  if(sel && sel.options.length <= 1)
+    sel.innerHTML = '<option value="">Todos os tipos</option>' +
+      DB.tipos.map(t=>'<option value="'+t.id+'">'+esc(t.nome)+'</option>').join('');
+  const lista = etiquetasLista();
+  const folhas = Math.max(1, Math.ceil(lista.length/(ETQ_COL*ETQ_LIN)));
+  if($('#etqQtd')) $('#etqQtd').textContent = lista.length + (lista.length===1 ? ' etiqueta' : ' etiquetas');
+  if($('#etqInfo')) $('#etqInfo').textContent = !lista.length ? '' :
+    folhas + (folhas===1 ? ' folha A4' : ' folhas A4') + ' · ' + ETQ_COL + '×' + ETQ_LIN + ' por folha';
+  if($('#btnEtqFoco')) $('#btnEtqFoco').style.display = etqFoco ? '' : 'none';
+  const mostra = lista.slice(0, 60);
+  if(!$('#etqGrade')) return;
+  $('#etqGrade').innerHTML = mostra.length
+    ? mostra.map(etiquetaHtml).join('') +
+      (lista.length > mostra.length
+        ? '<div class="muted" style="width:100%;font-size:12.5px">Mostrando '+mostra.length+' de '+lista.length+
+          ' — o download sai com a lista inteira.</div>' : '')
+    : '<div class="empty" style="width:100%">Nenhum veículo. Cadastre a frota em “Frota → Cadastrar em lote”.</div>';
+}
+
+function baixarEtiqueta(id){
+  const v = getVeiculo(id);
+  if(!v) return;
+  if(!window.QRCode) return toast('QR indisponível: conecte a internet e tente de novo.');
+  const cel = etiquetaCanvas({ codigo:v.codigo, tipoNome:getTipo(v.tipoId).nome },
+                             Math.round(ETQ_MM_L*ETQ_PX), Math.round(ETQ_MM_A*ETQ_PX));
+  baixarArquivo('etiqueta_' + v.codigo + '.png', dataUrlBlob(cel.toDataURL('image/png')));
+  toast('Etiqueta de ' + v.codigo + ' baixada.');
+}
+
+function etiquetasProntas(lista){
+  if(!lista.length){ toast('Nenhum veículo para etiquetar.'); return false; }
+  if(!window.QRCode){ toast('QR indisponível: conecte a internet e tente de novo.'); return false; }
+  return true;
+}
+
+$('#btnEtqImprimir').onclick = ()=>{ const l = etiquetasLista(); if(etiquetasProntas(l)) folhaImpressao(l); };
+$('#btnEtqPdf').onclick = ()=>{
+  const l = etiquetasLista(); if(!etiquetasProntas(l)) return;
+  const J = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
+  if(!J){ toast('PDF indisponível — use “Imprimir folha”.'); return folhaImpressao(l); }
+  const porPagina = ETQ_COL*ETQ_LIN;
+  const cw = 210/ETQ_COL, ch = 297/ETQ_LIN, b = 1.5;
+  const doc = new J({ unit:'mm', format:'a4' });
+  l.forEach((e, i)=>{
+    const idx = i % porPagina;
+    if(i > 0 && idx === 0) doc.addPage();
+    const lw = cw - 2*b, lh = ch - 2*b;
+    const x = (idx%ETQ_COL)*cw + b, y = Math.floor(idx/ETQ_COL)*ch + b;
+    const f = qrFonte(e.codigo);
+    const qrMm = Math.min(lw - 4, lh*0.60), qx = x + (lw - qrMm)/2, qy = y + 2;
+    doc.setDrawColor(0); doc.setLineWidth(0.3); doc.rect(x, y, lw, lh);
+    if(f && f.m){
+      const n = f.m.length, cell = qrMm/n;
+      doc.setFillColor(255,255,255); doc.rect(qx, qy, qrMm, qrMm, 'F');
+      doc.setFillColor(0,0,0);
+      for(let r=0;r<n;r++){
+        let c = 0;
+        while(c < n){
+          if(!f.m[r][c]){ c++; continue; }
+          const ini = c;
+          while(c < n && f.m[r][c]) c++;
+          doc.rect(qx + ini*cell, qy + r*cell, (c-ini)*cell, cell, 'F');
+        }
+      }
+    }else if(f && f.cv){
+      doc.addImage(f.cv.toDataURL('image/png'), 'PNG', qx, qy, qrMm, qrMm);
+    }
+    doc.setTextColor(0);
+    doc.setFont('helvetica','bold'); doc.setFontSize(14);
+    doc.text(e.codigo, x + lw/2, qy + qrMm + 5.5, { align:'center' });
+    doc.setFont('helvetica','normal'); doc.setFontSize(8);
+    doc.text(String(e.tipoNome||''), x + lw/2, qy + qrMm + 9.5, { align:'center' });
+  });
+  doc.save('etiquetas_frota.pdf');
+  toast(l.length + ' etiqueta(s) no PDF.');
+};
+$('#btnEtqPng').onclick = ()=>{
+  const l = etiquetasLista(); if(!etiquetasProntas(l)) return;
+  const maxPag = 2;
+  if(l.length > maxPag*ETQ_COL*ETQ_LIN)
+    toast('PNG sai até ' + (maxPag*ETQ_COL*ETQ_LIN) + ' etiquetas — para a frota toda use o PDF.');
+  const cv = folhaCanvas(l, 200, maxPag);
+  baixarArquivo('etiquetas_frota.png', dataUrlBlob(cv.toDataURL('image/png')));
+};
+$('#btnEtqSvg').onclick = ()=>{
+  const l = etiquetasLista(); if(!etiquetasProntas(l)) return;
+  baixarArquivo('etiquetas_frota.svg',
+    new Blob([folhaSvg(l)], { type:'image/svg+xml;charset=utf-8' }));
+};
+$('#btnEtqFoco').onclick = ()=>{ etqFoco = null; renderEtiquetas(); };
+if($('#fEtqBusca')) $('#fEtqBusca').oninput = renderEtiquetas;
+if($('#fEtqTipo')) $('#fEtqTipo').onchange = renderEtiquetas;
+
+function oferecerEtiquetas(ids){
+  const ov = abrirModal('<header><h3>'+ids.length+' veículo(s) criado(s)</h3><button class="x">&times;</button></header>'+
+    '<div class="body"><p style="margin:0;font-size:13.5px">A frota nova está pronta para etiquetar: gere as etiquetas '+
+    'em PNG, SVG, PDF ou imprima a folha A4 e cole no patinete.</p></div>'+
+    '<footer><button class="btn sec" id="c">Agora não</button><button class="btn" id="e">Gerar etiquetas</button></footer>');
+  ov.querySelector('#c').onclick = ()=>fecharModal(ov);
+  ov.querySelector('#e').onclick = ()=>{ etqFoco = ids; fecharModal(ov); irPara('etiquetas'); };
 }
 
 /* ===================== ABA VISTORIA =====================
@@ -2933,14 +3294,17 @@ $('#btnLote').onclick = ()=>{
     const tipo=ov.querySelector('#lTipo').value, pre=ov.querySelector('#lPre').value.trim();
     const de=+ov.querySelector('#lDe').value, ate=+ov.querySelector('#lAte').value, dig=+ov.querySelector('#lDig').value;
     if(!(ate>=de) || (ate-de)>2000) return toast('Intervalo inválido.');
-    let n=0;
+    let n=0; const criados=[];
     for(let i=de;i<=ate;i++){
       const cod = pre + String(i).padStart(dig,'0');
       if(DB.veiculos.some(v=>v.codigo.toLowerCase()===cod.toLowerCase())) continue;
-      DB.veiculos.push({ id:uid('veiculo'), codigo:cod, tipoId:tipo, placa:'', status:'loja' });
+      const id = uid('veiculo');
+      DB.veiculos.push({ id:id, codigo:cod, tipoId:tipo, placa:'', status:'loja' });
+      criados.push(id);
       n++;
     }
     persist(); fecharModal(ov); renderFrota(); renderPainel(); toast(n+' veículos criados.');
+    if(n) oferecerEtiquetas(criados);
   };
 };
 

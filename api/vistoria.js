@@ -3,19 +3,25 @@
    GET  /api/vistoria?token=...                 fila do momento (payload mínimo)
    POST /api/vistoria { token, acao, ... }      confirma a liberação ou a chegada
 
-   Quem tem o link fotografa, confere o lacre e dá o horário — e nada mais:
-   o payload não leva CPF, senha, usuários nem o documento inteiro. O token
-   é o mesmo de Configurações e só muda se o lojista pedir um novo.
+   Quem tem o link fotografa, escaneia a etiqueta do patinete e dá o horário —
+   e nada mais: o payload não leva CPF, senha, usuários nem o documento inteiro.
+   O token é o mesmo de Configurações e só muda se o lojista pedir um novo.
+
+   Os dois casos exigem `veiculo`: o código lido na etiqueta colada no veículo,
+   conferido contra o código do cartão no servidor (409 se for outro patinete).
 
    Liberação (acao='liberar'):
-     { token, locacaoId, fotos:[dataUrl,...], lacre, obs }
-     → locação vira 'ativa' com inicio/fimPrevisto reais, o veículo sai
-       para 'rua', o lacre esperado é rompido e o grupo fica 'ativo'.
+     { token, locacaoId, veiculo, fotos:[dataUrl,...], obs }
+     → locação vira 'ativa' com inicio/fimPrevisto reais, o veículo sai para
+       'rua', o lacre já registrado para o patinete é rompido no estoque
+       (sem conferência manual — a etiqueta identificou o veículo) e o grupo
+       fica 'ativo'.
 
    Chegada (acao='chegada'):
-     { token, locacaoId, fotos:[dataUrl,...], lacre, estado, obs }
+     { token, locacaoId, veiculo, fotos:[dataUrl,...], lacre, estado, obs }
      → locação vira 'devolvida' com fimReal da hora do celular; o balcão
-       fecha a cobrança depois, com as peças e o excedente.
+       fecha a cobrança depois, com as peças e o excedente. O lacre novo
+       continua digitado: a etiqueta fixa não tem o número do lacre novo.
    ===================================================================== */
 const { json, erro, metodoInvalido, corpo } = require('../lib/http');
 const { temBanco, sql } = require('../lib/banco');
@@ -82,17 +88,6 @@ function marcarRomper(db, n, locId, veiculoId, quem){
   l.locacaoId = locId; l.veiculoId = veiculoId;
   return true;
 }
-function divergir(db, tipo, detalhe, extra){
-  db.seq = db.seq || {};
-  db.seq.diverg = (db.seq.diverg || 1);
-  const id = db.seq.diverg;
-  db.seq.diverg = id + 1;
-  db.divergencias = db.divergencias || [];
-  db.divergencias.push(Object.assign({
-    id: 'diverg' + id, ts: Date.now(), tipo, detalhe,
-    usuario: 'vistoria (link)', resolvida: false
-  }, extra || {}));
-}
 
 /* lê, deixa mutar e grava com lock otimista: se o balcão salvou antes,
    refaz a mutação no documento novo em vez de sobrescrever */
@@ -117,14 +112,14 @@ function payload(db, agora){
     String(hoje.getMonth()+1).padStart(2,'0') + '-' + String(hoje.getDate()).padStart(2,'0');
 
   const pendentes = locs.filter(l => l.status === 'pendente').map(l => ({
-    locacaoId: l.id, grupoId: l.grupoId, codigo: l.veiculoCodigo, tipoNome: l.tipoNome,
+    locacaoId: l.id, grupoId: l.grupoId, codigo: codigoDoVeiculo(db, l), tipoNome: l.tipoNome,
     clienteNome: l.clienteNome, pagamento: l.pagamento, valorBase: l.valorBase,
     tarifaLabel: l.tarifaLabel, duracaoMin: l.duracaoMin, pagoEm: l.pagoEm || null,
     obsSaida: l.obsSaida || '', lacreEsperado: l.lacreEsperado || null
   }));
 
   const naRua = locs.filter(l => l.status === 'ativa').map(l => ({
-    locacaoId: l.id, codigo: l.veiculoCodigo, clienteNome: l.clienteNome,
+    locacaoId: l.id,     codigo: codigoDoVeiculo(db, l), clienteNome: l.clienteNome,
     inicio: l.inicio, fimPrevisto: l.fimPrevisto, tarifaLabel: l.tarifaLabel,
     atrasado: agora > (l.fimPrevisto || agora),
     fotosSaida: (l.fotosSaida || []).length
@@ -132,14 +127,14 @@ function payload(db, agora){
 
   const chegadas = locs.filter(l => l.status === 'devolvida' && diaDe(l.fimReal) === diaHoje)
     .map(l => ({
-      locacaoId: l.id, codigo: l.veiculoCodigo, clienteNome: l.clienteNome,
+      locacaoId: l.id,     codigo: codigoDoVeiculo(db, l), clienteNome: l.clienteNome,
       fimReal: l.fimReal, lacreEntrada: l.lacreEntrada || null,
       fotosEntrada: (l.fotosEntrada || []).length
     }));
 
   const liberadas = locs.filter(l => l.vistoriadaEm && diaDe(l.vistoriadaEm) === diaHoje)
     .map(l => ({
-      locacaoId: l.id, codigo: l.veiculoCodigo, clienteNome: l.clienteNome,
+      locacaoId: l.id,     codigo: codigoDoVeiculo(db, l), clienteNome: l.clienteNome,
       liberadaEm: l.vistoriadaEm, por: l.vistoriadoPor || 'link público',
       fotos: (l.fotosSaida || []).length, pendente: l.status === 'pendente'
     }));
@@ -158,6 +153,21 @@ function diaDe(ts){
   if(!ts) return '';
   const d = new Date(ts);
   return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+
+/* O que a câmera lê da etiqueta colada no patinete: aceita o código puro
+   (PAT-001), com prefixo da marca ou como link, e ignora caixa e espaços. */
+function codigoLido(v){
+  let t = String(v == null ? '' : v).trim();
+  const m = t.match(/^https?:\/\/[^\s]+\/([^\/\s#?]+)[^\s]*$/);
+  if(m) t = m[1];
+  return t.replace(/^veeloway:/i, '').trim();
+}
+
+function codigoDoVeiculo(db, loc){
+  if(loc && loc.veiculoCodigo) return String(loc.veiculoCodigo);
+  const v = ((db || {}).veiculos || []).find(x => String(x.id) === String(loc && loc.veiculoId));
+  return v ? String(v.codigo) : '';
 }
 
 module.exports = async (req, res) => {
@@ -197,14 +207,21 @@ module.exports = async (req, res) => {
     if(acao === 'chegada' && loc0.status !== 'ativa')
       return erro(res, 409, 'ja_devolvida', 'Essa locação não está na rua.');
 
+    /* a etiqueta do patinete identifica o veículo físico: quem libera precisa
+       ter escaneado o código daquele cartão, e o servidor confere */
+    const lido = codigoLido(b.veiculo);
+    const esperadoCodigo = codigoDoVeiculo(dbInicial, loc0);
+    if(!lido) return erro(res, 400, 'veiculo_nao_escaneado', 'Escaneie o código do patinete antes de continuar.');
+    if(lido.toUpperCase() !== String(esperadoCodigo).toUpperCase())
+      return erro(res, 409, 'veiculo_incorreto',
+        'O código lido é ' + lido + ', mas este cartão é ' + (esperadoCodigo || 'outro patinete') + '.');
+
     const exigirFoto = dbInicial.config ? dbInicial.config.exigirFoto !== false : true;
     const exigirLacre = dbInicial.config ? dbInicial.config.exigirLacre !== false : true;
     const fotosBrutas = Array.isArray(b.fotos) ? b.fotos.filter(Boolean).slice(0, 6) : [];
     if(exigirFoto && !fotosBrutas.length)
       return erro(res, 400, 'foto_obrigatoria', 'Ao menos uma foto é obrigatória para a vistoria.');
     const lacre = String(b.lacre == null ? '' : b.lacre).trim().slice(0, 20);
-    if(exigirLacre && acao === 'liberar' && !lacre)
-      return erro(res, 400, 'lacre_obrigatorio', 'Informe o número do lacre rompido.');
     if(exigirLacre && acao === 'chegada' && !lacre)
       return erro(res, 400, 'lacre_obrigatorio', 'Informe o número do novo lacre.');
     const estado = acao === 'chegada' ? (b.estado === 'manutencao' ? 'manutencao' : 'loja') : null;
@@ -231,28 +248,22 @@ module.exports = async (req, res) => {
         loc.vistoriadaEm = inicio;
         loc.vistoriadoPor = quem;
         loc.fotosSaida = fotos;
-        loc.lacreSaida = lacre;
+        loc.lacreSaida = null;   /* preenchido abaixo pelo lacre do veículo */
         loc.obsVistoria = String(b.obs || '').trim().slice(0, 300);
         loc.status = 'ativa';
 
         const veiculo = (db.veiculos || []).find(v => v.id === loc.veiculoId);
         if(veiculo) veiculo.status = 'rua';
 
+        /* o lacre da saída sai sozinho: é o que já estava registrado para este
+           patinete (a etiqueta escaneada identificou o veículo físico). O
+           rompimento continua sendo lançado no estoque de lacres. */
         if(exigirLacre){
           const ap = lacreAplicadoNo(db, loc.veiculoId);
           const esperado = ap ? String(ap.n) : (loc.lacreEsperado || null);
-          if(esperado && esperado !== lacre){
-            divergir(db, 'lacre_trocado',
-              (loc.veiculoCodigo || '') + ' saiu com lacre ' + lacre + ', mas o sistema tinha ' + esperado,
-              { veiculoId: loc.veiculoId, esperado, informado: lacre, locacaoId: loc.id });
-          } else if(!esperado){
-            divergir(db, 'veiculo_sem_lacre',
-              (loc.veiculoCodigo || '') + ' saiu sem lacre registrado no sistema (informado ' + lacre + ')',
-              { veiculoId: loc.veiculoId, informado: lacre, locacaoId: loc.id });
-          }
-          if(esperado) marcarRomper(db, esperado, loc.id, loc.veiculoId, quem);
-          if(lacre && lacre !== esperado) marcarRomper(db, lacre, loc.id, loc.veiculoId, quem);
+          loc.lacreSaida = esperado;
           loc.lacreEsperado = esperado;
+          if(esperado) marcarRomper(db, esperado, loc.id, loc.veiculoId, quem);
         }
 
         const g = (db.grupos || []).find(x => x.id === loc.grupoId);
