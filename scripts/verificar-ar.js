@@ -341,8 +341,20 @@ const JPG = '/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE
           (d1.lacres || {})[lacre11] && (d1.lacres || {})[lacre11].status === 'rompido',
           'na saída o lacre sai sozinho: o do veículo é registrado e rompido no estoque',
           loc1 ? 'lacreSaida ' + loc1.lacreSaida + ' · estoque ' + ((d1.lacres || {})[lacre11] || {}).status : 'sumiu');
-    check(!((d1.divergencias || []).some(x => x.tipo === 'lacre_trocado' || x.tipo === 'veiculo_sem_lacre')),
-          'não há campo de lacre para trocar na saída e nenhuma divergência foi criada');
+    /* o cartão de saída não tem mais campo de lacre: só o scan da etiqueta. A
+       comparação é contra o documento de antes da locação de teste, porque o
+       documento real pode trazer divergências gravadas pelo código antigo. */
+    const divAntes = (docA.divergencias || []).map(x => String(x.id));
+    const nasceu = (d1.divergencias || [])
+      .filter(x => x.tipo === 'lacre_trocado' || x.tipo === 'veiculo_sem_lacre')
+      .filter(x => divAntes.indexOf(String(x.id)) < 0);
+    const scanNaPagina = txtV.indexOf('Escanear código do patinete') >= 0;
+    const campoVelho = txtV.indexOf('Lacre rompido nesta saída') >= 0;
+    check(!nasceu.length && scanNaPagina && !campoVelho,
+          'na saída não há campo de lacre: o cartão só escaneia a etiqueta e nenhuma divergência nasce',
+          nasceu.length ? ('divergência nova: ' + JSON.stringify(nasceu[0]).slice(0, 160))
+                        : (campoVelho ? 'campo de lacre antigo ainda na página'
+                                      : (scanNaPagina ? '' : 'botão de escanear fora da página')));
 
     const chegadaSemLacre = await post(null, '/api/vistoria',
       { token: tokenV, acao: 'chegada', locacaoId: String(lid11), veiculo: 'VIST001', fotos: [], lacre: '', estado: 'loja', obs: 'verificação' });
