@@ -1716,7 +1716,8 @@ function abrirWizard(veiculoId){
   if(!caixaAberto()) return exigirCaixa('liberar um veículo', ()=> abrirWizard(veiculoId));
   pararEsperaAssinatura();
   W = { passo:1, veiculos: veiculoId?[veiculoId]:[], clienteId:null, novoCliente:null,
-        duracao:null, pagamento:PAGAMENTOS[0], assinatura:null, obs:'', _pad:null,
+        duracao:null, pagamento:PAGAMENTOS[0], pgModo:'unica', pagamentos:{},
+        assinatura:null, obs:'', _pad:null,
         docFoto:null, _docFotoCliente:null,
         exigirDocFoto: DB.config.exigirDocFoto===true };
   const ov = abrirModal(
@@ -1973,10 +1974,50 @@ function itensDaLocacao(min){
   return W.veiculos.map(id=>{
     const v = getVeiculo(id), tipo = getTipo(v.tipoId), t = tarifaPorMin(tipo, min);
     return { veiculoId:id, codigo:v.codigo, tipoId:tipo.id, tipoNome:tipo.nome,
-             tarifaId:t.id, tarifaLabel:t.label, minutos:t.min, valor:t.valor };
+             tarifaId:t.id, tarifaLabel:t.label, minutos:t.min, valor:t.valor,
+             pagamento: pagamentoDe(id) };
   });
 }
 function totalDaDuracao(min){ return itensDaLocacao(min).reduce((s,i)=>s+i.valor,0); }
+
+/* --- formas de pagamento: uma para a locação toda, ou uma por veículo.
+       O caixa, o financeiro e o CSV já somam por locação, então gravar a
+       forma em cada `loc` é o que faz a divisão aparecer na apuração. --- */
+function pagamentoDe(veiculoId){
+  return W.pagamentos[veiculoId] || W.pagamento || PAGAMENTOS[0];
+}
+function pagamentosAgrupados(lista){
+  const g = {};
+  (lista||[]).forEach(l=>{
+    const forma = l.pagamento || W.pagamento || PAGAMENTOS[0];
+    const cod = l.codigo || l.veiculoCodigo || '';
+    const val = Number(l.valor != null ? l.valor : (l.valorBase||0)) || 0;
+    g[forma] = g[forma] || { forma:forma, total:0, codigos:[] };
+    g[forma].total += val;
+    if(cod && g[forma].codigos.indexOf(cod) < 0) g[forma].codigos.push(cod);
+  });
+  return Object.keys(g).sort().map(k=>g[k]);
+}
+/* contrato e assinatura: uma forma só é dita nomeada; dividido, cada uma
+   com os veículos que pagaram dela */
+function textoPagamento(lista, detalhar){
+  const g = pagamentosAgrupados(lista);
+  if(!g.length) return W.pagamento || PAGAMENTOS[0];
+  if(g.length === 1) return g[0].forma;
+  if(!detalhar) return g.map(x=>x.forma).join(', ');
+  return g.map(x=>x.forma + (x.codigos.length ? ' (' + x.codigos.join(', ') + ')' : '')).join(', ');
+}
+/* resumo do balcão e do link: quando é dividido, uma linha por forma */
+function linhasPagamento(lista){
+  const g = pagamentosAgrupados(lista);
+  const total = g.reduce((s,x)=>s+x.total,0);
+  if(g.length <= 1)
+    return '<div class="l tot"><span>Pago via '+(g[0]?esc(g[0].forma):esc(W.pagamento||''))+'</span><span>'+brl(total)+'</span></div>';
+  return g.map(x=>'<div class="l"><span>'+esc(x.forma)+
+      (x.codigos.length>1 ? ' <span class="muted">('+x.codigos.length+')</span>' : '')+
+      '</span><b>'+brl(x.total)+'</b></div>').join('')+
+    '<div class="l tot"><span>Pago em '+g.length+' formas</span><span>'+brl(total)+'</span></div>';
+}
 
 function passoTarifa(){
   const durs = duracoesDisponiveis();
@@ -1993,12 +2034,66 @@ function passoTarifa(){
         '</div>'; }).join('')+'</div>'+
     '<p class="muted" style="font-size:12px;margin:10px 0 16px">Excedente por fração de minuto após '+(DB.config.toleranciaMin||0)+' min de tolerância: '+
       tps.map(t=>esc(t.nome)+' '+brl(t.excedenteMin)+'/min').join(' · ')+'. Contado por veículo.</p>'+
-    '<label class="f"><span>Forma de pagamento (antecipado)</span><select id="wPgto">'+
+    '<div class="segmented" id="wPgModo">'+
+      '<button type="button" data-pgmodo="unica"'+(W.pgModo==='porVeiculo'?'':' class="on"')+
+        '>Uma forma para toda a locação</button>'+
+      '<button type="button" data-pgmodo="porVeiculo"'+(W.pgModo==='porVeiculo'?' class="on"':'')+
+        '>Forma por veículo</button>'+
+    '</div>'+
+    '<label class="f"><span id="wPgRotulo">'+
+      (W.pgModo==='porVeiculo'?'Forma padrão (aplicar a todas as da tabela)':'Forma de pagamento (antecipado)')+
+      '</span><select id="wPgto">'+
       PAGAMENTOS.map(p=>'<option'+(W.pagamento===p?' selected':'')+'>'+p+'</option>').join('')+'</select></label>'+
+    '<div id="wPgTabela"'+(W.pgModo==='porVeiculo'?'':' style="display:none"')+'></div>'+
     '<div id="wResumo"></div>';
 }
 function ligaPassoTarifa(){
+  const pintaSoma = ()=>{
+    const s = $('#wPgSoma'); if(!s) return;
+    const g = pagamentosAgrupados(W.duracao ? itensDaLocacao(W.duracao) : []);
+    s.innerHTML = g.map(x=>esc(x.forma)+' '+brl(x.total)).join(' &nbsp;·&nbsp; ');
+  };
+  const pintarFormas = ()=>{
+    const modo = W.pgModo === 'porVeiculo';
+    const rot = $('#wPgRotulo'), tb = $('#wPgTabela');
+    if(rot) rot.textContent = modo ? 'Forma padrão (aplicar a todas as da tabela)'
+                                   : 'Forma de pagamento (antecipado)';
+    if(!tb) return;
+    tb.style.display = modo ? '' : 'none';
+    if(!modo){ tb.innerHTML=''; return; }
+    const itens = W.duracao ? itensDaLocacao(W.duracao) : [];
+    tb.innerHTML = itens.length
+      ? '<div class="card" style="margin:2px 0 10px"><div class="tablewrap"><table>'+
+        '<thead><tr><th>Veículo</th><th>Tipo</th><th class="right">Valor</th>'+
+        '<th>Forma de pagamento</th></tr></thead><tbody>'+
+        itens.map(i=>'<tr><td><b>'+esc(i.codigo)+'</b></td><td>'+esc(i.tipoNome)+'</td>'+
+          '<td class="right mono">'+brl(i.valor)+'</td>'+
+          '<td><select data-pg="'+i.veiculoId+'">'+PAGAMENTOS.map(p=>
+            '<option'+(pagamentoDe(i.veiculoId)===p?' selected':'')+'>'+p+'</option>').join('')+
+            '</select></td></tr>').join('')+
+        '</tbody></table></div></div>'+
+        '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">'+
+          '<button type="button" class="btn sec sm" id="wPgTodos">Aplicar a forma padrão a todas</button>'+
+          '<span class="muted" style="font-size:12.5px" id="wPgSoma"></span>'+
+        '</div>'
+      : '<div class="muted" style="font-size:12.5px;margin:4px 0 10px">'+
+          'Escolha o período para dividir a forma de pagamento por veículo.</div>';
+    $$('#wPgTabela [data-pg]').forEach(sel=> sel.onchange = ()=>{
+      W.pagamentos[sel.dataset.pg] = sel.value;
+      pintaSoma();
+    });
+    const bt = $('#wPgTodos');
+    if(bt) bt.onclick = ()=>{
+      const forma = $('#wPgto').value;
+      itens.forEach(i=>{ W.pagamentos[i.veiculoId] = forma; });
+      $$('#wPgTabela [data-pg]').forEach(sel=> sel.value = forma);
+      pintaSoma();
+      toast('Todas as formas passaram a ser ' + forma + '.');
+    };
+    pintaSoma();
+  };
   const pinta = ()=>{
+    pintarFormas();
     if(!W.duracao){ $('#wResumo').innerHTML=''; return; }
     const itens = itensDaLocacao(W.duracao);
     const fim = Date.now()+W.duracao*60000;
@@ -2014,8 +2109,13 @@ function ligaPassoTarifa(){
   };
   $$('#wTarifas .tarifa').forEach(el=> el.onclick = ()=>{
     W.duracao = +el.dataset.min;
-    $$('#wTarifas .tarifa').forEach(x=>x.classList.toggle('sel', x===el));
+    $$('#wTarifas .tarifa').forEach(x=> x.classList.toggle('sel', x===el));
     pinta();
+  });
+  $$('#wPgModo button').forEach(b=> b.onclick = ()=>{
+    W.pgModo = b.dataset.pgmodo;
+    $$('#wPgModo button').forEach(x=> x.classList.toggle('on', x===b));
+    pintarFormas();
   });
   $('#wPgto').onchange = e=> W.pagamento = e.target.value;
   pinta();
@@ -2030,10 +2130,14 @@ function dadosContrato(){
            label: itens[0] ? itens[0].tarifaLabel : '' };
 }
 function montarContrato(d){
+  /* dividido, cada equipamento entra com a forma com que foi pago — o
+     contrato já diz "conforme a discriminação por equipamento acima" */
+  const dividido = pagamentosAgrupados(d.itens).length > 1;
   const lista = d.itens.map((i,n)=>
     '  ' + String(n+1) + ') ' + i.codigo + ' — ' + i.tipoNome +
     (getVeiculo(i.veiculoId).placa ? ' — série ' + getVeiculo(i.veiculoId).placa : '') +
-    ' — ' + i.tarifaLabel + ' — ' + brl(i.valor)).join('\n');
+    ' — ' + i.tarifaLabel + ' — ' + brl(i.valor) +
+    (dividido ? ' — pago em ' + (i.pagamento || W.pagamento || PAGAMENTOS[0]) : '')).join('\n');
   const porTipo = {};
   d.itens.forEach(i=>{ porTipo[i.tipoNome]=(porTipo[i.tipoNome]||0)+1; });
   const qtd = Object.entries(porTipo).map(([n,q])=>q+' '+n+(q>1?'s':'')).join(' + ');
@@ -2047,7 +2151,7 @@ function montarContrato(d){
     veiculo:d.itens.map(i=>i.codigo).join(', '), tipo:Object.keys(porTipo).join(' e '),
     placa:d.itens.map(i=>getVeiculo(i.veiculoId).placa||i.codigo).join(', '),
     tarifa:d.label, inicio:dtFmt(d.ini), fim:dtFmt(d.fim),
-    valor:brl(d.total), pagamento:d.pagamento||W.pagamento,
+    valor:brl(d.total), pagamento:textoPagamento(d.itens, true),
     tolerancia:String(DB.config.toleranciaMin||0),
     excedente:d.tps.map(t=>t.nome+' '+brl(t.excedenteMin)+'/min').join('; '),
     vistoria: (W.obsVist && W.obsVist.trim()) ? W.obsVist.trim() : 'sem ressalvas',
@@ -2085,7 +2189,7 @@ function passoContrato(){
       '<div class="l"><span>Levando</span><b>'+resumoSelecao()+'</b></div>'+
       '<div class="l"><span>Veículos</span><b>'+d.itens.map(i=>esc(i.codigo)).join(', ')+'</b></div>'+
       '<div class="l"><span>Período (estimativa)</span><b>'+esc(d.label)+' — até '+hhmm(d.fim)+'</b></div>'+
-      '<div class="l tot"><span>Pago via '+esc(W.pagamento)+'</span><span>'+brl(d.total)+'</span></div>'+
+      linhasPagamento(d.itens)+
     '</div>'+
     '<div class="segmented" id="wCanal">'+
       '<button data-canal="celular" class="on">📱 Assinar no celular do cliente</button>'+
@@ -2207,7 +2311,7 @@ async function publicarContrato(){
         veiculos: resumoSelecao(),
         periodo: d.label,
         devolver: hhmm(d.fim),
-        pagamento: W.pagamento || '',
+        pagamento: textoPagamento(d.itens),
         valor: d.total,
         excedente: d.tps.map(t=>brl(t.excedenteMin)+'/min').join(' · ')
       },
@@ -2374,7 +2478,7 @@ function concluirLocacao(){
       inicio: null, fimPrevisto: null, fimReal: null,
       pagoEm: pagoAgora, liberadaEm: null, vistoriadaEm: null, vistoriadoPor: null,
       valorBase: i.valor, valorExcedente: 0, minutosExcedente: 0,
-      pagamento: W.pagamento, pagamentoExcedente: null,
+      pagamento: i.pagamento || W.pagamento, pagamentoExcedente: null,
       obsSaida: W.obs||'', obsEntrada: '', obsVistoria: '',
       atendenteSaida: usuarioAtual(), atendenteEntrada: '',
       fotosSaida: [], fotosEntrada: [],
@@ -2409,7 +2513,7 @@ function mostrarLinkVistoria(grupo){
         '<div class="l"><span>Cliente</span><b>'+esc(grupo.clienteNome)+'</b></div>'+
         '<div class="l"><span>Veículos</span><b>'+esc(cods)+'</b></div>'+
         '<div class="l"><span>Pacote ('+esc(grupo.tarifaLabel)+')</span><b>'+brl(grupo.valorBase)+'</b></div>'+
-        '<div class="l tot"><span>Pago via '+esc(grupo.pagamento)+'</span><span>'+brl(grupo.valorBase)+'</span></div>'+
+        linhasPagamento(locsDoGrupo(grupo.id))+
       '</div>'+
       '<div class="fnota">Falta só a vistoria de saída. Ela é feita no celular por este link — fotos, lacre e horário — e é a confirmação que <b>inicia o relógio</b> da locação.</div>'+
       '<div class="aviso"><div class="assqr"><div id="vlQr"></div></div>'+

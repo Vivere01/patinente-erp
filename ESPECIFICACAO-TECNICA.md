@@ -277,6 +277,20 @@ quem tem o link **não entra no sistema**: só enxerga a fila e grava a vistoria
 payload público não leva CPF, usuários nem o contrato, e o token é comparado sem vazar
 diferença pelo tempo.
 
+- **Pagamento — uma forma só ou uma por veículo.** No passo 3 o atendente escolhe entre
+  **"Uma forma para toda a locação"** (padrão, o comportamento de sempre) e **"Forma por
+  veículo"**: aparece a tabela com um select por patinete/moto do grupo, a soma de cada
+  forma na hora e o botão **"Aplicar a forma padrão a todas"**. A forma vai para
+  `loc.pagamento` de **cada** veículo — é exatamente o campo que `entradasDoDia()` (Caixa
+  do dia), o Financeiro ("Forma") e a exportação CSV já leem — então a divisão aparece na
+  apuração sem tratamento nenhum; `grupo.pagamento` guarda a forma única quando todas são
+  iguais. Dividido, `{{pagamento}}` do contrato vira
+  "Cartão de crédito (MOTO-02), Dinheiro (MOTO-01), Pix (PAT-001, PAT-002, PAT-003)", a
+  lista de equipamentos traz **"— pago em {forma}"** em cada linha (o contrato já diz
+  "conforme a discriminação por equipamento acima") e os resumos do balcão, da assinatura
+  no celular e do link da vistoria passam a ter **uma linha por forma**. Com uma forma só,
+  tudo continua idêntico ao de antes. O **excedente da devolução em grupo continua sendo
+  cobrado com uma forma só** (seção 4.9).
 - **Saída — "Vistoriado e liberar".** O balcão encerra a locação em **3 passos**
   (veículos → cliente → pagamento, contrato e assinatura); o botão final é
   **"Pagar e enviar para vistoria"**: grava `pagoEm`, contrato e assinatura, marca a
@@ -471,8 +485,9 @@ Duas vias: **celular do cliente** (fluxo principal) e **balcão** (fallback). O 
 | **Configurações** | Empresa; tolerância; tabela de preços; tabela de peças; template do contrato; lacres; conferência da frota e histórico; divergências; **link da vistoria (QR, copiar, WhatsApp, gerar novo)**; trilha de auditoria; backup e restauração; sair da conta. |
 
 Wizard de locação em **3 passos**: veículos (seleção múltipla) → cliente → pagamento,
-contrato e assinatura. O botão final **"Pagar e enviar para vistoria"** grava o
-pagamento, deixa a locação pendente, trava o veículo e entrega o link público da
+contrato e assinatura. No passo 3 a forma de pagamento pode ser **uma só para toda a
+locação ou uma por veículo** (seção 4.8). O botão final **"Pagar e enviar para vistoria"**
+grava o pagamento, deixa a locação pendente, trava o veículo e entrega o link público da
 vistoria (seção 4.8).
 
 Tema escuro e claro, alternável, preferência gravada por dispositivo. Escuro é o padrão: o painel é tela de vigilância, e os estados de cor precisam saltar.
@@ -550,7 +565,7 @@ Ao receber UPDATE de outro dispositivo, o `DB` é trocado e as telas repintadas.
 - **Comprovante para o cliente** com número do contrato, impresso ou por WhatsApp — especificado, não construído. Transforma o cliente em conferência da locação registrada.
 - **Foto do documento e selfie do cliente** — especificado, não construído. Componente de captura já existe.
 - **Rastreador com bloqueio remoto nas 10 motos** — decisão de compra do cliente, fora do software. Faixa de mercado levantada: R$ 40 a R$ 60/mês por veículo.
-- **Testes automatizados versionados.** `npm test` cobre as regras de dinheiro, sessão, senha, papéis, relatórios, identidade, vistoria (partes A a K) e o banco (transação descartada); `npm run verificar` repete a operação no site publicado (inclui a vistoria pública). Os cenários abaixo estão no script — vale mantê-los em dia ao mudar regra.
+- **Testes automatizados versionados.** `npm test` cobre as regras de dinheiro, sessão, senha, papéis, relatórios, identidade, vistoria (partes A a M) e o banco (transação descartada); `npm run verificar` repete a operação no site publicado (inclui a vistoria pública). Os cenários abaixo estão no script — vale mantê-los em dia ao mudar regra.
 
 ---
 
@@ -612,6 +627,10 @@ Reproduza estes casos — cobrem as regras que mais custam dinheiro se quebrarem
 36. Baixar PDF gera A4 com 3 × 6 etiquetas e QR em retângulos vetoriais; Imprimir folha usa o `#printarea` com quebra de página; PNG sai até 2 folhas por arquivo; SVG sai folha inteira (todas as páginas).
 37. Cada linha da Frota baixa a etiqueta daquele patinete em PNG (66 × 46 mm); "Cadastrar em lote" abre a oferta de etiquetas e filtra a grade pela frota nova, com *Ver toda a frota* para voltar.
 38. Sem internet, a tela avisa “QR indisponível” em vez de quebrar, e o PDF cai para a folha de impressão.
+
+**Forma de pagamento por veículo**
+39. Passo 3 com "Forma por veículo": 3 patinetes no Pix, uma moto em dinheiro e outra no crédito → cada locação grava a sua forma e o fechamento do dia separa as três (Pix, Dinheiro, Cartão de crédito) além do total.
+40. "Aplicar a forma padrão a todas" iguala as linhas da tabela; voltando para "Uma forma para toda a locação" o resumo volta a ser uma linha só, idêntica à de antes. O contrato dividido traz a forma em cada equipamento; o excedente da devolução em grupo continua com um select único.
 
 **Concorrência**
 18. Gravar com versão defasada retorna `ok=false`, não sobrescreve, e o cliente assume o estado do servidor.

@@ -20,6 +20,9 @@
    J. Senha — o navegador e o servidor derivam exatamente a mesma chave.
    K. Vistoria — o balcão cobra e assina, o celular (link público) fotografa,
       libera o veículo e marca a chegada; a cobrança fecha no balcão.
+   L. QR Codes — a etiqueta de cada patinete e a folha de etiquetas.
+   M. Forma de pagamento — uma para a locação toda ou uma por veículo,
+      somando cada forma separadamente no fechamento do caixa.
 
    Uso:  npm test
 */
@@ -795,6 +798,119 @@ function testarEtiquetas(){
      'sem internet avisa em vez de quebrar a tela');
 }
 
+/* ------------------------------------------------------------------ M */
+/* Um cliente pode levar 3 patinetes e 2 motos e pagar cada um de um jeito
+   (Pix no patinete, dinheiro numa moto, crédito na outra) — ou pagar tudo
+   da mesma forma, como sempre. A forma mora em cada locação, e é isso que
+   o caixa separa por forma no fim do dia. */
+function testarPagamentoPorVeiculo(){
+  console.log('\nM. Forma de pagamento — uma para a locação ou uma por veículo');
+  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  const corpo = f => extrairFuncao(html, f);
+
+  /* --- o interruptor do passo 3 --- */
+  const pt = corpo('passoTarifa');
+  ok(pt.indexOf('data-pgmodo="unica"') >= 0 && pt.indexOf('data-pgmodo="porVeiculo"') >= 0,
+     'o passo 3 escolhe entre uma forma só e uma por veículo');
+  ok(pt.indexOf('id="wPgTabela"') >= 0 && pt.indexOf('Uma forma para toda a locação') >= 0,
+     'a tabela por veículo existe e começa escondida');
+  const lg = corpo('ligaPassoTarifa');
+  ok(lg.indexOf('W.pagamentos[') >= 0 && lg.indexOf('[data-pg]') >= 0,
+     'cada select da tabela grava a forma daquele veículo');
+  ok(lg.indexOf('id="wPgTodos"') >= 0 && lg.indexOf("$('#wPgto').value") >= 0,
+     'um botão aplica a forma padrão a todas as linhas');
+  ok(lg.indexOf('pintaSoma') >= 0, 'a soma por forma aparece na hora em que muda alguma linha');
+  ok(corpo('concluirLocacao').indexOf('pagamento: i.pagamento || W.pagamento') >= 0,
+     'cada locação grava a forma do próprio veículo');
+
+  /* --- os helpers rodando de verdade --- */
+  const ctx = vm.createContext({ console });
+  vm.runInContext([
+    extrairVetor(html, 'PAGAMENTOS'),
+    extrairLinha(html, 'brl'),
+    'globalThis.esc = s => String(s==null?\'\':s);',
+    extrairFuncao(html, 'pagamentoDe'),
+    extrairFuncao(html, 'pagamentosAgrupados'),
+    extrairFuncao(html, 'textoPagamento'),
+    extrairFuncao(html, 'linhasPagamento'),
+    'globalThis.W = { pagamento:"Pix", pagamentos:{} };',
+    'globalThis.T = { pagamentoDe, pagamentosAgrupados, textoPagamento, linhasPagamento };'
+  ].join('\n'), ctx);
+  const T = ctx.T;
+  const itens = [
+    { codigo:'PAT-001', valor:80,  pagamento:'Pix' },
+    { codigo:'PAT-002', valor:80,  pagamento:'Pix' },
+    { codigo:'PAT-003', valor:80,  pagamento:'Pix' },
+    { codigo:'MOTO-01', valor:100, pagamento:'Dinheiro' },
+    { codigo:'MOTO-02', valor:100, pagamento:'Cartão de crédito' }
+  ];
+  const g = T.pagamentosAgrupados(itens);
+  igual(g.length, 3, 'cinco veículos pagos de três jeitos → três formas');
+  const pix = g.find(x=>x.forma==='Pix');
+  igual(pix.total, 240, 'os três patinetes somam R$ 240,00 no Pix');
+  igual(pix.codigos.length, 3, 'o Pix guarda os códigos dos veículos pagos com ele');
+  const detalhe = T.textoPagamento(itens, true);
+  ok(detalhe === 'Cartão de crédito (MOTO-02), Dinheiro (MOTO-01), Pix (PAT-001, PAT-002, PAT-003)',
+     'o contrato detalha a forma de cada equipamento', detalhe);
+  ok(T.textoPagamento([{codigo:'PAT-001', valor:60, pagamento:'Pix'}]) === 'Pix',
+     'com uma forma só o texto continua sendo o nome dela');
+  const lh = T.linhasPagamento(itens);
+  ok(lh.indexOf('Pago em 3 formas') >= 0 && (lh.match(/class="l"/g)||[]).length === 3,
+     'o resumo lista uma linha por forma com o total de cada uma');
+  const unica = T.linhasPagamento([{codigo:'PAT-001', valor:60, pagamento:'Pix'}]);
+  ok(unica.indexOf('Pago via Pix') >= 0 && unica.indexOf('Pago em') < 0,
+     'com uma forma só o resumo continua igual ao de antes');
+
+  /* --- itensDaLocacao: um select por veículo --- */
+  vm.runInContext([
+    'globalThis.COD = { 1:"PAT-001", 2:"PAT-002", 3:"PAT-003", 4:"MOTO-01", 5:"MOTO-02" };',
+    'globalThis.getVeiculo = id => ({ id:id, codigo:COD[id], tipoId: id<=3 ? "patinete" : "moto" });',
+    'globalThis.getTipo = id => ({ id:id, nome:id, tarifas:[{ id:"t", label:"1 h", min:60, valor: id==="patinete" ? 80 : 100 }] });',
+    'globalThis.tarifaPorMin = (tipo,min) => tipo.tarifas.find(t=>t.min===min);',
+    extrairFuncao(html, 'itensDaLocacao')
+  ].join('\n'), ctx);
+  ctx.W = { veiculos:[1,2,3,4,5], pagamento:'Pix', pagamentos:{ '4':'Dinheiro', '5':'Cartão de crédito' } };
+  vm.runInContext('globalThis.its = itensDaLocacao(60);', ctx);
+  const its = ctx.its;
+  igual(its.length, 5, 'o passo 3 monta um item por veículo do grupo');
+  igual(its.filter(i=>i.pagamento==='Pix').length, 3, 'os três patinetes herdam a forma da locação');
+  ok(its.find(i=>i.codigo==='MOTO-01').pagamento === 'Dinheiro', 'a moto 1 é paga em dinheiro');
+  ok(its.find(i=>i.codigo==='MOTO-02').pagamento === 'Cartão de crédito', 'a moto 2 é paga no crédito');
+
+  /* --- o caixa do dia separa cada forma, que é o que a loja confere --- */
+  const ctx2 = vm.createContext({ console });
+  vm.runInContext([
+    extrairFuncao(html, 'diaKey'),
+    extrairFuncao(html, 'estornada'),
+    extrairFuncao(html, 'tsCobranca'),
+    extrairFuncao(html, 'entradasDoDia'),
+    'globalThis.DB = { locacoes: [] };',
+    'globalThis.C = { entradasDoDia, diaKey };'
+  ].join('\n'), ctx2);
+  const agora = Date.now(), dia = ctx2.C.diaKey(agora);
+  ctx2.DB = { locacoes: itens.map(i=>({ status:'pendente', pagoEm:agora, valorBase:i.valor,
+                                        pagamento:i.pagamento, veiculoCodigo:i.codigo })) };
+  const e = ctx2.C.entradasDoDia(dia);
+  igual(e.porForma['Pix'], 240, 'no fechamento, o Pix dos patinetes é uma linha');
+  igual(e.porForma['Dinheiro'], 100, 'o dinheiro da moto é outra linha');
+  igual(e.porForma['Cartão de crédito'], 100, 'e o crédito da outra moto, outra ainda');
+  igual(e.total, 440, 'o total do dia é a soma dos cinco veículos');
+
+  /* --- contrato, assinatura e link --- */
+  const mc = corpo('montarContrato');
+  ok(mc.indexOf('dividido') >= 0 && mc.indexOf('pago em') >= 0,
+     'no contrato dividido, cada equipamento entra com a forma com que foi pago');
+  ok(html.indexOf('{{pagamento}}') >= 0, 'o contrato continua com o campo {{pagamento}}');
+  ok(corpo('publicarContrato').indexOf('textoPagamento(d.itens)') >= 0,
+     'a assinatura no celular recebe a lista de formas');
+  ok(corpo('passoContrato').indexOf('linhasPagamento(d.itens)') >= 0,
+     'o resumo antes de assinar também');
+  ok(corpo('mostrarLinkVistoria').indexOf('linhasPagamento(') >= 0,
+     'o fim do pagamento mostra uma linha por forma quando é dividido');
+  ok((html.match(/id="gPgto"/g)||[]).length === 1,
+     'o excedente da devolução continua sendo cobrado com uma forma só');
+}
+
 (async () => {
   try{ testarRegrasDeDinheiro(); }
   catch(e){ reprovados++; console.log('  ✗ não consegui ler as regras do index.html: ' + e.message); }
@@ -818,6 +934,8 @@ function testarEtiquetas(){
   catch(e){ reprovados++; console.log('  ✗ vistoria: ' + e.message); }
   try{ testarEtiquetas(); }
   catch(e){ reprovados++; console.log('  ✗ etiquetas: ' + e.message); }
+  try{ testarPagamentoPorVeiculo(); }
+  catch(e){ reprovados++; console.log('  ✗ pagamento por veículo: ' + e.message); }
   await testarBanco();
 
   console.log('\n  ' + aprovados + ' aprovados, ' + reprovados + ' reprovados\n');

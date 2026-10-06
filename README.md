@@ -148,6 +148,13 @@ dia e os Relatórios contam pelo dia do pagamento), a locação fica **pendente*
 continua na loja mas **travado** para nova locação, e a tela final entrega o **link
 público da vistoria** com QR Code para passar adiante.
 
+- **Forma de pagamento: uma só ou uma por veículo** — no passo 3 dá para escolher **uma
+  forma para a locação toda** (como sempre) ou **uma forma por veículo**: os 3 patinetes
+  no Pix, uma moto no dinheiro e a outra no crédito. A forma fica em **cada locação**, e
+  é por isso que o Caixa do dia, o Financeiro e o CSV separam cada forma sozinhos; o
+  contrato traz a forma de cada equipamento na lista e o resumo do balcão mostra uma
+  linha por forma. O excedente da devolução continua sendo cobrado com **uma forma só**.
+
 - **Link único e estável** — `/vistoria/{token}`, o mesmo todo dia, guardado em
   **Configurações → Link da vistoria** (com QR, copiar, WhatsApp e *Gerar novo link*).
   Quem tem o link **não entra no sistema**: só vê a fila e registra a vistoria.
@@ -231,8 +238,8 @@ O código continua público no repositório.
 ## Testes
 
 ```bash
-npm test        # verificações locais (partes A a L)
-npm run verificar   # 55 verificações contra o site publicado
+npm test        # verificações locais (partes A a M)
+npm run verificar   # 56 verificações contra o site publicado
 ```
 
 - **A. Regras de dinheiro** — lê as funções do próprio `index.html` e confere os cenários
@@ -279,6 +286,13 @@ npm run verificar   # 55 verificações contra o site publicado
   3 × 6, a matriz do QR é lida do gerador (linha nítida no SVG), a folha de impressão
   usa o `#printarea`, cada linha da Frota baixa a etiqueta em PNG, o lote oferece as
   etiquetas da frota nova e sem conexão a tela avisa em vez de quebrar.
+- **M. Forma de pagamento** — o passo 3 escolhe entre **uma forma para toda a locação** e
+  **uma forma por veículo** (tabela com select por patinete/moto, soma por forma na hora e
+  "aplicar a forma padrão a todas"); `itensDaLocacao()` devolve a forma de cada veículo,
+  `concluirLocacao()` grava em cada locação, os helpers agrupam e escrevem o texto do
+  contrato/resumos, e o Caixa do dia soma as três formas de um grupo dividido somando
+  R$ 240 no Pix + R$ 100 em dinheiro + R$ 100 no crédito. O excedente da devolução em
+  grupo continua com um select único.
 - **`verificar-ar`** — roda a operação inteira no site publicado: login, estado com
   lock, histórico, foto com link assinado, contrato assinado no celular, limpeza, a
   identidade no ar (página, login por e-mail, aba Relatórios e o logo servido como
