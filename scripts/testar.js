@@ -23,6 +23,8 @@
    L. QR Codes — a etiqueta de cada patinete e a folha de etiquetas.
    M. Forma de pagamento — uma para a locação toda ou uma por veículo,
       somando cada forma separadamente no fechamento do caixa.
+   N. Tipos de veículo — a loja cadastra marca/modelo novo a partir de um
+      existente, troca o preço por modelo e só apaga tipo sem uso.
 
    Uso:  npm test
 */
@@ -911,6 +913,132 @@ function testarPagamentoPorVeiculo(){
      'o excedente da devolução continua sendo cobrado com uma forma só');
 }
 
+function testarTiposDeVeiculo(){
+  console.log('\nN. Tipos de veículo — marca/modelo novo com preço próprio');
+  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  const corpo = f => extrairFuncao(html, f);
+
+  /* --- o formulário da frota --- */
+  const fv = corpo('formVeiculo');
+  ok(fv.indexOf('__novo') >= 0 && fv.indexOf('blocoNovoTipo(') >= 0,
+     'o campo Tipo do veículo oferece criar um tipo novo');
+  ok(fv.indexOf('Tipo (marca e modelo)') >= 0, 'o rótulo já diz marca e modelo');
+  const bn = corpo('blocoNovoTipo');
+  ok(bn.indexOf('NtPreco') >= 0 && bn.indexOf('NtBase') >= 0 &&
+     bn.indexOf('NtExc') >= 0 && bn.indexOf('NtPecas') >= 0 &&
+     corpo('linhasNovoTipo').indexOf('data-ntmin') >= 0,
+     'o bloco pede nome, tipo de origem, preço por duração, excedente e cópia das peças');
+  ok((html.match(/value="__novo"/g)||[]).length === 2,
+     'a opção existe no cadastro avulso e no cadastro em lote');
+  ok(html.indexOf("ligaNovoTipo(ov, 'v')") > 0 && html.indexOf("ligaNovoTipo(ov, 'l')") > 0,
+     'nos dois formulários o bloco abre quando escolhe “+ Novo tipo”');
+  ok((html.match(/= lerNovoTipo\(ov, /g)||[]).length === 3,
+     'novo, editar e em lote passam pelo mesmo caminho');
+  ok(corpo('lerNovoTipo').indexOf('criarTipo(') >= 0 &&
+     corpo('lerNovoTipo').indexOf('Já existe um tipo com esse nome') >= 0,
+     'o balcão não deixa criar dois tipos com o mesmo nome');
+
+  /* --- criarTipo rodando de verdade --- */
+  const ctx = vm.createContext({ console });
+  vm.runInContext([
+    extrairVetor(html, 'TIPOS_PADRAO'),
+    extrairVetor(html, 'PECAS_PADRAO'),
+    extrairLinha(html, 'uid'),
+    extrairFuncao(html, 'getTipo'),
+    extrairFuncao(html, 'rotuloMin'),
+    extrairFuncao(html, 'criarTipo'),
+    extrairFuncao(html, 'excluirTipo'),
+    'globalThis.DB = { tipos: JSON.parse(JSON.stringify(TIPOS_PADRAO)),' +
+      ' pecas: JSON.parse(JSON.stringify(PECAS_PADRAO)), veiculos: [], locacoes: [], seq:{ peca:100 } };',
+    'globalThis.T = { criarTipo, getTipo, rotuloMin, excluirTipo, DB };'
+  ].join('\n'), ctx);
+  const T = ctx.T;
+  const t = T.criarTipo({ nome:'Niu NQi GT', base:'patinete', excedenteMin:1.8,
+    precos:[{min:15, valor:25}, {min:30, valor:45}, {min:60, valor:80}], copiarPecas:true });
+  ok(typeof t.id === 'string' && t.id.charAt(0) === 't',
+     'o tipo novo nasce com id de texto, que é o que o select devolve');
+  ok(T.getTipo(t.id) === t, 'getTipo encontra o tipo novo');
+  ok(t.nome === 'Niu NQi GT' && t.tarifas.map(x=>x.min).join() === '15,30,60',
+     'guarda o nome e as mesmas durações do tipo de origem');
+  igual(t.tarifas[0].valor, 25, '15 minutos do modelo novo custa R$ 25,00');
+  igual(t.tarifas[2].valor, 80, '1 hora do modelo novo custa R$ 80,00 — preço por modelo');
+  ok(t.tarifas[0].label === '15 minutos' && t.tarifas[2].label === '1 hora',
+     'os rótulos seguem o padrão do sistema');
+  igual(t.excedenteMin, 1.8, 'o excedente do modelo novo também é segmentado');
+  const nascidas = T.DB.pecas.filter(p=>String(p.tipoId) === String(t.id)).length;
+  const origem = T.DB.pecas.filter(p=>String(p.tipoId) === 'patinete').length;
+  igual(nascidas, origem, 'a tabela de peças do tipo de origem veio junto');
+  ok(T.DB.pecas.filter(p=>String(p.tipoId)===String(t.id)).every(p=>p.id >= 100),
+     'as peças copiadas ganham id novo, fora do range das de fábrica');
+  const sem = T.criarTipo({ nome:'Zico Bike', base:'moto', excedenteMin:2,
+    precos:[{min:15, valor:12}], copiarPecas:false });
+  igual(T.DB.pecas.filter(p=>String(p.tipoId)===String(sem.id)).length, 0,
+     'dá para criar sem copiar as peças');
+  igual(T.DB.tipos.length, 4, 'os dois tipos de fábrica continuam intactos');
+  ok(new Set(T.DB.tipos.map(x=>x.id)).size === T.DB.tipos.length, 'nenhum id repetido');
+  ok(T.rotuloMin(60) === '1 hora' && T.rotuloMin(120) === '2 horas' &&
+     T.rotuloMin(45) === '45 minutos', 'o rótulo da duração sai no formato certo');
+
+  /* --- exclusão: só tipo sem veículo e sem histórico --- */
+  const bt = corpo('excluirTipo');
+  ok(bt.indexOf('DB.veiculos.some') >= 0 && bt.indexOf('DB.locacoes.some') >= 0,
+     'a exclusão recusa tipo com veículo ou com locação no histórico');
+  T.DB.veiculos.push({ id:1, codigo:'NOVO-01', tipoId:t.id });
+  ok(T.excluirTipo(t.id).erro === 'veiculos', 'com veículo no tipo, é recusado');
+  ok(T.DB.tipos.some(x=>x.id===t.id), 'e nada foi apagado');
+  ok(typeof T.excluirTipo(sem.id, ()=>false) === 'object' && T.DB.tipos.some(x=>x.id===sem.id),
+     'sem veículo, mas com o balcão cancelando, o tipo continua lá');
+  const livre = T.criarTipo({ nome:'Teste Excluir', base:'patinete', excedenteMin:1,
+    precos:[{min:15, valor:20}], copiarPecas:false });
+  const rem = T.excluirTipo(livre.id, ()=>true);
+  ok(rem.ok && rem.ok.nome === 'Teste Excluir', 'sem uso e com confirmação, é excluído');
+  ok(!T.DB.tipos.some(x=>x.id===livre.id) && !T.DB.pecas.some(p=>String(p.tipoId)===String(livre.id)),
+     'o tipo e as peças dele saíram da base');
+
+  /* --- o wizard com patinete e modelo novo misturados --- */
+  const ctx2 = vm.createContext({ console });
+  vm.runInContext([
+    extrairVetor(html, 'TIPOS_PADRAO'),
+    extrairFuncao(html, 'getTipo'),
+    extrairFuncao(html, 'getVeiculo'),
+    extrairFuncao(html, 'tiposSelecionados'),
+    extrairFuncao(html, 'tarifaPorMin'),
+    extrairFuncao(html, 'duracoesDisponiveis'),
+    'globalThis.DB = { tipos: JSON.parse(JSON.stringify(TIPOS_PADRAO)),' +
+      ' veiculos: [ {id:1, codigo:"PAT-001", tipoId:"patinete"}, {id:2, codigo:"NOVO-01", tipoId:"t1"} ] };',
+    'globalThis.W = { veiculos:[1,2] };',
+    'globalThis.T = { duracoesDisponiveis, tarifaPorMin };'
+  ].join('\n'), ctx2);
+  ctx2.DB.tipos.push({ id:'t1', nome:'Niu NQi GT', excedenteMin:1.8, tarifas:[
+    { id:'x1', label:'15 minutos', min:15, valor:25 },
+    { id:'x2', label:'30 minutos', min:30, valor:45 },
+    { id:'x3', label:'1 hora',     min:60, valor:80 } ] });
+  ok(ctx2.T.duracoesDisponiveis().join() === '15,30,60',
+     'patinete e modelo novo nas mesmas durações → as três ficam à escolha');
+  ok(ctx2.T.tarifaPorMin(ctx2.DB.tipos.find(x=>x.id==='t1'), 15).valor === 25,
+     'o preço mostrado no passo 3 é o do modelo escolhido');
+  ctx2.DB.tipos.push({ id:'t2', nome:'Scooter 45', excedenteMin:2, tarifas:[
+    { id:'y1', label:'30 minutos', min:30, valor:60 },
+    { id:'y2', label:'1 hora',     min:60, valor:110 } ] });
+  ctx2.DB.veiculos.push({ id:3, codigo:'SCOOT-01', tipoId:'t2' });
+  ctx2.W.veiculos = [1,3];
+  ok(ctx2.T.duracoesDisponiveis().join() === '30,60',
+     'tabela diferente: só as durações comuns entre os modelos seguem em frente');
+  ok(corpo('passoTarifa').indexOf('durs.indexOf(W.duracao)') >= 0,
+     'se a lista de veículos mudar, um período que saiu da lista é descartado');
+
+  /* --- o que a loja enxerga depois --- */
+  ok(corpo('renderFrota').indexOf('DB.tipos.length + 1') >= 0,
+     'o filtro de tipos da frota se repinta quando nasce um tipo novo');
+  ok(corpo('renderEtiquetas').indexOf('DB.tipos.length + 1') >= 0,
+     'o filtro de tipos das etiquetas QR também');
+  ok(html.indexOf("log('tipo_novo'") > 0 && html.indexOf("log('tipo_excluido'") > 0 &&
+     html.indexOf("tipo_novo:'Criou tipo de veículo'") > 0,
+     'criar e excluir tipo ficam na auditoria, em português');
+  ok(html.indexOf('if(!DB.tipos || !DB.tipos.length) DB.tipos') > 0,
+     'base sem tipo nenhum recebe os dois de fábrica no arranque');
+}
+
 (async () => {
   try{ testarRegrasDeDinheiro(); }
   catch(e){ reprovados++; console.log('  ✗ não consegui ler as regras do index.html: ' + e.message); }
@@ -936,6 +1064,8 @@ function testarPagamentoPorVeiculo(){
   catch(e){ reprovados++; console.log('  ✗ etiquetas: ' + e.message); }
   try{ testarPagamentoPorVeiculo(); }
   catch(e){ reprovados++; console.log('  ✗ pagamento por veículo: ' + e.message); }
+  try{ testarTiposDeVeiculo(); }
+  catch(e){ reprovados++; console.log('  ✗ tipos de veículo: ' + e.message); }
   await testarBanco();
 
   console.log('\n  ' + aprovados + ' aprovados, ' + reprovados + ' reprovados\n');

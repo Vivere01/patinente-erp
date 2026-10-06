@@ -261,6 +261,12 @@ const JPG = '/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE
         txtHome.indexOf('function pagamentosAgrupados(') >= 0 && txtHome.indexOf('id="wPgTabela"') >= 0,
         'a home publicada escolhe entre uma forma só para a locação e uma por veículo');
 
+  check(txtHome.indexOf('+ Novo tipo (marca e modelo)') >= 0 &&
+        txtHome.indexOf('function criarTipo(') >= 0 &&
+        txtHome.indexOf('data-deltipo=') >= 0 &&
+        txtHome.indexOf('function excluirTipo(') >= 0,
+        'a home publicada cadastra tipo de veículo novo (marca/modelo) com preço próprio');
+
   console.log('\n11. vistoria ponta a ponta (locação de teste, depois apagada)');
   const g11 = await j('/api/estado', { headers: cabecalho(t) });
   const docA = (g11.body && g11.body.doc) || {};

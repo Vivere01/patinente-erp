@@ -3,8 +3,9 @@
 Sistema de balcão para locação por tempo de patinetes e motos elétricas. Cobre o ciclo
 completo: pagamento e contrato com assinatura eletrônica no balcão, **vistoria de saída e
 de chegada pelo link público no celular** (fotos, etiqueta escaneada e horário),
-**etiquetas QR da frota** (PDF, PNG, SVG e folha de impressão), controle de lacre,
-devolução com excedente e avaria, caixa diário, inventário de frota e demonstrativo
+**etiquetas QR da frota** (PDF, PNG, SVG e folha de impressão), **tipos de veículo por
+marca/modelo com preço próprio**, controle de lacre, devolução com excedente e avaria,
+caixa diário, inventário de frota e demonstrativo
 financeiro.
 
 A especificação completa (regras de negócio, telas, dívida técnica e cenários de teste)
@@ -238,8 +239,8 @@ O código continua público no repositório.
 ## Testes
 
 ```bash
-npm test        # verificações locais (partes A a M)
-npm run verificar   # 56 verificações contra o site publicado
+npm test        # verificações locais (partes A a N)
+npm run verificar   # 57 verificações contra o site publicado
 ```
 
 - **A. Regras de dinheiro** — lê as funções do próprio `index.html` e confere os cenários
@@ -293,13 +294,20 @@ npm run verificar   # 56 verificações contra o site publicado
   contrato/resumos, e o Caixa do dia soma as três formas de um grupo dividido somando
   R$ 240 no Pix + R$ 100 em dinheiro + R$ 100 no crédito. O excedente da devolução em
   grupo continua com um select único.
+- **N. Tipos de veículo** — na Frota, **+ Veículo** (e **Editar** e **Cadastrar em lote**)
+  oferecem `+ Novo tipo (marca e modelo)`: nome, tipo de origem, preço por duração e
+  excedente, com a tabela de peças copiada. O tipo novo nasce com id de texto, entra no
+  filtro da frota, e o wizard continua mostrando só as durações comuns quando os modelos
+  têm tabelas diferentes. **Configurações → Tabela de preços** apaga tipo sem uso (recusa
+  se tem veículo ou histórico), e criar/excluir fica na auditoria.
 - **`verificar-ar`** — roda a operação inteira no site publicado: login, estado com
   lock, histórico, foto com link assinado, contrato assinado no celular, limpeza, a
   identidade no ar (página, login por e-mail, aba Relatórios e o logo servido como
   imagem), o usuário do sistema (criar conta, entrar pelo e-mail, recusar senha
   errada e conta bloqueada, e devolver o documento intacto), a vistoria pública
   (token, fila sem CPF, recusa de token/ação/locação inválidos, a página do celular com
-  logo em caminho absoluto, a aba QR Codes publicada) e o ciclo inteiro — liberar e
+  logo em caminho absoluto, a aba QR Codes publicada e o cadastro de tipo de veículo
+  novo) e o ciclo inteiro — liberar e
   chegar pelo link numa locação de teste, **com o código escaneado conferido no
   servidor** (400 sem código, 409 de outro patinete), o lacre da saída aplicado
   sozinho, o lacre novo exigido na chegada e a locação saindo do documento ao final).

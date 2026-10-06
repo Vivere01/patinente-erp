@@ -172,6 +172,17 @@ Estas regras foram definidas pelo dono. **Não altere sem confirmar com ele.**
 | 30 min | R$ 30,00 | R$ 75,00 |
 | 1 hora | R$ 60,00 | R$ 150,00 |
 
+- O sistema já vem com esses dois tipos. A loja pode criar **outros por marca/modelo**
+  direto no formulário da Frota (**+ Veículo**, **Editar** e **Cadastrar em lote**),
+  escolhendo `+ Novo tipo (marca e modelo)`: nome, tipo de origem, preço de cada duração e
+  excedente por minuto — **cada modelo tem preço segmentado**. A tabela de peças do tipo de
+  origem vem junto (dá para desmarcar) e os ajustes finos ficam em Configurações →
+  Peças e Configurações → Tabela de preços, que também apaga tipo sem uso (recusa se há
+  veículo ou locação no histórico). Criar e excluir tipo ficam na auditoria.
+- O tipo novo entra em tudo que lê a lista de tipos: filtro da Frota, cadastro em lote,
+  etiquetas, wizard, peças e contrato. Se os modelos tiverem durações diferentes, o
+  passo 3 do wizard só oferece as **comuns** aos tipos selecionados.
+
 ### 4.2 Excedente de tempo
 
 - Cobrado **por fração de minuto**: cada minuto iniciado conta como minuto cheio (`Math.ceil`).
@@ -474,7 +485,7 @@ Duas vias: **celular do cliente** (fluxo principal) e **balcão** (fallback). O 
 |---|---|
 | **Painel** | KPIs; faixa de alerta do atraso mais crítico; veículos na rua agrupados por contrato, com cronômetro, barra de progresso e estado (em uso / terminando nos últimos 10 min / atrasado); alerta sonoro e notificação do navegador ao estourar. |
 | **Caixa do dia** | Seletor de data; abertura com fundo de troco; entradas por forma de pagamento; saídas com categoria; fechamento com conferência de dinheiro; conferência cega de lacres; impressão do fechamento com linhas de assinatura. |
-| **Frota** | Lista com filtro, lacre atual, status, nº de locações e faturamento por veículo; cadastro individual e em lote; botão de conferência da frota; **botão *Etiqueta* por linha** (PNG da etiqueta QR daquele patinete). Veículo com locação pendente aparece travado, com pill *aguardando vistoria* e atalho para a fila. |
+| **Frota** | Lista com filtro (busca, **tipo** e status), lacre atual, status, nº de locações e faturamento por veículo; cadastro individual e em lote — os dois com **`+ Novo tipo (marca e modelo)`**, que cria o tipo com preço próprio na hora (seção 4.1); botão de conferência da frota; **botão *Etiqueta* por linha** (PNG da etiqueta QR daquele patinete). Veículo com locação pendente aparece travado, com pill *aguardando vistoria* e atalho para a fila. |
 | **QR Codes** | Etiquetas da frota: grade de pré-visualização com busca e filtro por tipo, contagem de etiquetas e de folhas A4, e quatro saídas da mesma folha (3 × 6): **Baixar PDF**, **PNG**, **SVG** e **Imprimir folha**. Clicar em *Ver toda a frota* limpa o filtro do atalho do lote. |
 | **Vistoria** | Fila do celular/balcão em quatro blocos: pago aguardando liberação, na rua, chegada registrada (fechar no balcão) e vistoriadas hoje; link público com QR, copiar, WhatsApp e gerar novo link. No celular, cada cartão tem **Escanear código do patinete** e há **Escanear patinete** no topo (seção 4.8). |
 | **Clientes** | Busca por nome, CPF ou telefone; histórico e total gasto. |
@@ -565,7 +576,7 @@ Ao receber UPDATE de outro dispositivo, o `DB` é trocado e as telas repintadas.
 - **Comprovante para o cliente** com número do contrato, impresso ou por WhatsApp — especificado, não construído. Transforma o cliente em conferência da locação registrada.
 - **Foto do documento e selfie do cliente** — especificado, não construído. Componente de captura já existe.
 - **Rastreador com bloqueio remoto nas 10 motos** — decisão de compra do cliente, fora do software. Faixa de mercado levantada: R$ 40 a R$ 60/mês por veículo.
-- **Testes automatizados versionados.** `npm test` cobre as regras de dinheiro, sessão, senha, papéis, relatórios, identidade, vistoria (partes A a M) e o banco (transação descartada); `npm run verificar` repete a operação no site publicado (inclui a vistoria pública). Os cenários abaixo estão no script — vale mantê-los em dia ao mudar regra.
+- **Testes automatizados versionados.** `npm test` cobre as regras de dinheiro, sessão, senha, papéis, relatórios, identidade, vistoria (partes A a N) e o banco (transação descartada); `npm run verificar` repete a operação no site publicado (inclui a vistoria pública). Os cenários abaixo estão no script — vale mantê-los em dia ao mudar regra.
 
 ---
 
@@ -631,6 +642,10 @@ Reproduza estes casos — cobrem as regras que mais custam dinheiro se quebrarem
 **Forma de pagamento por veículo**
 39. Passo 3 com "Forma por veículo": 3 patinetes no Pix, uma moto em dinheiro e outra no crédito → cada locação grava a sua forma e o fechamento do dia separa as três (Pix, Dinheiro, Cartão de crédito) além do total.
 40. "Aplicar a forma padrão a todas" iguala as linhas da tabela; voltando para "Uma forma para toda a locação" o resumo volta a ser uma linha só, idêntica à de antes. O contrato dividido traz a forma em cada equipamento; o excedente da devolução em grupo continua com um select único.
+
+**Tipos de veículo (marca/modelo)**
+41. No cadastro de veículo (e em *Editar* e *Cadastrar em lote*), trocar o Tipo por `+ Novo tipo (marca e modelo)` abre o bloco com nome, tipo de origem, preço de cada duração e excedente; salvar cria o tipo, grava o veículo com ele e o tipo já aparece no filtro da Frota, no lote, nas peças e no wizard — com preço próprio (ex.: 15 min a R$ 25,00 e excedente a R$ 1,80).
+42. A tabela de peças vem copiada do tipo de origem (dá para desmarcar); Configurações → Tabela de preços edita o preço do tipo novo e o apaga **só** quando está sem veículo e sem histórico, com confirmação — recusa com aviso quando há veículo ou locação. Criar e excluir ficam na auditoria. Com durações diferentes entre modelos, o passo 3 só oferece as comuns.
 
 **Concorrência**
 18. Gravar com versão defasada retorna `ok=false`, não sobrescreve, e o cliente assume o estado do servidor.

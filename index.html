@@ -1141,6 +1141,7 @@ const CATEGORIAS = ['Aluguel','Folha e salários','Energia','Água','Internet e 
 
 let DB = dbPadrao();   /* preenchido pelo servidor no arranque */
 function aplicarMigracoes(){
+  if(!DB.tipos || !DB.tipos.length) DB.tipos = JSON.parse(JSON.stringify(TIPOS_PADRAO));
   if(!DB.pecas || !DB.pecas.length) DB.pecas = JSON.parse(JSON.stringify(PECAS_PADRAO));
   if(!DB.seq.peca) DB.seq.peca = 100;
   if(!DB.grupos) DB.grupos = [];
@@ -1363,6 +1364,48 @@ function calcExcedente(loc, agoraTs){
   if(atrasoMs <= tol*60000) return { minutos:0, valor:0, atrasoMin: Math.max(0, Math.ceil(atrasoMs/60000)) };
   const minutos = Math.ceil(atrasoMs/60000);
   return { minutos, valor: +(minutos * Number(tipo.excedenteMin||0)).toFixed(2), atrasoMin: minutos };
+}
+
+/* ---- tipos de veículo: nome de marca/modelo com tabela de preços própria.
+       Os dois de fábrica (patinete e moto) continuam; a loja pode criar outro
+       a partir de um existente e só trocar o preço, porque cada modelo tem
+       preço diferente. O tipo novo entra em tudo o que lê DB.tipos: filtro da
+       frota, cadastro em lote, etiquetas, wizard, peças e contrato. ---- */
+function rotuloMin(min){
+  const m = Math.max(1, Number(min)||1);
+  if(m % 60 === 0 && m >= 60) return (m/60) + (m === 60 ? ' hora' : ' horas');
+  return m + ' minutos';
+}
+function criarTipo(d){
+  const base = DB.tipos.find(t=>t.id===d.base) || DB.tipos[0];
+  let id = 't' + uid('tipo');
+  while(DB.tipos.some(t=>t.id===id)) id = 't' + uid('tipo');
+  const tipo = {
+    id: id,
+    nome: String(d.nome||'').trim(),
+    excedenteMin: Math.max(0, Number(d.excedenteMin)||0),
+    tarifas: (d.precos||[]).map(p=>({ id:'x'+uid('tarifa'),
+      label: rotuloMin(p.min), min: Math.max(1, Number(p.min)||1),
+      valor: Math.max(0, Number(p.valor)||0) }))
+  };
+  DB.tipos.push(tipo);
+  if(d.copiarPecas !== false && base){
+    DB.pecas.filter(p=>String(p.tipoId)===String(base.id)).forEach(p=>{
+      DB.pecas.push(Object.assign({}, p, { id: uid('peca'), tipoId: tipo.id }));
+    });
+  }
+  return tipo;
+}
+function excluirTipo(id, confirmar){
+  if(DB.tipos.length <= 1) return { erro:'mantem' };
+  const t = DB.tipos.find(x=>x.id===id);
+  if(!t) return { erro:'naoexiste' };
+  if(DB.veiculos.some(v=>v.tipoId===id)) return { erro:'veiculos', tipo:t };
+  if(DB.locacoes.some(l=>l.tipoId===id)) return { erro:'locacoes', tipo:t };
+  if(typeof confirmar === 'function' && !confirmar(t)) return { cancelado:true, tipo:t };
+  DB.tipos = DB.tipos.filter(x=>x.id!==id);
+  DB.pecas = DB.pecas.filter(p=>String(p.tipoId)!==String(id));
+  return { ok:t };
 }
 /* ===================== navegação ===================== */
 function irPara(tab){
@@ -2021,6 +2064,7 @@ function linhasPagamento(lista){
 
 function passoTarifa(){
   const durs = duracoesDisponiveis();
+  if(W.duracao && durs.indexOf(W.duracao) < 0) W.duracao = null;   /* veículos mudaram: o período sai da lista */
   if(!W.duracao && durs.length) W.duracao = durs[0];   /* entra já marcado */
   const tps = tiposSelecionados();
   return '<h4 style="margin-bottom:4px">3. Pagamento</h4>'+
@@ -2877,8 +2921,11 @@ window.abrirDevolucao = function(locId){
 /* ===================== FROTA ===================== */
 function renderFrota(){
   const sel = $('#fFrotaTipo');
-  if(sel.options.length <= 1)
+  if(sel.options.length !== DB.tipos.length + 1){          /* conta o "Todos os tipos" */
+    const atual = sel.value;
     sel.innerHTML = '<option value="">Todos os tipos</option>'+DB.tipos.map(t=>'<option value="'+t.id+'">'+esc(t.nome)+'</option>').join('');
+    sel.value = (atual && DB.tipos.some(t=>t.id===atual)) ? atual : '';
+  }
   const q = ($('#fFrotaBusca').value||'').trim().toLowerCase();
   const tp = $('#fFrotaTipo').value, st = $('#fFrotaStatus').value;
   let lista = DB.veiculos.slice();
@@ -3124,9 +3171,12 @@ function etiquetaHtml(e){
 
 function renderEtiquetas(){
   const sel = $('#fEtqTipo');
-  if(sel && sel.options.length <= 1)
+  if(sel && sel.options.length !== DB.tipos.length + 1){      /* conta o "Todos os tipos" */
+    const atual = sel.value;
     sel.innerHTML = '<option value="">Todos os tipos</option>' +
       DB.tipos.map(t=>'<option value="'+t.id+'">'+esc(t.nome)+'</option>').join('');
+    sel.value = (atual && DB.tipos.some(t=>t.id===atual)) ? atual : '';
+  }
   const lista = etiquetasLista();
   const folhas = Math.max(1, Math.ceil(lista.length/(ETQ_COL*ETQ_LIN)));
   if($('#etqQtd')) $('#etqQtd').textContent = lista.length + (lista.length===1 ? ' etiqueta' : ' etiquetas');
@@ -3338,9 +3388,66 @@ function gerarNovoLinkVistoria(){
 $('#btnNovaLinkVist') && ($('#btnNovaLinkVist').onclick = gerarNovoLinkVistoria);
 ['#fFrotaBusca','#fFrotaTipo','#fFrotaStatus'].forEach(s=>{ $(s).oninput = renderFrota; $(s).onchange = renderFrota; });
 
+/* Bloco de criação de tipo embutido no formulário de veículo. 'v' é o do
+   novo/editar, 'l' é o do cadastro em lote. */
+function linhasNovoTipo(baseId){
+  const b = getTipo(baseId);
+  return b.tarifas.map(x=>'<label class="f"><span>'+esc(x.label)+'</span>'+
+    '<input type="number" step="0.01" data-ntmin="'+x.min+'" value="'+x.valor+'"></label>').join('');
+}
+function blocoNovoTipo(p){
+  const b = DB.tipos[0];
+  return '<div id="'+p+'Nt" style="display:none;border:1px dashed var(--line);border-radius:10px;padding:12px;margin-bottom:8px">'+
+    '<div class="muted" style="font-size:12.5px;margin-bottom:8px"><b>Novo tipo de veículo</b> — marca e modelo com preço próprio.</div>'+
+    '<label class="f"><span>Nome (marca e modelo)</span><input type="text" id="'+p+'NtNome" placeholder="ex.: Niu NQi GT ou Honda CG 125"></label>'+
+    '<label class="f"><span>Começar pelos preços de</span><select id="'+p+'NtBase">'+
+      DB.tipos.map(t=>'<option value="'+t.id+'">'+esc(t.nome)+'</option>').join('')+'</select></label>'+
+    '<div class="grid3" id="'+p+'NtPreco">'+linhasNovoTipo(b.id)+'</div>'+
+    '<label class="f"><span>Excedente R$/minuto</span><input type="number" step="0.01" id="'+p+'NtExc" value="'+b.excedenteMin+'"></label>'+
+    '<label class="f" style="flex-direction:row;gap:8px;align-items:center;margin-top:4px">'+
+      '<input type="checkbox" id="'+p+'NtPecas" checked style="width:auto"> Copiar a tabela de peças do tipo de origem</label>'+
+    '<div class="muted" style="font-size:12px">O preço é por modelo: ajuste os valores acima. As peças ficam em Configurações → Peças.</div>'+
+  '</div>';
+}
+/* mostra/esconde o bloco quando o balcão escolhe "+ Novo tipo" */
+function ligaNovoTipo(ov, p){
+  const sel = ov.querySelector('#'+p+'Tipo'), blk = ov.querySelector('#'+p+'Nt');
+  if(!sel || !blk) return;
+  sel.onchange = ()=>{
+    const novo = sel.value === '__novo';
+    blk.style.display = novo ? '' : 'none';
+    if(novo) ov.querySelector('#'+p+'NtNome').focus();
+  };
+  const base = ov.querySelector('#'+p+'NtBase');
+  if(base) base.onchange = ()=>{
+    const t = getTipo(base.value);
+    ov.querySelector('#'+p+'NtPreco').innerHTML = linhasNovoTipo(t.id);
+    ov.querySelector('#'+p+'NtExc').value = t.excedenteMin;
+  };
+}
+/* cria o tipo quando for o caso; devolve { tipoId } ou { erro } para o toast */
+function lerNovoTipo(ov, p){
+  const sel = ov.querySelector('#'+p+'Tipo');
+  if(!sel) return { tipoId:null };
+  if(sel.value !== '__novo') return { tipoId: sel.value };
+  const nome = ov.querySelector('#'+p+'NtNome').value.trim();
+  if(!nome) return { erro:'Informe o nome do tipo (marca e modelo).' };
+  if(DB.tipos.some(t=>t.nome.toLowerCase()===nome.toLowerCase())) return { erro:'Já existe um tipo com esse nome.' };
+  const precos = Array.prototype.map.call(
+    ov.querySelectorAll('#'+p+'NtPreco [data-ntmin]'),
+    i=>({ min:+i.dataset.ntmin, valor:+i.value }));
+  if(!precos.length) return { erro:'Escolha um tipo de origem com preços.' };
+  const tipo = criarTipo({ nome:nome, base: ov.querySelector('#'+p+'NtBase').value,
+    excedenteMin:+ov.querySelector('#'+p+'NtExc').value, precos:precos,
+    copiarPecas: ov.querySelector('#'+p+'NtPecas').checked });
+  return { tipoId: tipo.id, criado: tipo };
+}
 function formVeiculo(v){
   return '<label class="f"><span>Código</span><input type="text" id="vCod" value="'+esc(v?v.codigo:'')+'" placeholder="PAT-001"></label>'+
-    '<label class="f"><span>Tipo</span><select id="vTipo">'+DB.tipos.map(t=>'<option value="'+t.id+'"'+(v&&v.tipoId===t.id?' selected':'')+'>'+esc(t.nome)+'</option>').join('')+'</select></label>'+
+    '<label class="f"><span>Tipo (marca e modelo)</span><select id="vTipo">'+
+      DB.tipos.map(t=>'<option value="'+t.id+'"'+(v&&v.tipoId===t.id?' selected':'')+'>'+esc(t.nome)+'</option>').join('')+
+      '<option value="__novo">+ Novo tipo (marca e modelo)…</option></select></label>'+
+    blocoNovoTipo('v')+
     '<label class="f"><span>Placa / nº de série</span><input type="text" id="vPlaca" value="'+esc(v?(v.placa||''):'')+'"></label>'+
     '<label class="f"><span>Status</span><select id="vStatus">'+
       ['loja','manutencao'].map(s=>'<option value="'+s+'"'+(v&&v.status===s?' selected':'')+'>'+(s==='loja'?'Na loja':'Manutenção')+'</option>').join('')+
@@ -3351,12 +3458,16 @@ $('#btnNovoVeiculo').onclick = ()=>{
     '<div class="body">'+formVeiculo(null)+'</div>'+
     '<footer><button class="btn sec" id="c">Cancelar</button><button class="btn" id="s">Salvar</button></footer>');
   ov.querySelector('#c').onclick=()=>fecharModal(ov);
+  ligaNovoTipo(ov, 'v');
   ov.querySelector('#s').onclick=()=>{
     const cod = ov.querySelector('#vCod').value.trim();
     if(!cod) return toast('Informe o código.');
     if(DB.veiculos.some(v=>v.codigo.toLowerCase()===cod.toLowerCase())) return toast('Já existe veículo com esse código.');
-    DB.veiculos.push({ id:uid('veiculo'), codigo:cod, tipoId:ov.querySelector('#vTipo').value,
+    const r = lerNovoTipo(ov, 'v');
+    if(r.erro) return toast(r.erro);
+    DB.veiculos.push({ id:uid('veiculo'), codigo:cod, tipoId:r.tipoId,
       placa:ov.querySelector('#vPlaca').value.trim(), status:ov.querySelector('#vStatus').value });
+    if(r.criado){ log('tipo_novo', r.criado.nome); renderConfig(); }
     persist(); fecharModal(ov); renderFrota(); renderPainel(); toast('Veículo cadastrado.');
   };
 };
@@ -3367,6 +3478,7 @@ window.editarVeiculo = function(id){
     '<footer><button class="btn danger" id="d">Excluir</button><div style="flex:1"></div>'+
     '<button class="btn sec" id="c">Cancelar</button><button class="btn" id="s">Salvar</button></footer>');
   ov.querySelector('#c').onclick=()=>fecharModal(ov);
+  ligaNovoTipo(ov, 'v');
   ov.querySelector('#d').onclick=()=>{
     if(v.status==='rua') return toast('Não é possível excluir um veículo que está na rua.');
     if(!confirm('Excluir '+v.codigo+'? O histórico de locações é mantido.')) return;
@@ -3374,10 +3486,14 @@ window.editarVeiculo = function(id){
     persist(); fecharModal(ov); renderFrota(); renderPainel();
   };
   ov.querySelector('#s').onclick=()=>{
-    v.codigo = ov.querySelector('#vCod').value.trim() || v.codigo;
-    v.tipoId = ov.querySelector('#vTipo').value;
+    const r = lerNovoTipo(ov, 'v');
+    if(r.erro) return toast(r.erro);
+    const cod = ov.querySelector('#vCod').value.trim();
+    v.codigo = cod || v.codigo;
+    v.tipoId = r.tipoId;
     v.placa  = ov.querySelector('#vPlaca').value.trim();
     if(v.status!=='rua') v.status = ov.querySelector('#vStatus').value;
+    if(r.criado){ log('tipo_novo', r.criado.nome); renderConfig(); }
     persist(); fecharModal(ov); renderFrota(); renderPainel(); toast('Veículo atualizado.');
   };
 };
@@ -3385,7 +3501,10 @@ $('#btnInventario').onclick = ()=> abrirInventario();
 $('#btnLote').onclick = ()=>{
   const ov = abrirModal('<header><h3>Cadastrar frota em lote</h3><button class="x">&times;</button></header>'+
     '<div class="body"><p class="muted" style="margin-top:0;font-size:13px">Gera vários veículos numerados de uma vez. Ex.: prefixo <b>PAT-</b>, de 1 a 200, cria PAT-001 até PAT-200.</p>'+
-    '<label class="f"><span>Tipo</span><select id="lTipo">'+DB.tipos.map(t=>'<option value="'+t.id+'">'+esc(t.nome)+'</option>').join('')+'</select></label>'+
+    '<label class="f"><span>Tipo (marca e modelo)</span><select id="lTipo">'+
+      DB.tipos.map(t=>'<option value="'+t.id+'">'+esc(t.nome)+'</option>').join('')+
+      '<option value="__novo">+ Novo tipo (marca e modelo)…</option></select></label>'+
+    blocoNovoTipo('l')+
     '<div class="grid3">'+
       '<label class="f"><span>Prefixo</span><input type="text" id="lPre" value="PAT-"></label>'+
       '<label class="f"><span>De</span><input type="number" id="lDe" value="1" min="1"></label>'+
@@ -3394,10 +3513,15 @@ $('#btnLote').onclick = ()=>{
     '<label class="f"><span>Dígitos (001 = 3)</span><input type="number" id="lDig" value="3" min="1" max="6"></label></div>'+
     '<footer><button class="btn sec" id="c">Cancelar</button><button class="btn" id="s">Gerar</button></footer>');
   ov.querySelector('#c').onclick=()=>fecharModal(ov);
+  ligaNovoTipo(ov, 'l');
   ov.querySelector('#s').onclick=()=>{
-    const tipo=ov.querySelector('#lTipo').value, pre=ov.querySelector('#lPre').value.trim();
+    const pre=ov.querySelector('#lPre').value.trim();
     const de=+ov.querySelector('#lDe').value, ate=+ov.querySelector('#lAte').value, dig=+ov.querySelector('#lDig').value;
     if(!(ate>=de) || (ate-de)>2000) return toast('Intervalo inválido.');
+    const r = lerNovoTipo(ov, 'l');
+    if(r.erro) return toast(r.erro);
+    const tipo = r.tipoId;
+    if(r.criado){ log('tipo_novo', r.criado.nome); renderConfig(); }
     let n=0; const criados=[];
     for(let i=de;i<=ate;i++){
       const cod = pre + String(i).padStart(dig,'0');
@@ -4138,12 +4262,22 @@ function renderConfig(){
     '<div style="display:flex;gap:10px;align-items:end;margin-bottom:10px">'+
       '<label class="f" style="flex:1;margin:0"><span>Tipo</span><input type="text" data-t="'+t.id+'" data-f="nome" value="'+esc(t.nome)+'"></label>'+
       '<label class="f" style="width:170px;margin:0"><span>Excedente R$/minuto</span><input type="number" step="0.01" data-t="'+t.id+'" data-f="exc" value="'+t.excedenteMin+'"></label>'+
+      (DB.tipos.length>1 ? '<button class="btn sm sec" data-deltipo="'+t.id+'" title="Excluir este tipo" style="width:34px;padding:8px 0">x</button>' : '')+
     '</div>'+
     t.tarifas.map(x=>'<div class="grid3" style="gap:8px">'+
       '<label class="f"><span>Descrição</span><input type="text" data-t="'+t.id+'" data-x="'+x.id+'" data-f="label" value="'+esc(x.label)+'"></label>'+
       '<label class="f"><span>Minutos</span><input type="number" data-t="'+t.id+'" data-x="'+x.id+'" data-f="min" value="'+x.min+'"></label>'+
       '<label class="f"><span>Valor R$</span><input type="number" step="0.01" data-t="'+t.id+'" data-x="'+x.id+'" data-f="valor" value="'+x.valor+'"></label>'+
     '</div>').join('')+'</div>').join('');
+  $$('#cfgTarifas [data-deltipo]').forEach(b=> b.onclick = ()=>{
+    const r = excluirTipo(b.dataset.deltipo, t=>confirm('Excluir o tipo “'+t.nome+'”? A tabela de peças dele sai junto.'));
+    if(r.cancelado) return;
+    if(r.erro) return toast(({ veiculos:'Esse tipo tem veículos: mova ou exclua-os antes.',
+      locacoes:'Esse tipo já aparece em locações do histórico.',
+      mantem:'Não dá para excluir o único tipo que existe.' })[r.erro] || 'Tipo não encontrado.');
+    log('tipo_excluido', r.ok.nome);
+    persist(); renderConfig(); renderFrota(); toast('Tipo excluído.');
+  });
 }
 $('#btnSalvarEmpresa').onclick = ()=>{
   DB.empresa = { nome:$('#cfgNome').value.trim(), cnpj:$('#cfgCnpj').value.trim(),
@@ -4453,7 +4587,8 @@ function renderAuditoria(){
     devolucao:'Registrou entrada', devolucao_grupo:'Registrou entrada em grupo', estorno:'ESTORNOU locação',
     estorno_despesa:'ESTORNOU lançamento', caixa_abertura:'Abriu o caixa', caixa_fechamento:'Fechou o caixa',
     caixa_reabertura:'Reabriu o caixa', despesa:'Lançou saída', despesa_paga:'Pagou saída',
-    usuario_criado:'Criou usuário', usuario_editado:'Editou usuário', precos:'Alterou preços', zerou:'ZEROU o sistema' };
+    usuario_criado:'Criou usuário', usuario_editado:'Editou usuário', precos:'Alterou preços',
+    tipo_novo:'Criou tipo de veículo', tipo_excluido:'Excluiu tipo de veículo', zerou:'ZEROU o sistema' };
   $('#tbAudit').innerHTML =
     '<thead><tr><th>Quando</th><th>Quem</th><th>O quê</th><th>Detalhe</th></tr></thead><tbody>'+
     (its.length ? its.map(a=>'<tr><td class="mono muted" style="white-space:nowrap">'+dtFmt(a.ts)+'</td>'+
