@@ -2899,7 +2899,7 @@ function renderFrota(){
   lista = lista.slice(0,500);
   const stName = {loja:'Na loja', rua:'Na rua', manutencao:'Manutenção'};
   $('#tbFrota').innerHTML =
-    '<thead><tr><th>Código</th><th>Tipo</th><th>Lacre</th><th>Status</th><th>Locações</th><th>Faturamento total</th><th></th></tr></thead><tbody>'+
+    '<thead><tr><th>Código</th><th>Tipo</th><th>Status</th><th>Locações</th><th>Faturamento total</th><th></th></tr></thead><tbody>'+
     (total ? lista.map(v=>{
       const ls = DB.locacoes.filter(l=>l.veiculoId===v.id);
       const fat = ls.reduce((s,l)=>s+totalLoc(l),0);
@@ -2907,7 +2907,6 @@ function renderFrota(){
       const stPill = travado ? '<span class="pill pendente">aguardando vistoria</span>'
                              : '<span class="pill '+(v.status==='manutencao'?'manut':v.status)+'">'+stName[v.status]+'</span>';
       return '<tr><td><b>'+esc(v.codigo)+'</b></td><td>'+esc(getTipo(v.tipoId).nome)+'</td>'+
-        '<td class="mono">'+(numeroLacreDoVeiculo(v.id) || (v.status==='loja'?'<span class="pill manut">sem lacre</span>':'—'))+'</td>'+
         '<td>'+stPill+'</td>'+
         '<td class="mono">'+ls.length+'</td><td class="mono">'+brl(fat)+'</td>'+
         '<td class="right">'+
@@ -2916,8 +2915,8 @@ function renderFrota(){
           (v.status==='rua' && locDoVeiculo(v.id) ? '<button class="btn sm ok" onclick="abrirDevolucao('+locDoVeiculo(v.id).id+')">Entrada</button> ' : '')+
           '<button class="btn sm sec" onclick="baixarEtiqueta('+v.id+')">Etiqueta</button> '+
           '<button class="btn sm sec" onclick="editarVeiculo('+v.id+')">Editar</button></td></tr>';
-    }).join('') : '<tr><td colspan="7" class="empty">Nenhum veículo. Use “Cadastrar em lote” para criar sua frota.</td></tr>')+
-    '</tbody>'+(total>500?'<tfoot><tr><td colspan="7" class="muted" style="padding:10px">Exibindo 500 de '+total+' — refine a busca.</td></tr></tfoot>':'');
+    }).join('') : '<tr><td colspan="6" class="empty">Nenhum veículo. Use “Cadastrar em lote” para criar sua frota.</td></tr>')+
+    '</tbody>'+(total>500?'<tfoot><tr><td colspan="6" class="muted" style="padding:10px">Exibindo 500 de '+total+' — refine a busca.</td></tr></tfoot>':'');
 }
 
 /* ===================== ABA QR CODES (ETIQUETAS) =====================
