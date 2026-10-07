@@ -169,7 +169,7 @@ público da vistoria** com QR Code para passar adiante.
   locação vira ativa com a hora real de saída, o veículo sai para a rua, o **lacre já
   registrado para aquele patinete é rompido sozinho** (não há campo de lacre na saída:
   quem escaneou a etiqueta identificou o veículo) e o relógio **começa a contar**.
-- **Chegada** = fotos do retorno + novo lacre digitado + estado do veículo → fica
+- **Chegada** = fotos do retorno + etiqueta escaneada + estado do veículo → fica
   **“chegada registrada”** (o relógio parou naquela hora). A cobrança de excedente e de
   avaria é fechada **no balcão**, na tela de entrada, que já mostra as fotos e a hora do
   celular.
@@ -280,7 +280,7 @@ npm run verificar   # 57 verificações contra o site publicado
   o payload não leva CPF, usuários nem contrato; `api/vistoria.js` libera (ativa +
   veículo na rua) e registra a chegada (devolvida + hora parada), **exige o código
   escaneado da etiqueta** (400 sem código, 409 se for outro patinete), aplica o lacre
-  da saída sozinho, exige o lacre novo na chegada, exige foto conforme a configuração e
+  da saída sozinho, **não cobra lacre digitado em nenhum momento**, exige foto conforme a configuração e
   grava com lock otimista; e a página `vistoria.html` lê o token do link, abre o visor
   da câmera (ZXing) para escanear a etiqueta e fala só com a API.
 - **L. QR Codes** — a aba existe, é redesenhada ao entrar, o PDF sai pelo jsPDF em A4
@@ -310,7 +310,7 @@ npm run verificar   # 57 verificações contra o site publicado
   novo) e o ciclo inteiro — liberar e
   chegar pelo link numa locação de teste, **com o código escaneado conferido no
   servidor** (400 sem código, 409 de outro patinete), o lacre da saída aplicado
-  sozinho, o lacre novo exigido na chegada e a locação saindo do documento ao final).
+  sozinho, nenhum lacre digitado em saída ou chegada e a locação saindo do documento ao final).
   Usa `LOJA_EMAIL`/`LOJA_SENHA` do `.env.local` (ou `node scripts/verificar-ar.js URL EMAIL SENHA`)
   e apaga os artefatos de teste ao final.
 

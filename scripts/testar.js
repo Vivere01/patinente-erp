@@ -727,10 +727,10 @@ function testarVistoria(){
   const pub = extrairFuncao(api, 'payload');
   ok(pub.indexOf('clienteCpf') < 0 && pub.indexOf('contrato') < 0 && pub.indexOf('assinatura') < 0,
      'o payload público não leva CPF nem o contrato');
-  ok(api.indexOf('foto_obrigatoria') >= 0 && api.indexOf('lacre_obrigatorio') >= 0,
-     'foto e lacre são exigidos quando a configuração pede');
-  ok(api.indexOf("acao === 'chegada' && !lacre") >= 0,
-     'o lacre novo só é exigido na chegada');
+  ok(api.indexOf('foto_obrigatoria') >= 0 && api.indexOf('lacre_obrigatorio') < 0,
+     'a foto segue exigida; o lacre não é cobrado em nenhum momento');
+  ok(pagina.indexOf('Novo lacre aplicado') < 0 && pagina.indexOf('data-campo="lacre"') < 0,
+     'o cartão de chegada não tem campo de lacre: o QR identifica o patinete');
   ok(api.indexOf('codigoLido') >= 0 && api.indexOf('veiculo_nao_escaneado') >= 0 &&
      api.indexOf('veiculo_incorreto') >= 0,
      'a API exige o código escaneado da etiqueta e confere com o cartão');

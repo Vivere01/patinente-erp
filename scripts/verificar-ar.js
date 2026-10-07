@@ -366,23 +366,21 @@ const JPG = '/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE
                         : (campoVelho ? 'campo de lacre antigo ainda na página'
                                       : (scanNaPagina ? '' : 'botão de escanear fora da página')));
 
-    const chegadaSemLacre = await post(null, '/api/vistoria',
-      { token: tokenV, acao: 'chegada', locacaoId: String(lid11), veiculo: 'VIST001', fotos: [], lacre: '', estado: 'loja', obs: 'verificação' });
-    check(chegadaSemLacre.status === 400 && chegadaSemLacre.body.erro === 'lacre_obrigatorio',
-          'na chegada o lacre novo continua sendo obrigatório (400 lacre_obrigatorio)',
-          JSON.stringify(chegadaSemLacre.body).slice(0, 160));
+    check(txtV.indexOf('Novo lacre aplicado') < 0 && txtV.indexOf('data-campo="lacre"') < 0,
+          'nem a saída nem a chegada pedem lacre digitado: quem identifica é o QR da etiqueta',
+          'campo de lacre ainda na página');
 
     const che11 = await post(null, '/api/vistoria',
-      { token: tokenV, acao: 'chegada', locacaoId: String(lid11), veiculo: 'VIST001', fotos: [], lacre: '124', estado: 'loja', obs: 'verificação' });
+      { token: tokenV, acao: 'chegada', locacaoId: String(lid11), veiculo: 'VIST001', fotos: [], estado: 'loja', obs: 'verificação' });
     check(che11.status === 200 && che11.body.ok === true, 'a chegada passa pelo mesmo link', JSON.stringify(che11.body).slice(0, 160));
 
     const est2 = await j('/api/estado', { headers: cabecalho(t) });
     const d2 = (est2.body && est2.body.doc) || {};
     const loc2 = (d2.locacoes || []).find(l => String(l.id) === String(lid11));
     const vei2 = (d2.veiculos || []).find(v => String(v.id) === String(vid11));
-    check(!!loc2 && loc2.status === 'devolvida' && !!loc2.fimReal && loc2.lacreEntrada === '124' &&
+    check(!!loc2 && loc2.status === 'devolvida' && !!loc2.fimReal && !loc2.lacreEntrada &&
           !!vei2 && vei2.status === 'loja',
-          'no documento: o relógio parou na chegada, o lacre novo ficou gravado e o veículo voltou para a loja',
+          'no documento: o relógio parou na chegada, nenhum lacre foi digitado e o veículo voltou para a loja',
           loc2 ? 'status ' + loc2.status + ' · lacre ' + loc2.lacreEntrada : 'locação sumiu');
 
     const filaD = await j('/api/vistoria?token=' + encodeURIComponent(tokenV));

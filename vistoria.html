@@ -155,7 +155,7 @@
 
   let dados = null, sujo = false, postando = false, carregando = false;
   const fotos = {};     /* locacaoId -> [foto, foto, foto] */
-  const campos = {};    /* locacaoId -> { veiculo, lacre, obs, estado, scanErro } */
+  const campos = {};    /* locacaoId -> { veiculo, obs, estado, scanErro } */
   const LEG = ['Frente','Lateral','Detalhe'];
 
   function aviso(txt, tipo){
@@ -422,7 +422,7 @@
     }).join('') + '</div>';
   }
   function campo(locId, qual, ph, val){
-    return '<input type="text" inputmode="'+(qual==='lacre'?'numeric':'text')+'" data-loc="'+esc(locId)+'" data-campo="'+qual+'" '+
+    return '<input type="text" inputmode="text" data-loc="'+esc(locId)+'" data-campo="'+qual+'" '+
       'placeholder="'+esc(ph)+'" value="'+esc(val||'')+'">';
   }
   function blocoScan(locId, codigo){
@@ -460,9 +460,8 @@
   }
 
   function cardChegada(l){
-    const c = campos[l.locacaoId] || (campos[l.locacaoId] = { veiculo:'', lacre:'', estado:'loja', obs:'' });
+    const c = campos[l.locacaoId] || (campos[l.locacaoId] = { veiculo:'', estado:'loja', obs:'' });
     const exigirFoto = dados.exigirFoto !== false;
-    const exigirLacre = dados.exigirLacre !== false;
     return '<div class="card" data-card="'+esc(l.locacaoId)+'">'+
       '<div class="cab"><div><div class="cod">'+esc(l.codigo)+'</div>'+
         '<div class="tipo">'+esc(l.tipoNome)+'</div></div>'+
@@ -476,8 +475,6 @@
       '</div>'+
       grade(l.locacaoId)+
       blocoScan(l.locacaoId, l.codigo)+
-      (exigirLacre ? '<label class="campo">Novo lacre aplicado (obrigatório)'+
-        campo(l.locacaoId, 'lacre', 'número que você acabou de colocar', c.lacre)+'</label>' : '')+
       '<label class="campo">Estado do veículo'+
         '<select data-loc="'+esc(l.locacaoId)+'" data-campo="estado">'+
           '<option value="loja"'+(c.estado!=='manutencao'?' selected':'')+'>OK — volta para a loja</option>'+
@@ -591,10 +588,6 @@
       toast('Escaneie o código do patinete.');
       return false;
     }
-    if(acao === 'chegada' && dados.exigirLacre !== false && !(c.lacre||'').trim()){
-      aviso('Informe o número do lacre.', 'erro');
-      return false;
-    }
     return true;
   }
 
@@ -619,7 +612,7 @@
       const fs = (fotos[id]||[]).filter(Boolean);
       if(!validar('chegada', id, fs)) return;
       const c = campos[id] || {};
-      enviar('chegada', id, { fotos: fs, veiculo: c.veiculo||'', lacre: c.lacre||'',
+      enviar('chegada', id, { fotos: fs, veiculo: c.veiculo||'',
                               estado: c.estado||'loja', obs: c.obs||'' });
     }
   });
@@ -628,7 +621,7 @@
     const el = e.target;
     if(!el.dataset || !el.dataset.campo || !el.dataset.loc) return;
     const id = el.dataset.loc;
-    const c = campos[id] || (campos[id] = { veiculo:'', lacre:'', obs:'', estado:'loja' });
+    const c = campos[id] || (campos[id] = { veiculo:'', obs:'', estado:'loja' });
     c[el.dataset.campo] = el.value;
     sujo = true;
   });
@@ -636,7 +629,7 @@
     const el = e.target;
     if(!el.dataset || !el.dataset.campo || !el.dataset.loc) return;
     const id = el.dataset.loc;
-    const c = campos[id] || (campos[id] = { veiculo:'', lacre:'', obs:'', estado:'loja' });
+    const c = campos[id] || (campos[id] = { veiculo:'', obs:'', estado:'loja' });
     c[el.dataset.campo] = el.value;
     sujo = true;
   });

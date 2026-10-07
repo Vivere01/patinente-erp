@@ -538,7 +538,7 @@ tr.estornada td:last-child{opacity:1;text-decoration:none}
             <div id="lacResumo"></div>
             <label class="f" style="display:flex;align-items:center;gap:9px;margin:12px 0 0">
               <input type="checkbox" id="cfgLacre" style="width:auto;margin:0">
-              <span style="margin:0;text-transform:none;letter-spacing:0;font-size:13px;color:var(--text)">Exigir número do lacre na saída e na entrada</span>
+              <span style="margin:0;text-transform:none;letter-spacing:0;font-size:13px;color:var(--text)">Lacre registrado e rompido automaticamente na liberação</span>
             </label>
           </div>
         </div>
@@ -1249,7 +1249,7 @@ $('#btnNovaLocacao').onclick = ()=> exigirCaixa('liberar um veículo', ()=> abri
 function abrirWizard(veiculoId){
   if(!caixaAberto()) return exigirCaixa('liberar um veículo', ()=> abrirWizard(veiculoId));
   W = { passo:1, veiculos: veiculoId?[veiculoId]:[], clienteId:null, novoCliente:null,
-        duracao:null, pagamento:PAGAMENTOS[0], assinatura:null, obs:'', fotos:{}, lacres:{} };
+        duracao:null, pagamento:PAGAMENTOS[0], assinatura:null, obs:'', fotos:{} };
   const ov = abrirModal(
     '<header><h3>Nova locação</h3><button class="x">&times;</button></header>'+
     '<div class="steps" id="wsteps"></div>'+
@@ -1293,12 +1293,6 @@ function passoVistoria(){
         '<div style="font-weight:700;font-size:14px">'+esc(v.codigo)+
         ' <span class="muted" style="font-weight:400;font-size:12.5px">· '+esc(getTipo(v.tipoId).nome)+'</span>'+
         '<span id="vst-'+id+'" style="float:right;font-size:12px"></span></div>'+
-        (DB.config.exigirLacre!==false ?
-          '<div style="display:flex;gap:10px;align-items:end;margin-top:11px;flex-wrap:wrap">'+
-            '<label class="f" style="margin:0;width:190px"><span>Nº do lacre rompido</span>'+
-            '<input type="number" data-lac="'+id+'" value="'+esc(W.lacres[id]||'')+'" placeholder="leia no lacre"></label>'+
-            '<div data-lacres="'+id+'" style="font-size:12.5px;align-self:center;padding-bottom:10px"></div>'+
-          '</div>' : '')+
         painelFotos('fot-'+id, W.fotos[id], LEG_VIST)+
       '</div>';
     }).join('')+
@@ -1323,19 +1317,6 @@ function ligaPassoVistoria(){
     status();
   };
   W.veiculos.forEach(id=> ligarFotos('fot-'+id, W.fotos[id], LEG_VIST, repinta));
-  $$('[data-lac]').forEach(inp=>{
-    const id = +inp.dataset.lac;
-    const conferir = ()=>{
-      W.lacres[id] = (inp.value||'').trim();
-      const cel = $('[data-lacres="'+id+'"]');
-      const esperado = numeroLacreDoVeiculo(id);
-      if(!W.lacres[id]){ cel.innerHTML=''; return; }
-      if(!esperado) cel.innerHTML = '<span class="pill manut">veículo sem lacre no sistema</span>';
-      else if(String(esperado) === W.lacres[id]) cel.innerHTML = '<span class="pill loja">confere</span>';
-      else cel.innerHTML = '<span class="pill est">divergente — esperado '+esc(esperado)+'</span>';
-    };
-    inp.oninput = conferir; conferir();
-  });
   status();
 }
 
@@ -1730,10 +1711,6 @@ function avancarWizard(){
       const semFoto = W.veiculos.filter(id=> !(W.fotos[id]||[]).some(Boolean));
       if(semFoto.length) return toast('Falta foto de: '+semFoto.map(id=>getVeiculo(id).codigo).join(', '));
     }
-    if(DB.config.exigirLacre!==false){
-      const semLacre = W.veiculos.filter(id=> !(W.lacres[id]||'').trim());
-      if(semLacre.length) return toast('Informe o lacre de: '+semLacre.map(id=>getVeiculo(id).codigo).join(', '));
-    }
     W.passo=5; return pintaWizard();
   }
   if(W.passo===5){
@@ -1777,21 +1754,12 @@ function concluirLocacao(){
       danos: [], valorDanos: 0, status: 'ativa'
     };
     if(DB.config.exigirLacre!==false){
-      const informado = (W.lacres[i.veiculoId]||'').trim();
-      const esperado  = numeroLacreDoVeiculo(i.veiculoId);
-      loc.lacreSaida = informado;
+      /* o lacre da saída sai sozinho: é o que já está aplicado no veículo.
+         ninguém digita número em nenhum fluxo. */
+      const esperado = numeroLacreDoVeiculo(i.veiculoId);
+      loc.lacreSaida = esperado || null;
       loc.lacreEsperado = esperado ? String(esperado) : null;
-      if(esperado && String(esperado) !== informado){
-        registrarDivergencia('lacre_trocado',
-          i.codigo+' saiu com lacre '+informado+', mas o sistema tinha '+esperado,
-          {veiculoId:i.veiculoId, esperado:String(esperado), informado, locacaoId:loc.id});
-      } else if(!esperado){
-        registrarDivergencia('veiculo_sem_lacre',
-          i.codigo+' saiu sem lacre registrado no sistema (informado '+informado+')',
-          {veiculoId:i.veiculoId, informado, locacaoId:loc.id});
-      }
       if(esperado) romperLacre(esperado, loc.id, i.veiculoId);
-      if(informado && (!esperado || String(esperado)!==informado)) romperLacre(informado, loc.id, i.veiculoId);
     }
     DB.locacoes.push(loc);
     grupo.locacaoIds.push(loc.id);
@@ -1920,11 +1888,10 @@ window.devolverGrupo = function(gid){
     '<div class="body">'+
       '<div class="card" style="margin-bottom:14px"><table>'+
         '<thead><tr><th>Veículo</th><th>Tipo</th><th class="right">Atraso</th><th class="right">Excedente</th>'+
-        (DB.config.exigirLacre!==false?'<th>Novo lacre</th>':'')+'</tr></thead><tbody>'+
+        '</tr></thead><tbody>'+
         linhas.map(x=>'<tr><td><b>'+esc(x.l.veiculoCodigo)+'</b></td><td>'+esc(x.l.tipoNome)+'</td>'+
           '<td class="right mono">'+(x.ex.minutos?x.ex.minutos+' min':'—')+'</td>'+
           '<td class="right mono"'+(x.ex.valor?' style="color:var(--danger)"':'')+'>'+brl(x.ex.valor)+'</td>'+
-          (DB.config.exigirLacre!==false ? '<td style="width:140px"><input type="number" data-glac="'+x.l.id+'" placeholder="novo lacre"></td>' : '')+
           '</tr>').join('')+
         '</tbody></table></div>'+
       '<div class="resumo"><div class="l tot"><span>A receber agora</span><span>'+brl(totalEx)+'</span></div></div>'+
@@ -1939,14 +1906,6 @@ window.devolverGrupo = function(gid){
     const fim = Date.now();
     const pg = (ov.querySelector('#gPgto')||{}).value||null;
     const obs = ov.querySelector('#gObs').value.trim();
-    if(DB.config.exigirLacre!==false){
-      for(const l of locs){
-        const num = (((ov.querySelector('[data-glac="'+l.id+'"]')||{}).value)||'').trim();
-        if(!num) return toast('Informe o novo lacre de '+l.veiculoCodigo+'.');
-        const teste = lacreDe(num);
-        if(!teste || teste.status!=='estoque') return toast('Lacre '+num+' inválido para '+l.veiculoCodigo+'.');
-      }
-    }
     let cobrar = 0;
     locs.forEach(l=>{
       const ex = calcExcedente(l, fim);
@@ -1954,10 +1913,6 @@ window.devolverGrupo = function(gid){
       l.danos = []; l.valorDanos = 0;
       l.pagamentoExcedente = ex.valor>0 ? pg : null;
       l.obsEntrada = obs; l.status = 'finalizada'; l.atendenteEntrada = usuarioAtual();
-      if(DB.config.exigirLacre!==false){
-        const num = (((ov.querySelector('[data-glac="'+l.id+'"]')||{}).value)||'').trim();
-        aplicarLacre(num, l.veiculoId); l.lacreEntrada = num;
-      }
       const v = getVeiculo(l.veiculoId); if(v) v.status = 'loja';
       delete jaAlertou[l.id];
       cobrar += ex.valor;
@@ -2016,10 +1971,6 @@ window.abrirDevolucao = function(locId){
         '<p class="muted" style="font-size:12px;margin:4px 0 0">Fotografe o estado da devolução — é a prova da cobrança de avaria.</p>'+
         '<div id="dFotosBox"></div>'+
       '</div>'+
-      (DB.config.exigirLacre!==false ?
-        '<label class="f"><span>Nº do novo lacre aplicado</span>'+
-        '<input type="number" id="dLacre" placeholder="lacre que você colocou agora"></label>'+
-        '<div id="dLacreMsg" style="margin:-6px 0 12px;font-size:12.5px"></div>' : '')+
       '<div id="dTotalBox"></div>'+
       '<div id="dPgtoBox"></div>'+
       '<label class="f"><span>Observações da entrada</span><input type="text" id="dObs" placeholder="ex: bateria em 20%, paralama trincado"></label>'+
@@ -2035,16 +1986,6 @@ window.abrirDevolucao = function(locId){
   };
   pintaFotos();
   ov.querySelector('#dEstornar').onclick = ()=>{ fecharModal(ov); estornarLocacao(loc.id); };
-  const inpLac = ov.querySelector('#dLacre');
-  if(inpLac) inpLac.oninput = ()=>{
-    const n = (inpLac.value||'').trim(), cel = ov.querySelector('#dLacreMsg');
-    if(!n){ cel.innerHTML=''; return; }
-    const l = lacreDe(n);
-    if(!l) cel.innerHTML = '<span class="pill est">esse número não está no estoque</span>';
-    else if(l.status==='rompido') cel.innerHTML = '<span class="pill est">lacre já rompido, use outro</span>';
-    else if(l.status==='aplicado') cel.innerHTML = '<span class="pill est">lacre já está em outro veículo</span>';
-    else cel.innerHTML = '<span class="pill loja">lacre válido</span>';
-  };
 
   const danos = [];
   const totalDanos = ()=> danos.reduce((s,d)=>s+(+d.valor||0),0);
@@ -2093,13 +2034,6 @@ window.abrirDevolucao = function(locId){
     loc.pagamentoExcedente = aCobrar>0 ? ((ov.querySelector('#dPgto')||{}).value||null) : null;
     loc.obsEntrada = ov.querySelector('#dObs').value.trim();
     loc.atendenteEntrada = usuarioAtual();
-    if(DB.config.exigirLacre!==false){
-      const num = (((ov.querySelector('#dLacre')||{}).value)||'').trim();
-      if(!num) return toast('Informe o número do novo lacre.');
-      const r = aplicarLacre(num, loc.veiculoId);
-      if(r.erro) return toast(r.erro);
-      loc.lacreEntrada = num;
-    }
     loc.fotosEntrada = fotosEnt.filter(Boolean).map(f=>({id:f.id, legenda:f.legenda, ts:f.ts}));
     loc.status = 'finalizada';
     log('devolucao', loc.veiculoCodigo+(aCobrar>0?' — cobrado '+brl(aCobrar):' — sem cobrança'), loc.id);
@@ -3078,9 +3012,9 @@ function renderAuditoria(){
 
 /* =====================================================================
    CONTROLE DE LACRES
-   Cada veículo parado na loja fica lacrado. Para soltar, o atendente
-   precisa romper o lacre e informar o número — e o número tem que bater
-   com o que o sistema diz que estava naquele veículo.
+   Cada veículo parado na loja fica lacrado. Na liberação o lacre já registrado
+   para aquele veículo é rompido sozinho no estoque — nenhum fluxo pede número
+   de lacre digitado.
    O estoque de lacres é do dono, não do atendente: só o gerente registra
    lotes novos. Assim, lacre rompido sem locação não tem como se esconder.
    ===================================================================== */

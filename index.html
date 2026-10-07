@@ -471,7 +471,7 @@ tr.estornada td:last-child{opacity:1;text-decoration:none}
       <div style="flex:1;min-width:260px">
         <b style="font-size:13.5px">Link público da vistoria</b>
         <p class="muted" style="font-size:12.5px;margin:5px 0 8px">É o mesmo link sempre. Passe para quem vai conferir a saída
-        (e para quem recebe a devolução): o celular abre a fila, registra fotos, lacre e horário e libera o veículo —
+        (e para quem recebe a devolução): o celular abre a fila, registra fotos, escaneia a etiqueta e marca o horário e libera o veículo —
         ou marca a chegada quando o cliente devolver.</p>
         <div class="linkbox" id="vistLink"></div>
         <p class="muted" style="font-size:12px;margin:8px 0 0">Quem tem o link <b>não entra no sistema</b>: só vê e registra a vistoria.</p>
@@ -647,7 +647,7 @@ tr.estornada td:last-child{opacity:1;text-decoration:none}
         </div>
         <div class="card pad" style="margin-bottom:14px">
           <h3 style="font-size:15px;margin-bottom:6px">Link da vistoria</h3>
-          <p class="muted" style="font-size:12px;margin:0 0 10px">Abre no celular de quem fotografa, confere o lacre e libera o veículo —
+          <p class="muted" style="font-size:12px;margin:0 0 10px">Abre no celular de quem fotografa, escaneia a etiqueta e libera o veículo —
           e também registra a chegada do cliente. Quem tem o link não entra no sistema.</p>
           <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
             <div class="assqr" style="margin:0"><div id="cfgVistQr"></div></div>
@@ -695,7 +695,7 @@ tr.estornada td:last-child{opacity:1;text-decoration:none}
             <div id="lacResumo"></div>
             <label class="f" style="display:flex;align-items:center;gap:9px;margin:12px 0 0">
               <input type="checkbox" id="cfgLacre" style="width:auto;margin:0">
-              <span style="margin:0;text-transform:none;letter-spacing:0;font-size:13px;color:var(--text)">Exigir número do lacre na saída e na entrada</span>
+              <span style="margin:0;text-transform:none;letter-spacing:0;font-size:13px;color:var(--text)">Lacre registrado e rompido automaticamente na liberação</span>
             </label>
           </div>
         </div>
@@ -2533,7 +2533,7 @@ function concluirLocacao(){
     DB.locacoes.push(loc);
     grupo.locacaoIds.push(loc.id);
     /* continua com status 'loja' por fora, mas travado para nova locação:
-       romper lacre, foto e divergência acontecem na hora da liberação */
+       o lacre é rompido e a foto é feita na hora da liberação */
   });
   DB.grupos.push(grupo);
   log('locacao', d.itens.map(i=>i.codigo).join(', ')+' — '+d.cli.nome+' — '+brl(d.total), grupo.id);
@@ -2546,7 +2546,7 @@ function concluirLocacao(){
 }
 
 /* O balcão terminou aqui: mostra o link (e o QR) que a pessoa do celular
-   vai usar para fotografar, conferir o lacre e liberar o veículo. */
+   vai usar para fotografar, escanear a etiqueta e liberar o veículo. */
 function mostrarLinkVistoria(grupo){
   const cods = locsDoGrupo(grupo.id).map(l=>l.veiculoCodigo).join(', ');
   const link = linkVistoria();
@@ -2559,7 +2559,7 @@ function mostrarLinkVistoria(grupo){
         '<div class="l"><span>Pacote ('+esc(grupo.tarifaLabel)+')</span><b>'+brl(grupo.valorBase)+'</b></div>'+
         linhasPagamento(locsDoGrupo(grupo.id))+
       '</div>'+
-      '<div class="fnota">Falta só a vistoria de saída. Ela é feita no celular por este link — fotos, lacre e horário — e é a confirmação que <b>inicia o relógio</b> da locação.</div>'+
+      '<div class="fnota">Falta só a vistoria de saída. Ela é feita no celular por este link — fotos, etiqueta e horário — e é a confirmação que <b>inicia o relógio</b> da locação.</div>'+
       '<div class="aviso"><div class="assqr"><div id="vlQr"></div></div>'+
         '<div style="flex:1;min-width:210px">'+
           '<b style="font-size:12.5px">Link público da vistoria</b>'+
@@ -2700,11 +2700,10 @@ window.devolverGrupo = function(gid){
     '<div class="body">'+
       '<div class="card" style="margin-bottom:14px"><table>'+
         '<thead><tr><th>Veículo</th><th>Tipo</th><th class="right">Atraso</th><th class="right">Excedente</th>'+
-        (DB.config.exigirLacre!==false?'<th>Novo lacre</th>':'')+'</tr></thead><tbody>'+
+        '</tr></thead><tbody>'+
         linhas.map(x=>'<tr><td><b>'+esc(x.l.veiculoCodigo)+'</b></td><td>'+esc(x.l.tipoNome)+'</td>'+
           '<td class="right mono">'+(x.ex.minutos?x.ex.minutos+' min':'—')+'</td>'+
           '<td class="right mono"'+(x.ex.valor?' style="color:var(--danger)"':'')+'>'+brl(x.ex.valor)+'</td>'+
-          (DB.config.exigirLacre!==false ? '<td style="width:140px"><input type="number" data-glac="'+x.l.id+'" placeholder="novo lacre"></td>' : '')+
           '</tr>').join('')+
         '</tbody></table></div>'+
       '<div class="resumo"><div class="l tot"><span>A receber agora</span><span>'+brl(totalEx)+'</span></div></div>'+
@@ -2719,14 +2718,6 @@ window.devolverGrupo = function(gid){
     const fim = Date.now();
     const pg = (ov.querySelector('#gPgto')||{}).value||null;
     const obs = ov.querySelector('#gObs').value.trim();
-    if(DB.config.exigirLacre!==false){
-      for(const l of locs){
-        const num = (((ov.querySelector('[data-glac="'+l.id+'"]')||{}).value)||'').trim();
-        if(!num) return toast('Informe o novo lacre de '+l.veiculoCodigo+'.');
-        const teste = lacreDe(num);
-        if(!teste || teste.status!=='estoque') return toast('Lacre '+num+' inválido para '+l.veiculoCodigo+'.');
-      }
-    }
     let cobrar = 0;
     locs.forEach(l=>{
       const ex = calcExcedente(l, fim);
@@ -2734,10 +2725,6 @@ window.devolverGrupo = function(gid){
       l.danos = []; l.valorDanos = 0;
       l.pagamentoExcedente = ex.valor>0 ? pg : null;
       l.obsEntrada = obs; l.status = 'finalizada'; l.atendenteEntrada = usuarioAtual();
-      if(DB.config.exigirLacre!==false){
-        const num = (((ov.querySelector('[data-glac="'+l.id+'"]')||{}).value)||'').trim();
-        aplicarLacre(num, l.veiculoId); l.lacreEntrada = num;
-      }
       const v = getVeiculo(l.veiculoId); if(v) v.status = 'loja';
       delete jaAlertou[l.id];
       cobrar += ex.valor;
@@ -2806,10 +2793,6 @@ window.abrirDevolucao = function(locId){
         '<p class="muted" style="font-size:12px;margin:4px 0 0">Fotografe o estado da devolução — é a prova da cobrança de avaria.</p>'+
         '<div id="dFotosBox"></div>'+
       '</div>'+
-      (DB.config.exigirLacre!==false ?
-        '<label class="f"><span>Nº do novo lacre aplicado</span>'+
-        '<input type="number" id="dLacre" placeholder="lacre que você colocou agora"></label>'+
-        '<div id="dLacreMsg" style="margin:-6px 0 12px;font-size:12.5px"></div>' : '')+
       '<div id="dTotalBox"></div>'+
       '<div id="dPgtoBox"></div>'+
       '<label class="f"><span>Observações da entrada</span><input type="text" id="dObs" placeholder="ex: bateria em 20%, paralama trincado"></label>'+
@@ -2818,7 +2801,7 @@ window.abrirDevolucao = function(locId){
     '<button class="btn sec" id="dCancel">Cancelar</button><button class="btn ok" id="dOk">Confirmar entrada</button></footer>');
 
   const fotosEnt = [null,null,null];
-  /* fotos e lacre que a vistoria do celular já registrou */
+  /* fotos que a vistoria do celular já registrou */
   (loc.fotosEntrada||[]).slice(0,3).forEach((f,i)=>{
     if(!f) return;
     fotosEnt[i] = { id:f.id, caminho:f.caminho, legenda:f.legenda, ts:f.ts, thumb:null };
@@ -2833,20 +2816,6 @@ window.abrirDevolucao = function(locId){
   };
   pintaFotos();
   ov.querySelector('#dEstornar').onclick = ()=>{ fecharModal(ov); estornarLocacao(loc.id); };
-  const inpLac = ov.querySelector('#dLacre');
-  if(inpLac){
-    if(loc.lacreEntrada && !inpLac.value) inpLac.value = loc.lacreEntrada;
-    inpLac.oninput = ()=>{
-      const n = (inpLac.value||'').trim(), cel = ov.querySelector('#dLacreMsg');
-      if(!n){ cel.innerHTML=''; return; }
-      const l = lacreDe(n);
-      if(!l) cel.innerHTML = '<span class="pill est">esse número não está no estoque</span>';
-      else if(l.status==='rompido') cel.innerHTML = '<span class="pill est">lacre já rompido, use outro</span>';
-      else if(l.status==='aplicado') cel.innerHTML = '<span class="pill est">lacre já está em outro veículo</span>';
-      else cel.innerHTML = '<span class="pill loja">lacre válido</span>';
-    };
-    if(loc.lacreEntrada) inpLac.dispatchEvent(new Event('input'));
-  }
 
   const danos = [];
   const totalDanos = ()=> danos.reduce((s,d)=>s+(+d.valor||0),0);
@@ -2897,13 +2866,6 @@ window.abrirDevolucao = function(locId){
     loc.pagamentoExcedente = aCobrar>0 ? ((ov.querySelector('#dPgto')||{}).value||null) : null;
     loc.obsEntrada = ov.querySelector('#dObs').value.trim();
     if(!loc.atendenteEntrada) loc.atendenteEntrada = usuarioAtual();
-    if(DB.config.exigirLacre!==false){
-      const num = (((ov.querySelector('#dLacre')||{}).value)||'').trim();
-      if(!num) return toast('Informe o número do novo lacre.');
-      const r = aplicarLacre(num, loc.veiculoId);
-      if(r.erro) return toast(r.erro);
-      loc.lacreEntrada = num;
-    }
     const feitas = fotosEnt.filter(Boolean).map(f=>({id:f.id, caminho:f.caminho, legenda:f.legenda, ts:f.ts}));
     if(feitas.length) loc.fotosEntrada = feitas;   /* mantém as da vistoria */
     loc.status = 'finalizada';
@@ -3278,7 +3240,7 @@ function oferecerEtiquetas(ids){
 
 /* ===================== ABA VISTORIA =====================
    O balcão só mostra o que está na fila e entrega o link. Quem fotografa,
-   confere o lacre e libera faz isso no celular, pelo link público. */
+   escaneia a etiqueta e libera faz isso no celular, pelo link público. */
 let _qrToken = null;
 function pintarQr(sel, texto, chave){
   const qr = $(sel); if(!qr) return;
@@ -4599,9 +4561,9 @@ function renderAuditoria(){
 
 /* =====================================================================
    CONTROLE DE LACRES
-   Cada veículo parado na loja fica lacrado. Para soltar, o atendente
-   precisa romper o lacre e informar o número — e o número tem que bater
-   com o que o sistema diz que estava naquele veículo.
+   Cada veículo parado na loja fica lacrado. Na liberação o QR escaneado
+   identifica o patinete e o lacre já registrado para ele é rompido sozinho
+   no estoque — nenhum fluxo pede número de lacre digitado.
    O estoque de lacres é do dono, não do atendente: só o administrador registra
    lotes novos. Assim, lacre rompido sem locação não tem como se esconder.
    ===================================================================== */

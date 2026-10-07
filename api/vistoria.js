@@ -18,10 +18,10 @@
        fica 'ativo'.
 
    Chegada (acao='chegada'):
-     { token, locacaoId, veiculo, fotos:[dataUrl,...], lacre, estado, obs }
+     { token, locacaoId, veiculo, fotos:[dataUrl,...], estado, obs }
      → locação vira 'devolvida' com fimReal da hora do celular; o balcão
-       fecha a cobrança depois, com as peças e o excedente. O lacre novo
-       continua digitado: a etiqueta fixa não tem o número do lacre novo.
+       fecha a cobrança depois, com as peças e o excedente. O veículo é
+       identificado pela etiqueta escaneada — nenhum número é digitado.
    ===================================================================== */
 const { json, erro, metodoInvalido, corpo } = require('../lib/http');
 const { temBanco, sql } = require('../lib/banco');
@@ -221,9 +221,9 @@ module.exports = async (req, res) => {
     const fotosBrutas = Array.isArray(b.fotos) ? b.fotos.filter(Boolean).slice(0, 6) : [];
     if(exigirFoto && !fotosBrutas.length)
       return erro(res, 400, 'foto_obrigatoria', 'Ao menos uma foto é obrigatória para a vistoria.');
+    /* o lacre não é mais digitado: a chegada identifica o veículo pelo QR.
+       um número enviado por versões antigas continua sendo gravado. */
     const lacre = String(b.lacre == null ? '' : b.lacre).trim().slice(0, 20);
-    if(exigirLacre && acao === 'chegada' && !lacre)
-      return erro(res, 400, 'lacre_obrigatorio', 'Informe o número do novo lacre.');
     const estado = acao === 'chegada' ? (b.estado === 'manutencao' ? 'manutencao' : 'loja') : null;
 
     /* fotos primeiro: caminho novo por locação e por rodada */
