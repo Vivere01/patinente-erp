@@ -448,7 +448,6 @@
       '<div class="linhas">'+
         '<div class="l"><span>Cliente</span><b>'+esc(l.clienteNome)+'</b></div>'+
         '<div class="l"><span>Pacote</span><b>'+esc(l.tarifaLabel)+' ('+(l.duracaoMin||0)+' min) · '+brl(l.valorBase||0)+' via '+esc(l.pagamento||'—')+'</b></div>'+
-        (l.lacreEsperado ? '<div class="l"><span>Lacre no sistema</span><b>'+esc(l.lacreEsperado)+'</b></div>' : '')+
         (l.obsSaida ? '<div class="l"><span>Obs. da saída</span><b>'+esc(l.obsSaida)+'</b></div>' : '')+
       '</div>'+
       grade(l.locacaoId)+
@@ -505,7 +504,7 @@
     const hoje = (dados.liberadas || []).map(x=>
         '<div class="l"><span>'+esc(x.codigo)+' · '+esc(x.clienteNome)+'</span><b>'+hhmm(x.liberadaEm)+' · '+x.fotos+' foto(s)</b></div>').join('') +
       (dados.chegadas || []).map(x=>
-        '<div class="l"><span>'+esc(x.codigo)+' chegou</span><b>'+hhmm(x.fimReal)+' · '+(x.fotosEntrada||0)+' foto(s)'+(x.lacreEntrada?' · lacre '+esc(x.lacreEntrada):'')+'</b></div>').join('');
+        '<div class="l"><span>'+esc(x.codigo)+' chegou</span><b>'+hhmm(x.fimReal)+' · '+(x.fotosEntrada||0)+' foto(s)</b></div>').join('');
     $('#qtdHoje').textContent = (dados.liberadas||[]).length + (dados.chegadas||[]).length;
     $('#hoje').innerHTML = hoje
       ? '<div class="card"><div class="linhas" style="border-top:0;padding-top:0;margin-top:0">'+hoje+'</div></div>'

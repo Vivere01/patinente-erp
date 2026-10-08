@@ -2,7 +2,7 @@
   "name": "patinente-erp",
   "version": "1.0.0",
   "private": true,
-  "description": "Sistema de controle de locação de patinetes e motos elétricas — balcão, caixa, frota, lacres e inventário.",
+  "description": "Sistema de controle de locação de patinetes e motos elétricas — balcão, caixa, frota e inventário.",
   "scripts": {
     "schema": "node scripts/aplicar-schema.js",
     "schema:sync": "node scripts/gerar-schema.js",

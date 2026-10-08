@@ -9,7 +9,7 @@
 
 ## 1. O que é
 
-Sistema de balcão para locação por tempo de equipamentos de mobilidade elétrica. Cobre o ciclo completo: pagamento e contrato com assinatura eletrônica no balcão, vistoria de saída e de chegada pelo link público no celular (fotos, lacre e horário), controle de lacre, devolução com cobrança de excedente e avaria, caixa diário e demonstrativo financeiro.
+Sistema de balcão para locação por tempo de equipamentos de mobilidade elétrica. Cobre o ciclo completo: pagamento e contrato com assinatura eletrônica no balcão, vistoria de saída e de chegada pelo link público no celular (fotos, etiqueta escaneada e horário), devolução com cobrança de excedente e avaria, caixa diário e demonstrativo financeiro. A identificação do veículo em saída e chegada é **sempre o QR da etiqueta** — não há número digitado em nenhum ponto.
 
 Foi construído como protótipo validado com o dono da operação. **Toda regra de negócio aqui descrita foi acordada e testada com ele** — não são suposições. O que precisa de decisão técnica está marcado como tal na seção 8.
 
@@ -21,7 +21,7 @@ Foi construído como protótipo validado com o dono da operação. **Toda regra 
 | `app.html` | Mesma aplicação com dados em `localStorage`. Serve para rodar offline, sem servidor, e para testar mudanças sem tocar em dados reais. Gerada a partir da mesma base. |
 | `1-banco-de-dados.sql` | Schema Postgres, RLS, function de gravação e bucket de storage. Idempotente. |
 | `proposta-visual.html` | Mockup do painel com dados fictícios. Só referência de design, não é código de produção. |
-| `_estilo.css`, `_nuvem.js`, `_fotos.js`, `_lacres.js`, `_inventario.js`, `_arranque.js` | Fragmentos usados para montar os HTML. Já estão embutidos. **Podem ser ignorados** ou usados como ponto de partida se você for modularizar. `app.html` + os fragmentos de nuvem geram o `index.html`. |
+| `_estilo.css`, `_nuvem.js`, `_fotos.js`, `_inventario.js`, `_arranque.js` | Fragmentos usados para montar os HTML. Já estão embutidos. **Podem ser ignorados** ou usados como ponto de partida se você for modularizar. `app.html` + os fragmentos de nuvem geram o `index.html`. |
 
 Ambiente já provisionado: projeto Supabase `locadora`, região `sa-east-1`, schema aplicado e testado. URL e chave pública já estão dentro do `index.html`.
 
@@ -67,7 +67,6 @@ Navegador (single-file HTML, sem build, sem framework)
     toleranciaMin,        // int, minutos de cortesia antes de cobrar excedente
     urlBase,              // base do link de assinatura
     exigirFoto,           // bool
-    exigirLacre,          // bool
     inventarioDias        // int, periodicidade esperada da conferência de frota (default 7)
   },
 
@@ -111,7 +110,6 @@ Navegador (single-file HTML, sem build, sem framework)
     atendenteSaida, atendenteEntrada,
     fotosSaida:   [{ id, caminho, legenda, ts }],
     fotosEntrada: [{ id, caminho, legenda, ts }],
-    lacreSaida, lacreEsperado, lacreEntrada,
     status: 'ativa'|'finalizada'|'estornada',
     estorno?: { ts, usuario, usuarioId, motivo, detalhe, valor }
   }],
@@ -135,13 +133,6 @@ Navegador (single-file HTML, sem build, sem framework)
                criadoEm, ultimoAcesso }],
 
   auditoria: [{ id, ts, usuarioId, usuario, acao, detalhe, ref }],
-
-  // mapa, não array — acesso O(1) por número
-  lacres: {
-    "4001": { n, status: 'estoque'|'aplicado'|'rompido', veiculoId,
-              recebidoEm, recebidoPor, aplicadoEm, aplicadoPor,
-              rompidoEm, rompidoPor, locacaoId }
-  },
 
   divergencias: [{ id, ts, tipo, detalhe, usuario, resolvida,
                    veiculoId?, esperado?, informado?, locacaoId?, inventarioId? }],
@@ -232,11 +223,10 @@ promovido a `email` da conta.
 |---|---|---|
 | Operar balcão e caixa | sim | sim |
 | Ver o financeiro do mês | — | sim |
-| Ver a aba Relatórios | — | sim |
+| Ver a seção Relatórios do mês no painel | — | sim |
 | Estornar locação ou lançamento | — | sim |
 | Alterar preços e tabela de peças | — | sim |
 | Cadastrar usuários | — | sim |
-| Registrar lote de lacres | — | sim |
 | Tratar divergências | — | sim |
 | Zerar o sistema | — | sim |
 
@@ -264,10 +254,11 @@ documento e só cai na tela de login se não houver sessão ou ela tiver expirad
 pede a senha de novo ao expirar, ao sair ou em aparelho sem sessão.
 
 **Atendente.** Opera o balcão — locação, devolução, vistoria, clientes, histórico e
-caixa do dia — mas **não enxerga dinheiro nem cadastro**: as abas *Financeiro*,
-*Relatórios* e *Usuários* ficam ocultas (`aplicarPermissoes`), `irPara` manda de volta
-ao painel se ele chegar por atalho, `renderFinanceiro` e `renderRelatorios` têm trava
-própria e o indicador de faturamento do dia some do painel.
+caixa do dia — mas **não enxerga dinheiro nem cadastro**: as abas *Financeiro* e
+*Usuários* ficam ocultas (`aplicarPermissoes`), a seção *Relatórios do mês* dentro do
+painel nasce escondida (`renderPainel` só a revela para administrador), `irPara` manda
+de volta ao painel se ele chegar por atalho, `renderFinanceiro` e `renderRelatorios`
+têm trava própria e o indicador de faturamento do dia some do painel.
 
 **Aba Usuários (exclusiva do administrador).** Criação e edição de usuários saíram de
 *Configurações* para uma aba própria — é ali que se cadastra cada conta com **nome,
@@ -277,11 +268,11 @@ exige que o sistema continue com pelo menos um administrador ativo. Quem não é
 administrador não vê a aba; se chegar por atalho (`irPara('usuarios')`), é mandado de
 volta ao painel, e o botão de cadastrar continua atrás de `exigirAdministrador`.
 
-**Aba Relatórios (exclusiva do administrador).** Ver seção 4.11.
+**Seção Relatórios do mês (exclusiva do administrador).** Ver seção 4.11.
 
 ### 4.8 Vistoria fotográfica (link público no celular)
 
-A vistoria saiu do balcão: quem fotografar e conferir o lacre é o **celular**, pelo link
+A vistoria saiu do balcão: quem fotografar e conferir a saída é o **celular**, pelo link
 público `/vistoria/{token}`. O token é gerado uma vez (`config.vistoriaToken`), fica em
 **Configurações → Link da vistoria** com QR Code para escanear, e é o mesmo todo dia —
 quem tem o link **não entra no sistema**: só enxerga a fila e grava a vistoria. O
@@ -307,14 +298,13 @@ diferença pelo tempo.
   **"Pagar e enviar para vistoria"**: grava `pagoEm`, contrato e assinatura, marca a
   locação como **pendente** e o grupo como `aguardando_vistoria`. O veículo **continua
   na loja, porém travado** para nova locação (`veiculoTravado` = existe locação
-  pendente daquele veículo), `lacreEsperado` é salvo e **nenhum relógio corre**. A tela
+  pendente daquele veículo) e **nenhum relógio corre**. A tela
   final entrega o link com QR. No celular: até 3 fotos (Frente, Lateral, Detalhe),
   **leitura da etiqueta do patinete** e observações → a locação vira `ativa` com a hora
   real de saída, o veículo sai para `rua`, `fotosSaida` é gravada em `public.fotos` e o
-  relógio começa a contar. **Não há campo de lacre na saída**: o lacre rompido é o que
-  já estava registrado para aquele veículo, aplicado pelo servidor e lançado no estoque
-  como `rompido` (seção 4.9) — a etiqueta escaneada identificou o veículo físico, então
-  não há mais o que conferir nem divergência a registrar.
+  relógio começa a contar. **Não existe campo de lacre em nenhum ponto**: quem escaneou
+  a etiqueta identificou o veículo físico (seção 4.9), então não há número a digitar nem
+  divergência a registrar.
 - **Etiqueta do patinete (QR ou código de barras).** A etiqueta colada no veículo leva
   **só o código** (`PAT-001`), gerado na aba **QR Codes** (seção 4.12). No cartão da
   vistoria há um botão **Escanear código do patinete** (e no topo da página, **Escanear
@@ -328,13 +318,12 @@ diferença pelo tempo.
   mensagem. Lido certo, o cartão mostra "✓ PAT-001 identificado", pulsa e o servidor
   grava. Ler de cima (botão do topo) localiza o cartão na fila pelo código e preenche a
   identificação sozinho.
-- **Chegada — "Registrar chegada".** Pelo mesmo link: fotos da entrega, novo lacre,
-  estado (loja / manutenção) e observações → a locação vira `devolvida` com `fimReal`
+- **Chegada — "Registrar chegada".** Pelo mesmo link: fotos da entrega, estado
+  (loja / manutenção) e observações → a locação vira `devolvida` com `fimReal`
   naquela hora (o relógio para) e o veículo volta para `loja`. **A cobrança de
   excedente e de avaria continua sendo fechada no balcão**, na tela de entrada, que já
-  lê `fotosEntrada`, `lacreEntrada`, `obsVistoria` e a hora registrada no celular.
-- Mínimo de **1 foto por veículo**, configurável em `config.exigirFoto`; lacre é
-  obrigatório enquanto `config.exigirLacre` estiver ligado (seção 4.9).
+  lê `fotosEntrada`, `obsVistoria` e a hora registrada no celular.
+- Mínimo de **1 foto por veículo**, configurável em `config.exigirFoto`.
 - Compressão no cliente: maior lado 900px, JPEG qualidade 0,55; no servidor o limite é
   600 KB por imagem e o caminho é `vistoria/{locacaoId}/…` (URL assinada de 6 h).
 - A página `vistoria.html` não tem tela de login, é `noindex`, relê a fila a cada 8 s e
@@ -352,34 +341,34 @@ diferença pelo tempo.
   atendente exigir na alta temporada ou diante de um cliente com comportamento
   duvidoso. A foto vai para a ficha do cliente e volta sozinha na locação seguinte.
 
-### 4.9 Controle de lacres
+### 4.9 Identificação do veículo (QR da etiqueta)
 
-Mecanismo de controle interno contra locação não registrada — o risco identificado pelo dono foi **funcionário alugar e ficar com o dinheiro sem lançar no sistema**.
+O módulo de **controle de lacres foi removido** — estoque, aplicação, rompimento,
+conferência cega e as divergências `lacre_*` não existem mais em nenhuma tela, no
+documento nem na API. O que responde ao mesmo risco hoje é a etiqueta:
 
-- Todo veículo parado na loja fica com um lacre plástico numerado.
-- O estoque de lacres é registrado por faixa numérica pelo administrador. **Só números em estoque podem ser usados.**
-- **Na saída**, o atendente **não digita lacre**: a vistoria exige a leitura da etiqueta
-  do patinete (seção 4.8) e o sistema aplica sozinho o lacre que já está registrado para
-  aquele veículo (`lacreAplicadoNo` → `loc.lacreSaida`, `lacreEsperado` e
-  `status: rompido` no estoque). **Não existe mais divergência `lacre_trocado` nem
-  `veiculo_sem_lacre`** — o veículo está identificado pela etiqueta, não pelo número
-  digitado. O lacre do balcão (digitação + conferência contra o esperado) continua
-  existindo na **entrada** pela vistoria do celular e na tela de devolução do balcão.
-  - sem etiqueta lida → bloqueia (`400 veiculo_nao_escaneado`);
-  - etiqueta de outro patinete → bloqueia (`409 veiculo_incorreto`).
-- **Na entrada**, informa o novo lacre aplicado. Validado contra estoque: recusa número inexistente, já rompido ou aplicado em outro veículo.
-- **Conferência cega no fechamento:** lista os veículos que deveriam estar na loja; o número esperado **só aparece depois** que o operador digita o que encontrou. Toda diferença gera divergência nomeando o veículo.
-- Divergências exigem apuração descrita pelo administrador para serem encerradas, e isso vai para a auditoria.
+- Todo veículo parado na loja tem etiqueta com QR (`PAT-001`), gerada na aba
+  **QR Codes** (seção 4.12). O QR leva **só o código** — é o que o celular lê.
+- **Na saída e na chegada**, a vistoria exige a leitura da etiqueta: sem etiqueta
+  lida → `400 veiculo_nao_escaneado`; etiqueta de outro patinete →
+  `409 veiculo_incorreto`, com o código lido e o esperado na mensagem. Nenhum número é
+  digitado e nenhum campo de lacre nasce no documento.
+- A identificação é **quem escaneou e em que momento** — mesma informação que o lacre
+  registrava, agora sem número para trocar nem estoque para burlar.
+- Divergências continuam existindo, mas só as de contagem: `contagem`,
+  `veiculo_nao_encontrado` e `veiculo_na_loja_como_rua` (seção 4.10).
 
-**Premissa operacional, não técnica:** o controle só tem valor se os lacres ficarem com o dono e forem entregues por turno em quantidade controlada. Com acesso livre ao lote, o atendente rompe, entrega o veículo e aplica um lacre novo — e o sistema não vê nada. Isso está documentado para o cliente.
+Migração automática no primeiro carregamento: apaga `DB.lacres`,
+`config.exigirLacre` e os campos `lacreEsperado` / `lacreSaida` / `lacreEntrada` de
+todas as locações.
 
 ### 4.10 Inventário da frota
 
-Segunda camada do mesmo controle. Enquanto a conferência de lacres olha só o que está na loja, o inventário cobre **a frota inteira**, e responde à pergunta "sumiu algum veículo?".
+Segunda camada da conferência física: o inventário cobre **a frota inteira**, e responde à pergunta "sumiu algum veículo?".
 
 - Periodicidade esperada configurável em `config.inventarioDias`, padrão **7 dias**. O painel exibe aviso quando vence, e quando nunca houve conferência.
 - A contagem é feita **por entrada de código**, não por lista marcável: o operador digita ou lê o código de cada veículo que encontrou fisicamente. Escolha deliberada — com 210 veículos, uma lista de checkboxes é lenta e convida a marcar tudo sem olhar.
-- A lista de pendentes começa **oculta**, atrás de um botão. Mesma razão da conferência cega de lacres.
+- A lista de pendentes começa **oculta**, atrás de um botão — a contagem só vale alguma coisa se o operador não tiver a resposta na mão.
 - Veículos com `status = 'rua'` são **justificados automaticamente** e não contam como faltantes.
 - Existe atalho "marcar tudo como encontrado", com confirmação. Foi incluído para conferência visual em bloco; o cliente foi orientado a reservar o inventário para o administrador, não para quem opera o balcão.
 
@@ -396,7 +385,8 @@ Histórico completo em Configurações: data, autor, total da frota, conferidos,
 
 ### 4.11 Relatórios do mês
 
-Aba exclusiva do administrador, entre *Financeiro* e *Usuários*. Enquanto o
+Seção recolhível dentro do **Painel**, exclusiva do administrador (nasce fechada e só
+aparece para ele). Enquanto o
 *Financeiro* responde "deu lucro?", o *Relatórios* responde "como foi o mês?".
 
 - Seletor de mês (`type="month"`, padrão = mês corrente) redesenha a página ao trocar.
@@ -414,8 +404,8 @@ Cálculo (`relatorioDoMes(mes)`): soma `DB.locacoes` cujo `mesKey(inicio)` é o 
 escolhido e que não estão estornadas; faturamento por `totalLoc()` (base + excedente +
 avaria); horas pelo `getHours()` do `inicio`. Mês vazio devolve zeros e `null`, e as
 três tabelas mostram linha de "sem movimento" — a tela nunca quebra. Defesa dupla:
-a aba já fica oculta para o atendente e `renderRelatorios()` retorna cedo se não for
-administrador.
+a seção do painel já nasce oculta para o atendente e `renderRelatorios()` retorna cedo
+se não for administrador.
 
 ### 4.12 Etiquetas QR da frota
 
@@ -483,17 +473,17 @@ Duas vias: **celular do cliente** (fluxo principal) e **balcão** (fallback). O 
 
 | Tela | Conteúdo |
 |---|---|
-| **Painel** | KPIs; faixa de alerta do atraso mais crítico; veículos na rua agrupados por contrato, com cronômetro, barra de progresso e estado (em uso / terminando nos últimos 10 min / atrasado); alerta sonoro e notificação do navegador ao estourar. |
-| **Caixa do dia** | Seletor de data; abertura com fundo de troco; entradas por forma de pagamento; saídas com categoria; fechamento com conferência de dinheiro; conferência cega de lacres; impressão do fechamento com linhas de assinatura. |
-| **Frota** | Lista com filtro (busca, **tipo** e status), lacre atual, status, nº de locações e faturamento por veículo; cadastro individual e em lote — os dois com **`+ Novo tipo (marca e modelo)`**, que cria o tipo com preço próprio na hora (seção 4.1); botão de conferência da frota; **botão *Etiqueta* por linha** (PNG da etiqueta QR daquele patinete). Veículo com locação pendente aparece travado, com pill *aguardando vistoria* e atalho para a fila. |
+| **Painel** | KPIs; faixa de alerta do atraso mais crítico; veículos na rua agrupados por contrato, com cronômetro, barra de progresso e estado (em uso / terminando nos últimos 10 min / atrasado); alerta sonoro e notificação do navegador ao estourar; **locações abertas** agrupadas por contrato com botão de entrada; **Caixa do dia** (seção recolhível) e **Relatórios do mês** (seção recolhível, só administrador). |
+| **Caixa do dia** | Seção dentro do Painel, recolhível: seletor de data; abertura com fundo de troco; entradas por forma de pagamento; saídas com categoria; fechamento com conferência de dinheiro; impressão do fechamento com linhas de assinatura. |
+| **Frota** | Lista com filtro (busca, **tipo** e status), status, nº de locações e faturamento por veículo; cadastro individual e em lote — os dois com **`+ Novo tipo (marca e modelo)`**, que cria o tipo com preço próprio na hora (seção 4.1); botão de conferência da frota; **botão *Etiqueta* por linha** (PNG da etiqueta QR daquele patinete). Veículo com locação pendente aparece travado, com pill *aguardando vistoria* e atalho para a fila. |
 | **QR Codes** | Etiquetas da frota: grade de pré-visualização com busca e filtro por tipo, contagem de etiquetas e de folhas A4, e quatro saídas da mesma folha (3 × 6): **Baixar PDF**, **PNG**, **SVG** e **Imprimir folha**. Clicar em *Ver toda a frota* limpa o filtro do atalho do lote. |
 | **Vistoria** | Fila do celular/balcão em quatro blocos: pago aguardando liberação, na rua, chegada registrada (fechar no balcão) e vistoriadas hoje; link público com QR, copiar, WhatsApp e gerar novo link. No celular, cada cartão tem **Escanear código do patinete** e há **Escanear patinete** no topo (seção 4.8). |
 | **Clientes** | Busca por nome, CPF ou telefone; histórico e total gasto. |
 | **Histórico** | Locações com filtro por período; base, excedente, avaria e total; acesso às fotos de saída e entrada, ao contrato e ao estorno. |
 | **Financeiro** | Demonstrativo de fluxo do mês (entradas por origem, saídas por categoria, resultado, margem); custos fixos recorrentes; movimento dia a dia com destaque do melhor dia; faturamento por veículo, tipo, pacote e forma de pagamento; exportação CSV. Exclusiva do administrador. |
-| **Relatórios** | Fechamento do mês numa tela: viagens, faturamento, ticket médio, dias com movimento, ranking de clientes, melhor dia, horário de pico com barra e resumo em uma coluna. Seletor de mês. Exclusiva do administrador (seção 4.11). |
+| **Relatórios** | Seção recolhível do Painel, com fechamento do mês numa tela: viagens, faturamento, ticket médio, dias com movimento, ranking de clientes, melhor dia, horário de pico com barra e resumo em uma coluna. Seletor de mês. Exclusiva do administrador (seção 4.11). |
 | **Usuários** | Lista da loja (nome, e-mail, papel, último acesso); cadastro e edição de conta — e-mail, senha (mínimo 6, única), nível Atendente ou Administrador e situação ativo/bloqueado — mais a explicação de cada nível. Aba exclusiva do administrador. |
-| **Configurações** | Empresa; tolerância; tabela de preços; tabela de peças; template do contrato; lacres; conferência da frota e histórico; divergências; **link da vistoria (QR, copiar, WhatsApp, gerar novo)**; trilha de auditoria; backup e restauração; sair da conta. |
+| **Configurações** | Empresa; tolerância; tabela de preços; tabela de peças; template do contrato; conferência da frota e histórico; divergências; **link da vistoria (QR, copiar, WhatsApp, gerar novo)**; trilha de auditoria; backup e restauração; sair da conta. |
 
 Wizard de locação em **3 passos**: veículos (seleção múltipla) → cliente → pagamento,
 contrato e assinatura. No passo 3 a forma de pagamento pode ser **uma só para toda a
@@ -542,11 +532,11 @@ Ordenado por urgência. O item 8.1 é bloqueante para produção.
 
 O `doc` inteiro é reescrito a cada alteração (gravação debounced em 600 ms).
 
-Estimativa com dados do cliente: ~50 locações/dia. Cada registro de locação, com metadados de fotos, danos e lacres, gira em torno de 800 bytes de JSON. Em um ano são ~18.000 locações, ou cerca de **15 MB só no array `locacoes`**. Com ~200 gravações por dia, isso significa trafegar na ordem de **3 GB/dia** de payload no fim do primeiro ano — para uma operação de uma loja.
+Estimativa com dados do cliente: ~50 locações/dia. Cada registro de locação, com metadados de fotos e danos, gira em torno de 800 bytes de JSON. Em um ano são ~18.000 locações, ou cerca de **15 MB só no array `locacoes`**. Com ~200 gravações por dia, isso significa trafegar na ordem de **3 GB/dia** de payload no fim do primeiro ano — para uma operação de uma loja.
 
 Além do custo, isso estoura o plano gratuito do Supabase (500 MB de banco, 5 GB de egress/mês) em poucos meses e degrada a percepção de velocidade no balcão.
 
-**Recomendação:** normalizar em tabelas (`veiculos`, `clientes`, `grupos`, `locacoes`, `despesas`, `caixas`, `lacres`, `divergencias`, `auditoria`) e manter em JSONB apenas configuração e catálogos pequenos (`config`, `tipos`, `pecas`, `contrato`). A tabela `eventos` já existente dá segurança para essa migração: o histórico de operações está registrado fora do `doc`.
+**Recomendação:** normalizar em tabelas (`veiculos`, `clientes`, `grupos`, `locacoes`, `despesas`, `caixas`, `divergencias`, `auditoria`) e manter em JSONB apenas configuração e catálogos pequenos (`config`, `tipos`, `pecas`, `contrato`). A tabela `eventos` já existente dá segurança para essa migração: o histórico de operações está registrado fora do `doc`.
 
 Como paliativo, se precisar operar antes da refatoração: arquivar locações finalizadas com mais de 60 dias em tabela separada e mantê-las fora do `doc`.
 
@@ -554,7 +544,7 @@ Como paliativo, se precisar operar antes da refatoração: arquivar locações f
 
 - E-mail, nível, `salt` e `hash` dos usuários vivem dentro do `doc` versionado — não há provedor de identidade por pessoa, nem sessão gerenciada por dispositivo.
 - O servidor assina e valida o token, mas o papel é relido do próprio documento: quem tem acesso à gravação do `doc` pode alterar níveis (o lock otimista e a auditoria mitigam, não eliminam).
-- Não há segundo fator. Para um controle antifraude — que é justamente a motivação do módulo de lacres —, isso continua não sendo prova forte.
+- Não há segundo fator. Para o controle antifraude (QR da etiqueta na saída e na chegada + inventário da frota), isso continua não sendo prova forte.
 
 **Recomendação:** provedor de identidade por pessoa (usuário real por atendente) com sessão gerenciada, MFA opcional e RLS por usuário nas tabelas normalizadas da seção 8.1. O formato `salt` + `hash` PBKDF2 já está pronto para ser carregado por um provedor sem mudar a tela de login.
 
@@ -572,7 +562,7 @@ Ao receber UPDATE de outro dispositivo, o `DB` é trocado e as telas repintadas.
 - **QR Pix com valor exato por locação** — discutido com o cliente e não implementado. É a medida de maior impacto contra desvio de dinheiro, porque tira o numerário da mão do atendente. Prioridade alta do ponto de vista de negócio.
 - **Multi-loja** — não existe. Hoje há um estado único. Entra naturalmente com a normalização.
 - **NFS-e** — sem emissão. O cliente foi orientado a alinhar com o contador.
-- **Indicadores por atendente** (faturamento por turno comparável, estornos por pessoa, diferenças de caixa recorrentes, veículo parado em dia de movimento) — especificado com o cliente, não construído. Complementa os módulos de lacre e inventário.
+- **Indicadores por atendente** (faturamento por turno comparável, estornos por pessoa, diferenças de caixa recorrentes, veículo parado em dia de movimento) — especificado com o cliente, não construído. Complementa o inventário e as divergências.
 - **Comprovante para o cliente** com número do contrato, impresso ou por WhatsApp — especificado, não construído. Transforma o cliente em conferência da locação registrada.
 - **Foto do documento e selfie do cliente** — especificado, não construído. Componente de captura já existe.
 - **Rastreador com bloqueio remoto nas 10 motos** — decisão de compra do cliente, fora do software. Faixa de mercado levantada: R$ 40 a R$ 60/mês por veículo.
@@ -606,14 +596,13 @@ Reproduza estes casos — cobrem as regras que mais custam dinheiro se quebrarem
 **Acesso e relatórios**
 25. Senha errada devolve 401 e não abre sessão; conta bloqueada é recusada mesmo com a senha certa.
 26. Usuário cadastrado entra pelo e-mail (sem diferenciar maiúsculas); navegador e servidor derivam a mesma chave.
-27. Atendente não vê as abas Financeiro, Relatórios e Usuários — e, se chegar por atalho, volta para o painel.
+27. Atendente não vê as abas Financeiro e Usuários nem a seção Relatórios do mês do painel — e, se chegar por atalho, volta para o painel.
 28. Relatório do mês conta só as viagens não estornadas daquele mês; mês vazio devolve zeros nas quatro tabelas.
 
-**Lacres**
+**Identificação pela etiqueta (sem lacre)**
 12. Saída sem ler a etiqueta do patinete é bloqueada (`400 veiculo_nao_escaneado`).
-13. Etiqueta de outro patinete na saída é recusada (`409 veiculo_incorreto`, com os dois códigos na mensagem); com a certa, o lacre já registrado para o veículo é aplicado sozinho e lançado como `rompido` no estoque — nenhuma divergência é criada.
-14. Entrada recusa lacre inexistente, já rompido e aplicado em outro veículo.
-15. Conferência cega com um número trocado gera divergência apontando o veículo correto.
+13. Etiqueta de outro patinete na saída é recusada (`409 veiculo_incorreto`, com os dois códigos na mensagem); com a certa a locação libera e **nenhum campo de lacre nasce no documento**.
+14. A página da vistoria e `api/vistoria.js` não citam lacre em ponto algum, e nenhuma divergência `lacre_*` é criada.
 
 **Inventário da frota**
 19. Frota nunca conferida → painel exibe o aviso; após conferir, o aviso desaparece.
@@ -629,7 +618,7 @@ Reproduza estes casos — cobrem as regras que mais custam dinheiro se quebrarem
 29. "Pagar e enviar para vistoria" grava a locação como pendente, o veículo fica travado na loja e nenhum relógio corre até a liberação.
 30. Sem sessão e sem token (ou com token errado) a fila não abre (401); o payload público não traz CPF, usuários nem contrato.
 31. Liberar torna a locação ativa com a hora real, tira o veículo para a rua e começa a contagem; a chegada para o relógio na hora do celular e devolve o veículo para a loja.
-32. Com `exigirLacre` ligado, a vistoria não registra chegada sem o novo lacre (`400 lacre_obrigatorio`); a saída não depende de lacre, depende da etiqueta escaneada.
+32. Liberação e chegada não gravam campo algum de lacre: o documento da locação fica com fotos, observações e horários — a identificação é o QR escaneado.
 33. Sem ler a etiqueta, a liberação não sai (`400 veiculo_nao_escaneado`); lendo o código de outro patinete, `409 veiculo_incorreto`.
 34. Leitura com espaço, caixa diferente ou link (`https://…/PAT-001`) conta como o mesmo código; o cartão mostra a identificação e o cartão pisca.
 
@@ -660,13 +649,13 @@ O ambiente Supabase **já está provisionado e testado**. O schema foi aplicado,
 
 1. **Criar o usuário da loja** — Supabase → Authentication → Users → Add user. E-mail e senha à escolha do cliente, com **Auto Confirm User marcado** (sem isso o login não passa). Essa senha é do cliente; não foi criada por terceiros de propósito.
 2. **Publicar o `index.html`** em qualquer host estático, com esse nome. Cloudflare Pages no plano gratuito permite uso comercial e serve bem — é arrastar o arquivo em Create a project → Upload assets. Netlify e similares também servem. Vercel Hobby **não**: os termos proíbem uso comercial.
-3. **Primeiro acesso:** entrar com `LOJA_EMAIL` / `LOJA_SENHA` → criar a frota → preencher dados da empresa em Configurações → preencher `urlBase` com `https://SEU-DOMINIO/assinar` → na aba **Usuários** cadastrar as contas da loja (e-mail, senha, nível) → registrar o lote de lacres e aplicar na frota.
+3. **Primeiro acesso:** entrar com `LOJA_EMAIL` / `LOJA_SENHA` → criar a frota → preencher dados da empresa em Configurações → preencher `urlBase` com `https://SEU-DOMINIO/assinar` → na aba **Usuários** cadastrar as contas da loja (e-mail, senha, nível).
 
 **Para rodar sem servidor** (desenvolvimento, demonstração, teste de mudança): abrir `app.html` no navegador. Mesma aplicação, dados em `localStorage`, nenhum risco para os dados reais.
 
 **Atualizações:** publicar um `index.html` novo. Os dados não são afetados — vivem no Supabase, separados do host estático. Se você modificar `app.html`, regere o `index.html` aplicando os fragmentos de nuvem (`_nuvem.js`, `_fotos.js`, `_arranque.js`) no lugar da camada local; o processo está descrito nos próprios comentários dos fragmentos.
 
-**Validação do `index.html` entregue:** testado com cliente Supabase simulado — login recusando senha errada, carga do estado, gravação via RPC, gravação de eventos no histórico imutável, upload de foto, e o caso de conflito de versão com recarga automática. Todos os módulos (lacres, inventário, divergências, tema) presentes e funcionais na versão de nuvem.
+**Validação do `index.html` entregue:** testado com cliente Supabase simulado — login recusando senha errada, carga do estado, gravação via RPC, gravação de eventos no histórico imutável, upload de foto, e o caso de conflito de versão com recarga automática. Todos os módulos (inventário, divergências, tema) presentes e funcionais na versão de nuvem.
 
 ---
 
@@ -677,5 +666,5 @@ O ambiente Supabase **já está provisionado e testado**. O schema foi aplicado,
 - Sem caução e sem retenção de documento — decisão do dono.
 - Todo pacote é pago antecipadamente.
 - A tabela de peças tem ~25 valores levantados de fornecedores reais em julho/2026 e o restante é estimativa de mercado. **Precisa ser confirmada com o fornecedor dele antes de servir de base para cobrança.**
-- Dois riscos declarados pelo dono, em ordem de preocupação: **desvio interno** (funcionário alugar sem registrar e ficar com o dinheiro) e não devolução por cliente. Os módulos de lacre, inventário e divergências existem por causa do primeiro — não são requisito genérico de controle de estoque, são antifraude interna. Considere isso antes de simplificá-los.
+- Dois riscos declarados pelo dono, em ordem de preocupação: **desvio interno** (funcionário alugar sem registrar e ficar com o dinheiro) e não devolução por cliente. Os módulos de inventário e divergências existem por causa do primeiro — não são requisito genérico de controle de estoque, são antifraude interna. Considere isso antes de simplificá-los. O controle de lacres, que existia pelo mesmo motivo, **foi removido**: hoje o antifraude é o QR da etiqueta em saída e chegada (seção 4.9) mais a conferência física da frota (seção 4.10).
 - O sistema será operado por atendentes com pouca familiaridade com software. Cada passo adicionado ao balcão custa tempo real de atendimento — a vistoria fotográfica já adiciona cerca de 20 segundos por locação, e existe a opção de desligá-la em Configurações justamente por isso.

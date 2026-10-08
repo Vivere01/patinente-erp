@@ -280,18 +280,27 @@ function testarPapelEDocumento(){
 
   /* --- o atendente não vê dinheiro nem usuários --- */
   const irPara = corpo('irPara');
-  ok(irPara.indexOf("(tab==='financeiro' || tab==='relatorios' || tab==='usuarios') && !ehAdministrador()") >= 0,
-     'irPara bloqueia financeiro, relatórios e usuários para quem não é administrador');
+  ok(irPara.indexOf("(tab==='financeiro' || tab==='usuarios') && !ehAdministrador()") >= 0,
+     'irPara bloqueia financeiro e usuários para quem não é administrador');
   const perm = corpo('aplicarPermissoes');
-  ok(perm.indexOf("soAdmin('financeiro')") >= 0 && perm.indexOf("soAdmin('relatorios')") >= 0 &&
-     perm.indexOf("soAdmin('usuarios')") >= 0,
-     'aplicarPermissoes esconde as três abas do administrador');
+  ok(perm.indexOf("soAdmin('financeiro')") >= 0 && perm.indexOf("soAdmin('usuarios')") >= 0 &&
+     perm.indexOf("soAdmin('relatorios')") < 0,
+     'aplicarPermissoes esconde só as abas de dinheiro, sem aba de relatórios');
   ok(perm.indexOf("irPara('painel')") >= 0,
      'quem está numa aba proibida volta para o painel');
   ok(/<button data-tab="usuarios">/.test(html) && /id="page-usuarios"/.test(html),
      'a aba Usuários existe com a página própria');
-  ok(/<button data-tab="relatorios">/.test(html) && /id="page-relatorios"/.test(html),
-     'a aba Relatórios existe com a página própria');
+  ok(!/data-tab="caixa"/.test(html) && !/id="page-caixa"/.test(html),
+     'a aba Caixa do dia saiu da navegação');
+  ok(/id="secCaixa"/.test(html) && /id="kpisCaixa"/.test(html) && /id="tbCaixaEnt"/.test(html) &&
+     /id="tbCaixaSai"/.test(html),
+     'o caixa do dia é uma seção do painel, com abertura, entradas e saídas');
+  ok(!/data-tab="relatorios"/.test(html) && !/id="page-relatorios"/.test(html),
+     'a aba Relatórios saiu da navegação');
+  ok(/id="secRel"/.test(html) && /id="kpisRel"/.test(html) && /id="tbRelResumo"/.test(html),
+     'os relatórios do mês são uma seção do painel');
+  ok(/id="secRel" style="display:none"/.test(html),
+     'a seção de relatórios nasce escondida e só o administrador a revela');
 
   ok((html.match(/id="cardUsuarios"/g) || []).length === 1 &&
      /<section class="page" id="page-usuarios"[\s\S]{0,1200}id="cardUsuarios"/.test(html),
@@ -299,8 +308,9 @@ function testarPapelEDocumento(){
   ok(/<section class="page" id="page-usuarios"[\s\S]{0,1600}id="btnNovoUsuario"/.test(html),
      'a aba de usuários tem o botão de cadastrar');
   ok(irPara.indexOf("if(tab==='usuarios') renderUsuarios()") >= 0 &&
-     irPara.indexOf("if(tab==='relatorios') renderRelatorios()") >= 0,
-     'entrar numa aba redesenha a página dela');
+     corpo('renderPainel').indexOf('renderCaixa()') >= 0 &&
+     corpo('renderPainel').indexOf('renderRelatorios()') >= 0,
+     'entrar numa área redesenha a página dela');
   ok(corpo('renderFinanceiro').indexOf('if(!ehAdministrador()) return;') >= 0,
      'renderFinanceiro tem trava própria para o atendente');
   ok(corpo('renderRelatorios').indexOf('if(!ehAdministrador()) return;') >= 0,
@@ -400,8 +410,12 @@ function testarFechamentoESync(){
   ok(/visibilitychange/.test(html) && /document\.hidden\) this\.sondar\(\)/.test(html),
      'voltar para a aba confere a nuvem na hora, sem esperar os 5 s');
   const repintar = corpo('repintarTela');
-  ['renderCaixa','renderFrota','renderClientes','renderHistorico','renderFinanceiro','renderRelatorios','renderUsuarios','renderConfig']
+  ['renderFrota','renderClientes','renderHistorico','renderFinanceiro','renderUsuarios','renderConfig']
     .forEach(fn=> ok(repintar.indexOf(fn) >= 0, 'repintarTela atualiza a aba de ' + fn));
+  ok(repintar.indexOf('renderPainel') >= 0 &&
+     corpo('renderPainel').indexOf('renderCaixa()') >= 0 &&
+     corpo('renderPainel').indexOf('renderRelatorios()') >= 0,
+     'repintarTela repinta o painel e com ele o caixa do dia e os relatórios');
 }
 
 /* ------------------------------------------------------------------ H */
@@ -469,23 +483,30 @@ function testarIdentidadeVisual(){
 }
 
 /* ------------------------------------------------------------------ I */
-/* A aba Relatórios responde o mês: quantas viagens, quanto faturou,
-   quem mais viajou, qual foi o melhor dia e quais horas são cheias. */
+/* Os relatórios do mês são uma seção recolhível do painel: quantas
+   viagens, quanto faturou, quem mais viajou, qual foi o melhor dia e
+   quais horas são cheias. Só o administrador a enxerga. */
 function testarRelatorios(){
-  console.log('\nI. Relatórios — o mês numa tela só');
+  console.log('\nI. Relatórios — o mês dentro do painel');
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
   const corpo = f => extrairFuncao(html, f);
 
-  ok(/<button data-tab="relatorios">Relatórios<\/button>/.test(html),
-     'a navegação tem a aba Relatórios');
-  ok(/<section class="page" id="page-relatorios">/.test(html),
-     'a aba tem a página própria');
+  ok(!/data-tab="relatorios"/.test(html) && !/id="page-relatorios"/.test(html),
+     'a navegação não tem mais a aba Relatórios');
+  ok(/<section class="page active" id="page-painel">/.test(html) &&
+     html.indexOf('id="secRel"') > html.indexOf('id="page-painel"') &&
+     html.indexOf('id="secRel"') < html.indexOf('id="page-usuarios"'),
+     'os relatórios moram dentro da página do painel');
   ok(/id="rMes"/.test(html) && /id="kpisRel"/.test(html) && /id="tbRelClientes"/.test(html) &&
      /id="tbRelDias"/.test(html) && /id="tbRelHoras"/.test(html) && /id="tbRelResumo"/.test(html),
-     'a página tem o seletor de mês, os KPIs e as quatro tabelas');
-  ok(html.indexOf("relatorios:'renderRelatorios'") >= 0 &&
-     /if\(tab==='relatorios'\) renderRelatorios\(\)/.test(html),
-     'a aba é redesenhada ao entrar e quando os dados mudam');
+     'a seção tem o seletor de mês, os KPIs e as quatro tabelas');
+  ok(corpo('renderPainel').indexOf('if(ehAdministrador()) renderRelatorios()') >= 0 &&
+     corpo('renderPainel').indexOf("secRel.style.display = ehAdministrador()") >= 0,
+     'a seção só é pintada e revelada para o administrador');
+  ok(corpo('renderRelatorios').indexOf('if(!ehAdministrador()) return;') >= 0,
+     'renderRelatorios tem trava própria para o atendente');
+  ok(/id="tglRel"/.test(html) && /secRel'\)\.classList\.toggle\('aberto'\)/.test(html),
+     'a seção abre e fecha com um clique, sem virar aba');
   ok(/<input[^>]*id="rMes"[^>]*type="month"|type="month"[^>]*id="rMes"/.test(html),
      'o mês é escolhido num seletor de calendário');
 
@@ -727,15 +748,15 @@ function testarVistoria(){
   const pub = extrairFuncao(api, 'payload');
   ok(pub.indexOf('clienteCpf') < 0 && pub.indexOf('contrato') < 0 && pub.indexOf('assinatura') < 0,
      'o payload público não leva CPF nem o contrato');
-  ok(api.indexOf('foto_obrigatoria') >= 0 && api.indexOf('lacre_obrigatorio') < 0,
-     'a foto segue exigida; o lacre não é cobrado em nenhum momento');
-  ok(pagina.indexOf('Novo lacre aplicado') < 0 && pagina.indexOf('data-campo="lacre"') < 0,
-     'o cartão de chegada não tem campo de lacre: o QR identifica o patinete');
+  ok(api.indexOf('foto_obrigatoria') >= 0 && !/lacre/i.test(api),
+     'a foto segue exigida e a API não fala mais de lacre em nenhum ponto');
+  ok(!/lacre/i.test(pagina),
+     'o cartão da vistoria não tem campo de lacre: o QR identifica o patinete');
   ok(api.indexOf('codigoLido') >= 0 && api.indexOf('veiculo_nao_escaneado') >= 0 &&
      api.indexOf('veiculo_incorreto') >= 0,
      'a API exige o código escaneado da etiqueta e confere com o cartão');
-  ok(api.indexOf('loc.lacreSaida = esperado') >= 0 && api.indexOf('divergir(') < 0,
-     'na saída o lacre sai sozinho: sem campo para trocar e sem divergência');
+  ok(!/lacreSaida|lacreEntrada|lacreEsperado/.test(api),
+     'liberação e chegada não gravam mais nenhum campo de lacre');
   ok(api.indexOf('String(l.id) === String(locId)') >= 0 && api.indexOf('mesmaLoc') >= 0,
      'a API acha a locação mesmo com o id chegando como texto do cartão');
   ok(pagina.indexOf('locacaoId: String(locId)') >= 0,
@@ -758,8 +779,8 @@ function testarVistoria(){
      'tem botão de escanear dentro do cartão e no topo da tela');
   ok(pagina.indexOf('Digitar o código') >= 0,
      'sem câmera dá para digitar o código da etiqueta');
-  ok(pagina.indexOf('Lacre rompido nesta saída') < 0 && pagina.indexOf('veiculo: c.veiculo') >= 0,
-     'a saída não pede mais lacre digitado: manda o código escaneado');
+  ok(pagina.indexOf('veiculo: c.veiculo') >= 0 && !/lacre/i.test(pagina),
+     'a saída não tem campo de lacre: manda o código escaneado');
   ok((pagina.match(/blocoScan\(l\.locacaoId, l\.codigo\)/g) || []).length === 2,
      'os dois cartões (saída e chegada) identificam o patinete pelo QR');
   ok(vercel.rewrites.some(r => r.source === '/vistoria/:token'), 'o link /vistoria/{token} chega na página');

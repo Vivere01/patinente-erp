@@ -151,9 +151,13 @@ const JPG = '/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE
   check(txt.indexOf('id="loEmail"') >= 0 && txt.indexOf('id="loSenha"') >= 0,
         'no ar: o acesso pede e-mail e senha (sem PIN de 4 dígitos)',
         txt.indexOf('id="loEmail"') < 0 ? 'id="loEmail" ausente' : 'id="loSenha" ausente');
-  check(txt.indexOf('data-tab="relatorios"') >= 0 && txt.indexOf('id="page-relatorios"') >= 0,
-        'no ar: a aba Relatórios existe para o administrador',
-        txt.indexOf('data-tab="relatorios"') < 0 ? 'aba ausente' : 'página ausente');
+  check(txt.indexOf('id="secRel"') >= 0 && txt.indexOf('id="tglRel"') >= 0 &&
+        txt.indexOf('id="secCaixa"') >= 0 && txt.indexOf('id="tglCaixa"') >= 0 &&
+        txt.indexOf('data-tab="relatorios"') < 0 && txt.indexOf('data-tab="caixa"') < 0,
+        'no ar: caixa do dia e relatórios são seções do painel, não abas',
+        txt.indexOf('id="secRel"') < 0 ? 'seção de relatórios ausente'
+          : (txt.indexOf('data-tab="relatorios"') >= 0 ? 'aba de relatórios ainda na navegação'
+                                                       : 'seção do caixa ausente'));
 
   console.log('\n9. usuário do sistema (e-mail + senha, sem PIN)');
   const auth = require('../lib/auth');
@@ -232,7 +236,7 @@ const JPG = '/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE
   check(acaoRuim.status === 400, 'ação desconhecida é recusada (400)', 'veio ' + acaoRuim.status);
 
   const locInexistente = await post(null, '/api/vistoria',
-    { token: tokenV, acao: 'liberar', locacaoId: 99999999, fotos: ['data:image/jpeg;base64,' + JPG], lacre: '1' });
+    { token: tokenV, acao: 'liberar', locacaoId: 99999999, fotos: ['data:image/jpeg;base64,' + JPG] });
   check(locInexistente.status === 404, 'locação inexistente responde 404 (nada é gravado)', 'veio ' + locInexistente.status);
 
   const pagV = await fetch(BASE + '/vistoria/' + tokenV);
@@ -270,7 +274,7 @@ const JPG = '/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE
   console.log('\n11. vistoria ponta a ponta (locação de teste, depois apagada)');
   const g11 = await j('/api/estado', { headers: cabecalho(t) });
   const docA = (g11.body && g11.body.doc) || {};
-  const vid11 = 999001, lid11 = 999001, gid11 = 'GTESTVIST', lacre11 = '99111';
+  const vid11 = 999001, lid11 = 999001, gid11 = 'GTESTVIST';
 
   /* monta o documento de teste a partir de uma cópia do real: desliga as
      exigências (senão a verificação deixaria foto gravada) e acrescenta uma
@@ -279,7 +283,7 @@ const JPG = '/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE
     const agora = Date.now();
     const d = JSON.parse(JSON.stringify(base));
     const tipo = ((base.veiculos || [])[0] || {}).tipoId || null;
-    d.config = Object.assign({}, d.config, { exigirFoto: false, exigirLacre: true });
+    d.config = Object.assign({}, d.config, { exigirFoto: false });
     d.veiculos = (d.veiculos || []).concat([{ id: vid11, codigo: 'VIST001', status: 'loja', tipoId: tipo }]);
     d.locacoes = (d.locacoes || []).concat([{
       id: lid11, grupoId: gid11, veiculoId: vid11, veiculoCodigo: 'VIST001',
@@ -292,16 +296,12 @@ const JPG = '/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE
       pagamento: 'Pix', pagamentoExcedente: null,
       obsSaida: 'verificação', obsEntrada: '', obsVistoria: '',
       atendenteSaida: 'verificacao', atendenteEntrada: '',
-      fotosSaida: [], fotosEntrada: [], lacreEsperado: null,
-      lacreSaida: null, lacreEntrada: null, danos: [], valorDanos: 0, status: 'pendente'
+      fotosSaida: [], fotosEntrada: [], danos: [], valorDanos: 0, status: 'pendente'
     }]);
     d.grupos = (d.grupos || []).concat([{
       id: gid11, status: 'aguardando_vistoria', locacaoIds: [lid11],
       clienteNome: 'Locação de teste', valorBase: 0, pagoEm: agora
     }]);
-    d.lacres = Object.assign({}, d.lacres || {});
-    d.lacres[lacre11] = { n: lacre11, status: 'aplicado', veiculoId: vid11,
-                          aplicadoEm: agora, aplicadoPor: 'verificacao' };
     return d;
   }
 
@@ -347,28 +347,28 @@ const JPG = '/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE
           'no documento: locação ativa com a hora de saída e o veículo na rua',
           loc1 ? 'status ' + loc1.status + ' · veículo ' + (vei1 && vei1.status) : 'locação sumiu');
 
-    check(!!loc1 && String(loc1.lacreSaida || '') === lacre11 &&
-          (d1.lacres || {})[lacre11] && (d1.lacres || {})[lacre11].status === 'rompido',
-          'na saída o lacre sai sozinho: o do veículo é registrado e rompido no estoque',
-          loc1 ? 'lacreSaida ' + loc1.lacreSaida + ' · estoque ' + ((d1.lacres || {})[lacre11] || {}).status : 'sumiu');
-    /* o cartão de saída não tem mais campo de lacre: só o scan da etiqueta. A
-       comparação é contra o documento de antes da locação de teste, porque o
-       documento real pode trazer divergências gravadas pelo código antigo. */
+    check(!!loc1 && !loc1.lacreEsperado && !loc1.lacreSaida && !loc1.lacreEntrada &&
+          JSON.stringify(d1.lacres || {}) === JSON.stringify(docA.lacres || {}),
+          'na saída nenhum campo de lacre nasce no documento e o estoque não se mexe',
+          loc1 ? 'lacreSaida ' + loc1.lacreSaida + ' · estoque ' +
+                  JSON.stringify(d1.lacres || {}).slice(0, 90) : 'locação sumiu');
+    /* a página da vistoria não tem campo algum de lacre: a identificação do
+       veículo é o QR lido na etiqueta. A comparação é contra o documento de
+       antes da locação de teste, porque o documento real pode trazer
+       divergências gravadas pelo código antigo. */
     const divAntes = (docA.divergencias || []).map(x => String(x.id));
     const nasceu = (d1.divergencias || [])
-      .filter(x => x.tipo === 'lacre_trocado' || x.tipo === 'veiculo_sem_lacre')
+      .filter(x => /lacre/.test(String(x.tipo)))
       .filter(x => divAntes.indexOf(String(x.id)) < 0);
     const scanNaPagina = txtV.indexOf('Escanear código do patinete') >= 0;
-    const campoVelho = txtV.indexOf('Lacre rompido nesta saída') >= 0;
-    check(!nasceu.length && scanNaPagina && !campoVelho,
-          'na saída não há campo de lacre: o cartão só escaneia a etiqueta e nenhuma divergência nasce',
+    check(!nasceu.length && scanNaPagina,
+          'na saída nenhuma divergência de lacre nasce e o cartão escaneia a etiqueta',
           nasceu.length ? ('divergência nova: ' + JSON.stringify(nasceu[0]).slice(0, 160))
-                        : (campoVelho ? 'campo de lacre antigo ainda na página'
-                                      : (scanNaPagina ? '' : 'botão de escanear fora da página')));
+                        : (scanNaPagina ? '' : 'botão de escanear fora da página'));
 
-    check(txtV.indexOf('Novo lacre aplicado') < 0 && txtV.indexOf('data-campo="lacre"') < 0,
+    check(!/lacre/i.test(txtV),
           'nem a saída nem a chegada pedem lacre digitado: quem identifica é o QR da etiqueta',
-          'campo de lacre ainda na página');
+          'a página ainda fala de lacre');
 
     const che11 = await post(null, '/api/vistoria',
       { token: tokenV, acao: 'chegada', locacaoId: String(lid11), veiculo: 'VIST001', fotos: [], estado: 'loja', obs: 'verificação' });
@@ -380,8 +380,8 @@ const JPG = '/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE
     const vei2 = (d2.veiculos || []).find(v => String(v.id) === String(vid11));
     check(!!loc2 && loc2.status === 'devolvida' && !!loc2.fimReal && !loc2.lacreEntrada &&
           !!vei2 && vei2.status === 'loja',
-          'no documento: o relógio parou na chegada, nenhum lacre foi digitado e o veículo voltou para a loja',
-          loc2 ? 'status ' + loc2.status + ' · lacre ' + loc2.lacreEntrada : 'locação sumiu');
+          'no documento: o relógio parou na chegada e o veículo voltou para a loja',
+          loc2 ? 'status ' + loc2.status : 'locação sumiu');
 
     const filaD = await j('/api/vistoria?token=' + encodeURIComponent(tokenV));
     check(filaD.status === 200 && (filaD.body.chegadas || []).some(p => String(p.locacaoId) === String(lid11)),
@@ -398,18 +398,14 @@ const JPG = '/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE
     volta.locacoes = (volta.locacoes || []).filter(l => String(l.id) !== String(lid11));
     volta.grupos = (volta.grupos || []).filter(g => String(g.id) !== gid11);
     volta.veiculos = (volta.veiculos || []).filter(v => String(v.id) !== String(vid11));
-    volta.lacres = volta.lacres || {};
-    delete volta.lacres[lacre11];
     volta.config = volta.config || {};
     volta.config.exigirFoto = docA.config && docA.config.exigirFoto !== undefined ? docA.config.exigirFoto : true;
-    volta.config.exigirLacre = docA.config && docA.config.exigirLacre !== undefined ? docA.config.exigirLacre : true;
     const wVolta = await post(t, '/api/estado',
       { doc: volta, versao: Number((atual.body && atual.body.versao) || 0), por: 'verificacao' });
     const depois11 = await j('/api/estado', { headers: cabecalho(t) });
     const dep = (depois11.body && depois11.body.doc) || {};
     const sobrou = (dep.locacoes || []).some(l => String(l.id) === String(lid11)) ||
-                   (dep.veiculos || []).some(v => String(v.id) === String(vid11)) ||
-                   !!((dep.lacres || {})[lacre11]);
+                   (dep.veiculos || []).some(v => String(v.id) === String(vid11));
     check(wVolta.status === 200 && wVolta.body.ok === true && !sobrou,
           'a locação de teste saiu do documento (o resto continua de pé)',
           JSON.stringify(wVolta.body).slice(0, 120));

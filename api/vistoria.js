@@ -13,9 +13,7 @@
    Liberação (acao='liberar'):
      { token, locacaoId, veiculo, fotos:[dataUrl,...], obs }
      → locação vira 'ativa' com inicio/fimPrevisto reais, o veículo sai para
-       'rua', o lacre já registrado para o patinete é rompido no estoque
-       (sem conferência manual — a etiqueta identificou o veículo) e o grupo
-       fica 'ativo'.
+       'rua' e o grupo fica 'ativo'.
 
    Chegada (acao='chegada'):
      { token, locacaoId, veiculo, fotos:[dataUrl,...], estado, obs }
@@ -74,21 +72,6 @@ async function guardarFoto(dataUrl, locId, indice){
            url: '/api/fotos?caminho=' + encodeURIComponent(caminho) + '&exp=' + exp + '&sig=' + sig };
 }
 
-function lacreAplicadoNo(db, veiculoId){
-  const lacres = db.lacres || {};
-  return Object.values(lacres).find(l => l && l.status === 'aplicado' && l.veiculoId === veiculoId) || null;
-}
-function lacreDe(db, n){
-  return (db.lacres || {})[String(n == null ? '' : n).trim()] || null;
-}
-function marcarRomper(db, n, locId, veiculoId, quem){
-  const l = lacreDe(db, n);
-  if(!l) return false;
-  l.status = 'rompido'; l.rompidoEm = Date.now(); l.rompidoPor = quem;
-  l.locacaoId = locId; l.veiculoId = veiculoId;
-  return true;
-}
-
 /* lê, deixa mutar e grava com lock otimista: se o balcão salvou antes,
    refaz a mutação no documento novo em vez de sobrescrever */
 async function comLock(mutar){
@@ -115,7 +98,7 @@ function payload(db, agora){
     locacaoId: l.id, grupoId: l.grupoId, codigo: codigoDoVeiculo(db, l), tipoNome: l.tipoNome,
     clienteNome: l.clienteNome, pagamento: l.pagamento, valorBase: l.valorBase,
     tarifaLabel: l.tarifaLabel, duracaoMin: l.duracaoMin, pagoEm: l.pagoEm || null,
-    obsSaida: l.obsSaida || '', lacreEsperado: l.lacreEsperado || null
+    obsSaida: l.obsSaida || ''
   }));
 
   const naRua = locs.filter(l => l.status === 'ativa').map(l => ({
@@ -128,7 +111,7 @@ function payload(db, agora){
   const chegadas = locs.filter(l => l.status === 'devolvida' && diaDe(l.fimReal) === diaHoje)
     .map(l => ({
       locacaoId: l.id,     codigo: codigoDoVeiculo(db, l), clienteNome: l.clienteNome,
-      fimReal: l.fimReal, lacreEntrada: l.lacreEntrada || null,
+      fimReal: l.fimReal,
       fotosEntrada: (l.fotosEntrada || []).length
     }));
 
@@ -143,7 +126,6 @@ function payload(db, agora){
     ok: true, agora,
     empresa: { nome: (db.empresa && db.empresa.nome) || 'Locadora' },
     exigirFoto: cfg.exigirFoto !== false,
-    exigirLacre: cfg.exigirLacre !== false,
     toleranciaMin: Number(cfg.toleranciaMin) || 0,
     pendentes, naRua, chegadas, liberadas
   };
@@ -217,13 +199,9 @@ module.exports = async (req, res) => {
         'O código lido é ' + lido + ', mas este cartão é ' + (esperadoCodigo || 'outro patinete') + '.');
 
     const exigirFoto = dbInicial.config ? dbInicial.config.exigirFoto !== false : true;
-    const exigirLacre = dbInicial.config ? dbInicial.config.exigirLacre !== false : true;
     const fotosBrutas = Array.isArray(b.fotos) ? b.fotos.filter(Boolean).slice(0, 6) : [];
     if(exigirFoto && !fotosBrutas.length)
       return erro(res, 400, 'foto_obrigatoria', 'Ao menos uma foto é obrigatória para a vistoria.');
-    /* o lacre não é mais digitado: a chegada identifica o veículo pelo QR.
-       um número enviado por versões antigas continua sendo gravado. */
-    const lacre = String(b.lacre == null ? '' : b.lacre).trim().slice(0, 20);
     const estado = acao === 'chegada' ? (b.estado === 'manutencao' ? 'manutencao' : 'loja') : null;
 
     /* fotos primeiro: caminho novo por locação e por rodada */
@@ -248,23 +226,11 @@ module.exports = async (req, res) => {
         loc.vistoriadaEm = inicio;
         loc.vistoriadoPor = quem;
         loc.fotosSaida = fotos;
-        loc.lacreSaida = null;   /* preenchido abaixo pelo lacre do veículo */
         loc.obsVistoria = String(b.obs || '').trim().slice(0, 300);
         loc.status = 'ativa';
 
         const veiculo = (db.veiculos || []).find(v => v.id === loc.veiculoId);
         if(veiculo) veiculo.status = 'rua';
-
-        /* o lacre da saída sai sozinho: é o que já estava registrado para este
-           patinete (a etiqueta escaneada identificou o veículo físico). O
-           rompimento continua sendo lançado no estoque de lacres. */
-        if(exigirLacre){
-          const ap = lacreAplicadoNo(db, loc.veiculoId);
-          const esperado = ap ? String(ap.n) : (loc.lacreEsperado || null);
-          loc.lacreSaida = esperado;
-          loc.lacreEsperado = esperado;
-          if(esperado) marcarRomper(db, esperado, loc.id, loc.veiculoId, quem);
-        }
 
         const g = (db.grupos || []).find(x => x.id === loc.grupoId);
         if(g){
@@ -282,7 +248,6 @@ module.exports = async (req, res) => {
         loc.chegadaEm = chegou;
         loc.status = 'devolvida';
         if(fotos.length) loc.fotosEntrada = fotos;
-        if(lacre) loc.lacreEntrada = lacre;
         if(b.obs) loc.obsEntrada = String(b.obs).trim().slice(0, 300);
         if(!loc.atendenteEntrada) loc.atendenteEntrada = quem;
         const veiculo = (db.veiculos || []).find(v => v.id === loc.veiculoId);

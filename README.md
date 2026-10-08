@@ -4,7 +4,7 @@ Sistema de balcão para locação por tempo de patinetes e motos elétricas. Cob
 completo: pagamento e contrato com assinatura eletrônica no balcão, **vistoria de saída e
 de chegada pelo link público no celular** (fotos, etiqueta escaneada e horário),
 **etiquetas QR da frota** (PDF, PNG, SVG e folha de impressão), **tipos de veículo por
-marca/modelo com preço próprio**, controle de lacre, devolução com excedente e avaria,
+marca/modelo com preço próprio**, devolução com excedente e avaria,
 caixa diário, inventário de frota e demonstrativo
 financeiro.
 
@@ -31,7 +31,7 @@ Navegador (index.html — sem build, sem framework)
    │       → o aparelho recarrega a versão da nuvem em vez de sobrescrever
    │
    └── sincronização: a cada 5 s o cliente pergunta só a versão; muda, recarrega
-           → voltar para a aba confere na hora e repinta a aba aberta
+           → voltar para a aba confere na hora e repinta a tela aberta
 ```
 
 - **`index.html`** — aplicação de produção (acesso por e-mail + senha, com os níveis
@@ -104,32 +104,45 @@ e `vercel env add LOJA_SENHA production`.
 2. Criar a frota (wizard de boas-vindas) e preencher os dados da empresa em **Configurações**.
 3. `urlBase` de assinatura fica em branco = usa o próprio domínio (`https://SEU-DOMINIO/assinar`).
 4. Na aba **Usuários**, cadastrar as pessoas da loja com **e-mail, senha e nível**
-   (Administrador ou Atendente), registrar o lote de lacres e aplicá-los na frota.
+   (Administrador ou Atendente).
 
 ### Papéis
 
 | Papel | O que faz |
 |---|---|
-| **Atendente** | Opera o balcão: locação, devolução, vistoria, clientes, histórico e caixa do dia. **Não enxerga o financeiro, os relatórios nem os usuários** — a aba *Financeiro*, a aba *Relatórios* e o faturamento do dia ficam escondidos. |
-| **Administrador** | Tudo do atendente, mais o financeiro do mês, a aba **Relatórios** e a aba **Usuários**: estorna locações e lançamentos, altera preços e tabela de peças, cadastra usuários, registra lote de lacres, trata divergências e zera o sistema. |
+| **Atendente** | Opera o balcão: locação, devolução, vistoria, clientes, histórico e caixa do dia. **Não enxerga o financeiro, os relatórios nem os usuários** — a aba *Financeiro*, a seção *Relatórios do mês* do painel e o faturamento do dia ficam escondidos. |
+| **Administrador** | Tudo do atendente, mais o financeiro do mês, a seção **Relatórios do mês** no painel e a aba **Usuários**: estorna locações e lançamentos, altera preços e tabela de peças, cadastra usuários, trata divergências e zera o sistema. |
 
 Sempre deve existir pelo menos um administrador ativo.
 
-As abas **Financeiro**, **Relatórios** e **Usuários** são exclusivas do administrador.
-Quem não é administrador não vê nenhuma das três — se chegar por atalho, volta para
-o painel. É na aba **Usuários** que se cria cada conta com **e-mail, senha e nível**;
+As abas **Financeiro** e **Usuários** são exclusivas do administrador, e dentro do
+**Painel** a seção **Relatórios do mês** só aparece para ele. Quem não é administrador
+não vê nenhuma das três — se chegar por atalho, volta para o painel. É na aba
+**Usuários** que se cria cada conta com **e-mail, senha e nível**;
 a senha nunca fica em texto claro: o navegador deriva PBKDF2-SHA256 com salt próprio
 (120 mil iterações) e o servidor guarda só o hash.
 
 Depois de entrar, a sessão fica no aparelho (token de 12 h): só pede a senha de novo
 ao abrir o sistema, ao expirar ou ao sair.
 
-### Relatórios (só administrador)
+### Painel (a tela única da operação)
 
-A aba **Relatórios** fecha o mês numa tela só — o seletor de calendário escolhe o mês
-e a página responde: viagens, faturamento, ticket médio, dias com movimento, os
-clientes que mais viajaram (com faturamento), o melhor dia, as horas de pico com
-barra de movimento e um resumo em uma coluna. Sem viagens no mês, tudo aparece em zero.
+O **Painel** é a primeira aba e concentra o dia inteiro:
+
+- fila da vistoria, KPIs da operação e as **locações abertas** agrupadas por contrato
+  e ordenadas pelo horário de devolução (cada card mostra veículo, tipo, cliente,
+  relógio e botão de entrada);
+- **Caixa do dia** numa seção recolhível (fecha com um clique): abertura/fechamento,
+  entradas por forma, saídas lançadas e impresso do fechamento;
+- **Relatórios do mês** numa segunda seção recolhível, **só para o administrador**.
+
+### Relatórios do mês (só administrador)
+
+A seção **Relatórios do mês**, dentro do Painel, fecha o mês numa tela só — o seletor
+de calendário escolhe o mês e a página responde: viagens, faturamento, ticket médio,
+dias com movimento, os clientes que mais viajaram (com faturamento), o melhor dia, as
+horas de pico com barra de movimento e um resumo em uma coluna. Sem viagens no mês,
+tudo aparece em zero.
 
 ### Foto do documento do cliente (CNH/RG)
 
@@ -166,9 +179,9 @@ público da vistoria** com QR Code para passar adiante.
   demanda — e, sem câmera, dá para **digitar o código**. O código lido é conferido no
   servidor contra o do cartão: código de outro patinete é recusado na hora.
 - **Liberar** = fotos + etiqueta escaneada + observações → **“Vistoriado e liberar”**: a
-  locação vira ativa com a hora real de saída, o veículo sai para a rua, o **lacre já
-  registrado para aquele patinete é rompido sozinho** (não há campo de lacre na saída:
-  quem escaneou a etiqueta identificou o veículo) e o relógio **começa a contar**.
+  locação vira ativa com a hora real de saída, o veículo sai para a rua e o relógio
+  **começa a contar** — quem escaneou a etiqueta identificou o veículo, sem nenhum
+  número digitado.
 - **Chegada** = fotos do retorno + etiqueta escaneada + estado do veículo → fica
   **“chegada registrada”** (o relógio parou naquela hora). A cobrança de excedente e de
   avaria é fechada **no balcão**, na tela de entrada, que já mostra as fotos e a hora do
@@ -255,32 +268,35 @@ npm run verificar   # 57 verificações contra o site publicado
 - **E. Módulos de api/** — todos carregam. Um `require` com caminho errado só estoura
   no ar como `FUNCTION_INVOCATION_FAILED`; aqui ele reprova antes do deploy.
 - **F. Níveis de acesso e foto do documento** — uma tela única de e-mail + senha (sem PIN),
-  os dois níveis (Administrador/Atendente) com a migração dos papéis antigos, as três
-  abas do administrador bloqueadas e escondidas para o atendente, a validação do
+  os dois níveis (Administrador/Atendente) com a migração dos papéis antigos, a aba
+  *Financeiro* e a aba *Usuários* bloqueadas e escondidas para o atendente, a seção
+  *Relatórios do mês* do painel visível só para o administrador, a validação do
   formulário de usuário (e-mail único, senha mínima) e o quadro do documento com
   câmera + upload.
 - **G. Fechamento e sincronização** — o fechamento lista e soma as entradas por forma
   de pagamento (soma calculada num dia de exemplo), o impresso traz o mesmo detalhe, e a
   nuvem: carga no acesso, sondagem de 5 s, confirmação ao voltar para a aba, conflito de
-  versão recarregando o estado do servidor e repintura da aba aberta.
+  versão recarregando o estado do servidor e repintura do painel (com o caixa do dia e os
+  relatórios redesenhados junto).
 - **H. Identidade visual** — o logo está no repositório e é um JPEG válido; aparece no
   favicon, no topo, na tela de acesso, na assinatura e na vistoria (nestas duas em
   caminho absoluto, já que abrem em `/assinar/{token}` e `/vistoria/{token}`); amarelo e
   preto nos dois temas, sem texto branco por cima do amarelo e sem resquício do azul
   antigo; e o nome padrão da empresa é a marca, não "Minha Locadora".
-- **I. Relatórios** — a aba existe e é redesenhada ao entrar; e o fechamento do mês é
+- **I. Relatórios** — a seção do painel existe (só para administrador) e é redesenhada
+  ao entrar; e o fechamento do mês é
   calculado num mês de exemplo (viagens fora estorno, faturamento, ticket, cliente
   destaque, melhor dia, hora de pico) e devolve zero em tudo num mês vazio.
 - **J. Paridade da senha** — o navegador (WebCrypto) e o servidor (crypto do Node)
   derivam exatamente a mesma chave a partir do mesmo salt: se divergirem, ninguém entra
   pelo usuário cadastrado.
 - **K. Vistoria** — o passo final da locação fecha em três passos, publica o link com QR
-  e grava a locação como **pendente** (sem tirar o veículo da loja e sem quebrar o
-  lacre); o veículo pendente fica travado; o link público só pede token (sem sessão),
+  e grava a locação como **pendente** (sem tirar o veículo da loja); o veículo pendente
+  fica travado; o link público só pede token (sem sessão),
   o payload não leva CPF, usuários nem contrato; `api/vistoria.js` libera (ativa +
   veículo na rua) e registra a chegada (devolvida + hora parada), **exige o código
-  escaneado da etiqueta** (400 sem código, 409 se for outro patinete), aplica o lacre
-  da saída sozinho, **não cobra lacre digitado em nenhum momento**, exige foto conforme a configuração e
+  escaneado da etiqueta** (400 sem código, 409 se for outro patinete), **não fala de
+  lacre em nenhum ponto**, exige foto conforme a configuração e
   grava com lock otimista; e a página `vistoria.html` lê o token do link, abre o visor
   da câmera (ZXing) para escanear a etiqueta e fala só com a API.
 - **L. QR Codes** — a aba existe, é redesenhada ao entrar, o PDF sai pelo jsPDF em A4
@@ -302,15 +318,16 @@ npm run verificar   # 57 verificações contra o site publicado
   se tem veículo ou histórico), e criar/excluir fica na auditoria.
 - **`verificar-ar`** — roda a operação inteira no site publicado: login, estado com
   lock, histórico, foto com link assinado, contrato assinado no celular, limpeza, a
-  identidade no ar (página, login por e-mail, aba Relatórios e o logo servido como
+  identidade no ar (página, login por e-mail, seção Relatórios no painel e o logo
+  servido como
   imagem), o usuário do sistema (criar conta, entrar pelo e-mail, recusar senha
   errada e conta bloqueada, e devolver o documento intacto), a vistoria pública
   (token, fila sem CPF, recusa de token/ação/locação inválidos, a página do celular com
   logo em caminho absoluto, a aba QR Codes publicada e o cadastro de tipo de veículo
   novo) e o ciclo inteiro — liberar e
   chegar pelo link numa locação de teste, **com o código escaneado conferido no
-  servidor** (400 sem código, 409 de outro patinete), o lacre da saída aplicado
-  sozinho, nenhum lacre digitado em saída ou chegada e a locação saindo do documento ao final).
+  servidor** (400 sem código, 409 de outro patinete) e a locação saindo do documento ao
+  final).
   Usa `LOJA_EMAIL`/`LOJA_SENHA` do `.env.local` (ou `node scripts/verificar-ar.js URL EMAIL SENHA`)
   e apaga os artefatos de teste ao final.
 

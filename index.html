@@ -108,6 +108,16 @@ input[type=checkbox]{width:18px;height:18px;accent-color:var(--brand)}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius)}
 .card.pad{padding:18px}
 .card>div:first-child{border-radius:var(--radius) var(--radius) 0 0}
+/* seções recolhíveis do painel (caixa do dia e relatórios) */
+.secaoPainel{margin-top:16px;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+.secaoPainel>.tgl{width:100%;display:flex;align-items:center;gap:12px;padding:14px 16px;background:none;border:0;
+  font:inherit;font-weight:700;font-size:15px;color:var(--text);text-align:left;cursor:pointer}
+.secaoPainel>.tgl:hover{background:var(--brand-bg)}
+.secaoPainel>.tgl .seta{margin-left:auto;font-size:13px;opacity:.55;transition:transform .15s}
+.secaoPainel.aberto>.tgl .seta{transform:rotate(180deg)}
+.secaoPainel>.corpo{display:none;padding:0 16px 16px}
+.secaoPainel.aberto>.corpo{display:block}
+.secaoPainel.aberto>.corpo>.pagehead{margin-top:4px}
 table{width:100%;border-collapse:collapse;font-size:13.5px}
 th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted2);
   font-weight:700;padding:11px 14px;border-bottom:1px solid var(--line);background:var(--surface2);
@@ -353,14 +363,12 @@ tr.estornada td:last-child{opacity:1;text-decoration:none}
   <button class="userchip" id="userChip" title="Trocar de usuário"></button>
   <nav class="tabs">
     <button data-tab="painel" class="active">Painel</button>
-    <button data-tab="caixa">Caixa do dia</button>
     <button data-tab="frota">Frota</button>
     <button data-tab="etiquetas">QR Codes</button>
     <button data-tab="vistoria">Vistoria</button>
     <button data-tab="clientes">Clientes</button>
     <button data-tab="historico">Histórico</button>
 <button data-tab="financeiro">Financeiro</button>
-<button data-tab="relatorios">Relatórios</button>
 <button data-tab="usuarios">Usuários</button>
 <button data-tab="config">Configurações</button>
   </nav>
@@ -379,36 +387,76 @@ tr.estornada td:last-child{opacity:1;text-decoration:none}
     <div id="alertaAtraso"></div>
     <div id="filaVistoria"></div>
     <div class="kpis" id="kpis"></div>
-    <div class="pagehead"><h3 style="font-size:15px">Veículos na rua</h3>
+    <div class="pagehead"><h3 style="font-size:15px">Locações abertas</h3>
+      <span class="muted" id="ativosResumo" style="font-size:12.5px"></span>
       <div class="sp"></div>
       <label style="display:flex;align-items:center;gap:6px;font-size:13px" class="muted">
         <input type="checkbox" id="somOn" checked style="width:auto"> alerta sonoro
       </label>
     </div>
     <div id="ativos"></div>
-  </section>
 
-  <!-- ============ CAIXA DO DIA ============ -->
-  <section class="page" id="page-caixa">
-    <div class="pagehead">
-      <h2>Caixa do dia</h2>
-      <label class="f" style="margin:0"><span>Data</span><input type="date" id="fCaixaDia"></label>
-      <div class="sp"></div>
-      <button class="btn sec" id="btnConferirLacres">Conferir lacres</button>
-      <button class="btn sec" id="btnImprimirCaixa">Imprimir fechamento</button>
-      <button class="btn" id="btnNovaSaida">+ Lançar saída</button>
-    </div>
-    <div id="caixaBarra"></div>
-    <div class="kpis" id="kpisCaixa"></div>
-    <div class="grid2" style="gap:14px;align-items:start">
-      <div class="card">
-        <div style="padding:13px 15px;border-bottom:1px solid var(--line);font-weight:700">Entradas do dia</div>
-        <table id="tbCaixaEnt"></table>
-        <div style="padding:11px 15px;border-top:1px solid var(--line);font-size:12px" class="muted" id="caixaDetEnt"></div>
+    <!-- ============ CAIXA DO DIA (seção recolhível do painel) ============ -->
+    <div class="secaoPainel" id="secCaixa">
+      <button class="tgl" type="button" id="tglCaixa">
+        <span>Caixa do dia</span>
+        <span class="muted" id="tglCaixaResumo" style="font-weight:500;font-size:13px"></span>
+        <span class="seta">▾</span>
+      </button>
+      <div class="corpo">
+        <div class="pagehead">
+          <label class="f" style="margin:0"><span>Data</span><input type="date" id="fCaixaDia"></label>
+          <div class="sp"></div>
+          <button class="btn sec" id="btnImprimirCaixa">Imprimir fechamento</button>
+          <button class="btn" id="btnNovaSaida">+ Lançar saída</button>
+        </div>
+        <div id="caixaBarra"></div>
+        <div class="kpis" id="kpisCaixa"></div>
+        <div class="grid2" style="gap:14px;align-items:start">
+          <div class="card">
+            <div style="padding:13px 15px;border-bottom:1px solid var(--line);font-weight:700">Entradas do dia</div>
+            <table id="tbCaixaEnt"></table>
+            <div style="padding:11px 15px;border-top:1px solid var(--line);font-size:12px" class="muted" id="caixaDetEnt"></div>
+          </div>
+          <div class="card">
+            <div style="padding:13px 15px;border-bottom:1px solid var(--line);font-weight:700">Saídas do dia</div>
+            <div class="tablewrap" style="max-height:420px"><table id="tbCaixaSai"></table></div>
+          </div>
+        </div>
       </div>
-      <div class="card">
-        <div style="padding:13px 15px;border-bottom:1px solid var(--line);font-weight:700">Saídas do dia</div>
-        <div class="tablewrap" style="max-height:420px"><table id="tbCaixaSai"></table></div>
+    </div>
+
+    <!-- ============ RELATÓRIOS DO MÊS (só do administrador) ============ -->
+    <div class="secaoPainel" id="secRel" style="display:none">
+      <button class="tgl" type="button" id="tglRel">
+        <span>Relatórios do mês</span>
+        <span class="muted" id="tglRelResumo" style="font-weight:500;font-size:13px"></span>
+        <span class="seta">▾</span>
+      </button>
+      <div class="corpo">
+        <div class="pagehead"><label class="f" style="margin:0"><span>Mês de referência</span><input type="month" id="rMes"></label></div>
+        <div class="kpis" id="kpisRel"></div>
+        <div class="grid2" style="gap:14px;align-items:start">
+          <div class="card">
+            <div style="padding:13px 15px;border-bottom:1px solid var(--line);font-weight:700">Clientes que mais viajaram</div>
+            <div class="tablewrap" style="max-height:360px"><table id="tbRelClientes"></table></div>
+          </div>
+          <div class="card">
+            <div style="padding:13px 15px;border-bottom:1px solid var(--line);font-weight:700">Dias que mais faturaram</div>
+            <div class="tablewrap" style="max-height:360px"><table id="tbRelDias"></table></div>
+          </div>
+          <div class="card">
+            <div style="padding:13px 15px;border-bottom:1px solid var(--line);font-weight:700">Horários de pico</div>
+            <table id="tbRelHoras"></table>
+            <div style="padding:11px 15px;border-top:1px solid var(--line);font-size:12px" class="muted">
+              Contagem por hora de início das viagens no mês de referência.
+            </div>
+          </div>
+          <div class="card">
+            <div style="padding:13px 15px;border-bottom:1px solid var(--line);font-weight:700">Resumo do período</div>
+            <table id="tbRelResumo"></table>
+          </div>
+        </div>
       </div>
     </div>
   </section>
@@ -573,33 +621,6 @@ tr.estornada td:last-child{opacity:1;text-decoration:none}
   </section>
 
   <!-- ============ RELATÓRIOS ============ -->
-  <section class="page" id="page-relatorios">
-    <div class="pagehead"><h2>Relatórios</h2><div class="sp"></div>
-      <label class="f" style="margin:0"><span>Mês de referência</span><input type="month" id="rMes"></label></div>
-    <div class="kpis" id="kpisRel"></div>
-    <div class="grid2" style="gap:14px;align-items:start">
-      <div class="card">
-        <div style="padding:13px 15px;border-bottom:1px solid var(--line);font-weight:700">Clientes que mais viajaram</div>
-        <div class="tablewrap" style="max-height:360px"><table id="tbRelClientes"></table></div>
-      </div>
-      <div class="card">
-        <div style="padding:13px 15px;border-bottom:1px solid var(--line);font-weight:700">Dias que mais faturaram</div>
-        <div class="tablewrap" style="max-height:360px"><table id="tbRelDias"></table></div>
-      </div>
-      <div class="card">
-        <div style="padding:13px 15px;border-bottom:1px solid var(--line);font-weight:700">Horários de pico</div>
-        <table id="tbRelHoras"></table>
-        <div style="padding:11px 15px;border-top:1px solid var(--line);font-size:12px" class="muted">
-          Contagem por hora de início das viagens no mês de referência.
-        </div>
-      </div>
-      <div class="card">
-        <div style="padding:13px 15px;border-bottom:1px solid var(--line);font-weight:700">Resumo do período</div>
-        <table id="tbRelResumo"></table>
-      </div>
-    </div>
-  </section>
-
   <!-- ============ CONFIG ============ -->
   <section class="page" id="page-usuarios">
     <div class="pagehead"><h2>Usuários</h2></div>
@@ -615,7 +636,7 @@ tr.estornada td:last-child{opacity:1;text-decoration:none}
         <h3 style="font-size:15px;margin-bottom:6px">Níveis de acesso</h3>
         <p class="muted" style="font-size:12px;margin:0 0 10px">Aba exclusiva do administrador. Cada usuário entra com o próprio e-mail e a própria senha — ninguém escolhe perfil numa tela inicial.</p>
         <ul style="font-size:13px;padding-left:18px;margin:0;line-height:1.8">
-          <li><b>Administrador</b> — vê tudo: painel, caixa, frota, clientes, histórico, <b>financeiro</b>, <b>relatórios</b> e esta aba. Cadastra usuários, estorna, altera preços, registra lacres e zera o sistema.</li>
+          <li><b>Administrador</b> — vê tudo: painel, frota, clientes, histórico, <b>financeiro</b>, <b>relatórios do mês</b> e esta aba. Cadastra usuários, estorna, altera preços e zera o sistema.</li>
           <li><b>Atendente</b> — locação, devolução, vistoria, clientes, histórico e caixa do dia. <b>Não enxerga financeiro, relatórios nem usuários.</b></li>
         </ul>
         <p class="muted" style="font-size:12px;margin-top:11px">Sempre deve existir pelo menos um administrador ativo. A senha fica gravada só como hash e pode ser trocada aqui.</p>
@@ -684,20 +705,6 @@ tr.estornada td:last-child{opacity:1;text-decoration:none}
           </div>
           <div class="tablewrap" style="max-height:340px"><table id="tbPecas"></table></div>
           <button class="btn" id="btnSalvarPecas" style="margin-top:11px">Salvar tabela</button>
-        </div>
-        <div class="card" style="margin-bottom:14px">
-          <div style="padding:13px 15px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-            <span style="font-weight:700">Controle de lacres</span>
-            <button class="btn sm sec" id="btnAplicarLacres" style="margin-left:auto">Aplicar na frota</button>
-            <button class="btn sm" id="btnLoteLacres">+ Lote</button>
-          </div>
-          <div style="padding:15px">
-            <div id="lacResumo"></div>
-            <label class="f" style="display:flex;align-items:center;gap:9px;margin:12px 0 0">
-              <input type="checkbox" id="cfgLacre" style="width:auto;margin:0">
-              <span style="margin:0;text-transform:none;letter-spacing:0;font-size:13px;color:var(--text)">Lacre registrado e rompido automaticamente na liberação</span>
-            </label>
-          </div>
         </div>
         <div class="card" style="margin-bottom:14px">
           <div style="padding:13px 15px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -956,9 +963,9 @@ function repintarTela(){
   if(typeof renderPainel==='function') renderPainel();
   const ativa = document.querySelector('.page.active');
   const aba = ativa ? String(ativa.id||'').replace('page-','') : '';
-  const mapa = { caixa:'renderCaixa', frota:'renderFrota', etiquetas:'renderEtiquetas', vistoria:'renderVistoria', clientes:'renderClientes',
+  const mapa = { frota:'renderFrota', etiquetas:'renderEtiquetas', vistoria:'renderVistoria', clientes:'renderClientes',
                  historico:'renderHistorico', financeiro:'renderFinanceiro',
-                 relatorios:'renderRelatorios', usuarios:'renderUsuarios', config:'renderConfig' };
+                 usuarios:'renderUsuarios', config:'renderConfig' };
   const nome = mapa[aba];
   if(nome && typeof window[nome]==='function') window[nome]();
 }
@@ -1129,7 +1136,6 @@ function dbPadrao(){
     caixas: [],
     usuarios: [],
     auditoria: [],
-    lacres: {},
     divergencias: [],
     inventarios: [],
     seq:{ veiculo:1, cliente:1, locacao:1, peca:100, grupo:1, despesa:1, fixo:1, usuario:1, audit:1, foto:1, diverg:1 }
@@ -1153,13 +1159,18 @@ function aplicarMigracoes(){
   if(!DB.seq.fixo) DB.seq.fixo = 1;
   if(!DB.usuarios) DB.usuarios = [];
   if(!DB.auditoria) DB.auditoria = [];
-  if(!DB.lacres) DB.lacres = {};
   if(!DB.divergencias) DB.divergencias = [];
   if(!DB.inventarios) DB.inventarios = [];
   if(!DB.seq.inventario) DB.seq.inventario = 1;
   if(!DB.config.inventarioDias) DB.config.inventarioDias = 7;
   if(!DB.seq.diverg) DB.seq.diverg = 1;
-  if(DB.config.exigirLacre === undefined) DB.config.exigirLacre = true;
+  /* o módulo de lacre saiu do sistema: veículo, liberação e auditoria são
+     identificados pelo QR. O que ficou gravado de antes é apagado. */
+  if(DB.lacres) delete DB.lacres;
+  if(DB.config) delete DB.config.exigirLacre;
+  if(DB.locacoes) DB.locacoes.forEach(l=>{
+    delete l.lacreEsperado; delete l.lacreSaida; delete l.lacreEntrada;
+  });
   if(!DB.seq.usuario) DB.seq.usuario = 1;
   if(!DB.seq.audit) DB.seq.audit = 1;
   if(!DB.seq.foto) DB.seq.foto = 1;
@@ -1259,21 +1270,21 @@ function exigirAdministrador(acao){
   return false;
 }
 
-/* Quem enxerga o quê: financeiro, relatórios e usuários são do
-   administrador. Aqui é só visão — quem decide o que pode ser gravado
-   continua sendo exigirAdministrador, que recusa na hora do botão. */
+/* Quem enxerga o quê: financeiro e usuários são do administrador, e os
+   relatórios do mês moram dentro do painel também só para ele. Aqui é só
+   visão — quem decide o que pode ser gravado continua sendo
+   exigirAdministrador, que recusa na hora do botão. */
 function aplicarPermissoes(){
   const soAdmin = tab => {
     const b = document.querySelector('nav.tabs button[data-tab="'+tab+'"]');
     if(b) b.style.display = ehAdministrador() ? '' : 'none';
   };
   soAdmin('financeiro');
-  soAdmin('relatorios');
   soAdmin('usuarios');
   if(!ehAdministrador()){
     const ativa = document.querySelector('.page.active');
     const aba = ativa ? String(ativa.id||'').replace('page-','') : '';
-    if(aba==='financeiro' || aba==='relatorios' || aba==='usuarios') irPara('painel');
+    if(aba==='financeiro' || aba==='usuarios') irPara('painel');
   }
 }
 
@@ -1409,21 +1420,19 @@ function excluirTipo(id, confirmar){
 }
 /* ===================== navegação ===================== */
 function irPara(tab){
-  if((tab==='financeiro' || tab==='relatorios' || tab==='usuarios') && !ehAdministrador()){
+  if((tab==='financeiro' || tab==='usuarios') && !ehAdministrador()){
     toast('Acesso restrito: essa área é do administrador.');
     tab = 'painel';
   }
   $$('nav.tabs button').forEach(b=>b.classList.toggle('active', b.dataset.tab===tab));
   $$('.page').forEach(p=>p.classList.toggle('active', p.id==='page-'+tab));
   if(tab==='painel') renderPainel();
-  if(tab==='caixa') renderCaixa();
   if(tab==='frota') renderFrota();
   if(tab==='etiquetas') renderEtiquetas();
   if(tab==='vistoria') renderVistoria();
   if(tab==='clientes') renderClientes();
   if(tab==='historico') renderHistorico();
   if(tab==='financeiro') renderFinanceiro();
-  if(tab==='relatorios') renderRelatorios();
   if(tab==='usuarios') renderUsuarios();
   if(tab==='config') renderConfig();
 }
@@ -1473,6 +1482,12 @@ function notificar(titulo, corpo){
 function renderPainel(){
   avisoCaixaPainel();
   avisoInventario();
+  /* caixa do dia e relatórios moram aqui dentro — o caixa é de todo mundo,
+     os relatórios do mês são do administrador e ficam escondidos do balcão */
+  const secRel = $('#secRel');
+  if(secRel) secRel.style.display = ehAdministrador() ? '' : 'none';
+  if(ehAdministrador()) renderRelatorios();
+  renderCaixa();
   const ativas = locAtivas();
   const agora = Date.now();
   const emAtraso = ativas.filter(l => agora > l.fimPrevisto).length;
@@ -1513,6 +1528,10 @@ function renderPainel(){
   $('#kpis').innerHTML = kpis.join('');
 
   const box = $('#ativos');
+  const resumo = $('#ativosResumo');
+  if(resumo) resumo.textContent = ativas.length
+    ? ativas.length+' na rua' + (emAtraso ? ' · '+emAtraso+' atrasado'+(emAtraso>1?'s':'') : ' · nenhum atraso')
+    : '';
   if(!ativas.length){
     box.innerHTML = '<div class="empty card pad">Nenhum veículo na rua no momento.</div>';
     $('#alertaAtraso').innerHTML = '';
@@ -1540,7 +1559,7 @@ function renderPainel(){
       return '<div class="rent" data-loc="'+l.id+'" id="rent-'+l.id+'">'+
         '<span class="selo" data-selo="'+l.id+'">em uso</span>'+
         '<div class="cod">'+esc(v.codigo)+'</div>'+
-        '<div class="cli">'+esc(l.tipoNome)+'</div>'+
+        '<div class="cli">'+esc(l.tipoNome)+(cabec?'':' · '+esc(l.clienteNome))+'</div>'+
         '<div class="timer" data-timer="'+l.id+'">--:--</div>'+
         '<div class="sub">'+hhmm(l.inicio)+' → '+hhmm(l.fimPrevisto)+' · '+esc(l.tarifaLabel)+'</div>'+
         '<div class="extra" data-extra="'+l.id+'"></div>'+
@@ -2526,14 +2545,12 @@ function concluirLocacao(){
       obsSaida: W.obs||'', obsEntrada: '', obsVistoria: '',
       atendenteSaida: usuarioAtual(), atendenteEntrada: '',
       fotosSaida: [], fotosEntrada: [],
-      lacreEsperado: DB.config.exigirLacre!==false ? (numeroLacreDoVeiculo(i.veiculoId)||null) : null,
-      lacreSaida: null, lacreEntrada: null,
       danos: [], valorDanos: 0, status: 'pendente'
     };
     DB.locacoes.push(loc);
     grupo.locacaoIds.push(loc.id);
     /* continua com status 'loja' por fora, mas travado para nova locação:
-       o lacre é rompido e a foto é feita na hora da liberação */
+       a foto é feita na hora da liberação */
   });
   DB.grupos.push(grupo);
   log('locacao', d.itens.map(i=>i.codigo).join(', ')+' — '+d.cli.nome+' — '+brl(d.total), grupo.id);
@@ -2757,7 +2774,6 @@ window.abrirDevolucao = function(locId){
     '<div class="body">'+
       (chegada ? '<div class="fnota">A chegada já foi registrada na vistoria às <b>'+hhmm(loc.fimReal)+'</b>'+
         (loc.atendenteEntrada?' por '+esc(loc.atendenteEntrada):'')+
-        (loc.lacreEntrada? ' · lacre '+esc(loc.lacreEntrada):'')+
         '. Confira as fotos, lance as peças e cobre o que for devido.</div>' : '')+
       '<div class="resumo">'+
         '<div class="l"><span>Cliente</span><b>'+esc(loc.clienteNome)+'</b></div>'+
@@ -3307,8 +3323,7 @@ function renderVistoria(){
         '<td><b>'+esc(l.veiculoCodigo)+'</b></td>'+
         '<td>'+esc(l.clienteNome)+'</td>'+
         '<td class="mono">'+(l.fimReal?hhmm(l.fimReal):'—')+'</td>'+
-        '<td>'+(ok ? '<span class="pill loja">'+ok+' foto(s)</span>' : '<span class="pill manut">sem foto</span>')+
-          (l.lacreEntrada ? ' <span class="mono" style="font-size:12px">lacre '+esc(l.lacreEntrada)+'</span>' : '')+'</td>'+
+        '<td>'+(ok ? '<span class="pill loja">'+ok+' foto(s)</span>' : '<span class="pill manut">sem foto</span>')+'</td>'+
         '<td class="right"><button class="btn sm ok" onclick="abrirDevolucao('+l.id+')">Fechar no balcão</button></td>'+
       '</tr>';
     }).join('') : '<tr><td colspan="5" class="empty">Nenhuma chegada registrada hoje.</td></tr>')+'</tbody>';
@@ -3782,6 +3797,8 @@ function renderRelatorios(){
   if(!$('#rMes').value) $('#rMes').value = mesKey(Date.now());
   const r = relatorioDoMes($('#rMes').value);
   const vazio = (cols, txt)=> '<tr><td colspan="'+cols+'" class="empty">'+txt+'</td></tr>';
+  const tglRel = $('#tglRelResumo');
+  if(tglRel) tglRel.textContent = r.n ? r.n+' viagens · '+brl(r.fat) : 'sem movimento';
 
   $('#kpisRel').innerHTML = [
     kpi('Viagens', r.n, ''),
@@ -3835,7 +3852,10 @@ function renderRelatorios(){
 }
 $('#rMes').onchange = renderRelatorios;
 
-$('#btnConferirLacres').onclick = ()=> abrirConferenciaLacres();
+/* seções recolhíveis do painel: caixa e relatórios abrem com um clique */
+$('#tglCaixa').onclick = ()=> $('#secCaixa').classList.toggle('aberto');
+$('#tglRel').onclick = ()=> $('#secRel').classList.toggle('aberto');
+
 $('#btnImprimirCaixa').onclick = ()=>{
   const dia = $('#fCaixaDia').value;
   const cx = getCaixa(dia), ent = entradasDoDia(dia), sai = saidasDoDia(dia);
@@ -3945,6 +3965,10 @@ function renderCaixa(){
   const dinSai = sai.itens.filter(d=>d.pago && d.forma==='Dinheiro').reduce((s,d)=>s+d.valor,0);
   const esperado = (cx? cx.saldoInicial:0) + dinEnt - dinSai;
 
+  const tgl = $('#tglCaixaResumo');
+  if(tgl) tgl.textContent = (cx ? (cx.status==='aberto'?'aberto':'fechado') : 'não aberto')+
+    ' · entradas '+brl(ent.total)+' · saídas '+brl(sai.pagas);
+
   $('#kpisCaixa').innerHTML = [
     kpi('Situação', cx ? (cx.status==='aberto'?'Aberto':'Fechado') : 'Não aberto', cx? (cx.status==='aberto'?'b':'g') : 'w'),
     kpi('Entradas', brl(ent.total), 'g'),
@@ -4028,7 +4052,6 @@ function abrirCaixaModal(dia, depois){
       fechamentoTs:null, saldoContado:0, esperado:0, operadorFech:'', obs:'' });
     log('caixa_abertura', diaLegivel(dia)+' — fundo '+brl(saldo));
     persist(); fecharModal(ov);
-    if($('#page-caixa').classList.contains('active')) renderCaixa();
     renderPainel(); toast('Caixa aberto.');
     if(depois) depois();
   };
@@ -4209,12 +4232,11 @@ function renderConfig(){
   $('#cfgFoto').checked = DB.config.exigirFoto!==false;
   $('#cfgDocFoto').checked = DB.config.exigirDocFoto===true;
   $('#cfgContrato').value = DB.contrato;
-  $('#cfgLacre').checked = DB.config.exigirLacre!==false;
   $('#cfgInvDias').value = DB.config.inventarioDias || 7;
   const lv = linkVistoria();
   const cl = $('#cfgVistLink'); if(cl) cl.textContent = lv;
   pintarQr('#cfgVistQr', lv, DB.config.vistoriaToken);
-  renderLacres(); renderInventarios(); renderDivergencias(); renderUsuarios(); renderAuditoria();
+  renderInventarios(); renderDivergencias(); renderUsuarios(); renderAuditoria();
   if($('#pecTipo').options.length !== DB.tipos.length)
     $('#pecTipo').innerHTML = DB.tipos.map(t=>'<option value="'+t.id+'">'+esc(t.nome)+'</option>').join('');
   renderPecas();
@@ -4247,7 +4269,6 @@ $('#btnSalvarEmpresa').onclick = ()=>{
   DB.config.urlBase = $('#cfgUrl').value.trim() || DB.config.urlBase;
   DB.config.exigirFoto = $('#cfgFoto').checked;
   DB.config.exigirDocFoto = $('#cfgDocFoto').checked;
-  DB.config.exigirLacre = $('#cfgLacre').checked;
   persist(); aplicarMarca(); toast('Dados salvos.');
 };
 
@@ -4486,8 +4507,6 @@ function conferirDadosUsuario(nome, email, senha, papel, u){
 $('#btnInventario2').onclick = ()=> abrirInventario();
 $('#cfgInvDias').onchange = ()=>{ DB.config.inventarioDias = Math.max(1, Math.min(90, +$('#cfgInvDias').value||7));
   persist(); renderInventarios(); renderPainel(); };
-$('#btnLoteLacres').onclick = abrirLoteLacres;
-$('#btnAplicarLacres').onclick = abrirAplicarLacres;
 $('#btnNovoUsuario').onclick = ()=>{
   if(!exigirAdministrador('cadastrar usuários')) return;
   const ov = abrirModal('<header><h3>Novo usuário</h3><button class="x">&times;</button></header>'+
@@ -4558,22 +4577,9 @@ function renderAuditoria(){
       : '<tr><td colspan="4" class="empty">Nada registrado ainda.</td></tr>')+'</tbody>';
 }
 
-/* =====================================================================
-   CONTROLE DE LACRES
-   Cada veículo parado na loja fica lacrado. Na liberação o QR escaneado
-   identifica o patinete e o lacre já registrado para ele é rompido sozinho
-   no estoque — nenhum fluxo pede número de lacre digitado.
-   O estoque de lacres é do dono, não do atendente: só o administrador registra
-   lotes novos. Assim, lacre rompido sem locação não tem como se esconder.
-   ===================================================================== */
-
-function lacreDe(n){ return DB.lacres[String(n)]; }
-function lacresPorStatus(st){ return Object.values(DB.lacres).filter(l=>l.status===st); }
-function lacreDoVeiculo(vid){
-  return Object.values(DB.lacres).find(l=>l.status==='aplicado' && l.veiculoId===vid);
-}
-function numeroLacreDoVeiculo(vid){ const l = lacreDoVeiculo(vid); return l ? l.n : null; }
-
+/* Divergências e inventário da frota. A identificação do veículo é o QR da
+   etiqueta (escaneado na saída e na chegada) e a conferência física é a
+   contagem da frota — nenhum número é digitado à mão. */
 function registrarDivergencia(tipo, detalhe, extra){
   const d = Object.assign({
     id: uid('diverg'), ts: Date.now(), tipo, detalhe,
@@ -4584,145 +4590,8 @@ function registrarDivergencia(tipo, detalhe, extra){
   return d;
 }
 
-function aplicarLacre(n, veiculoId){
-  n = String(n).trim();
-  const l = lacreDe(n);
-  if(!l) return { erro: 'Lacre ' + n + ' não existe no estoque.' };
-  if(l.status === 'rompido') return { erro: 'Lacre ' + n + ' já foi rompido antes. Use um novo.' };
-  if(l.status === 'aplicado' && l.veiculoId !== veiculoId){
-    const v = getVeiculo(l.veiculoId);
-    return { erro: 'Lacre ' + n + ' já está no veículo ' + (v?v.codigo:'?') + '.' };
-  }
-  const antigo = lacreDoVeiculo(veiculoId);
-  if(antigo && antigo.n !== n){ antigo.status = 'estoque'; antigo.veiculoId = null; }
-  l.status = 'aplicado'; l.veiculoId = veiculoId;
-  l.aplicadoEm = Date.now(); l.aplicadoPor = usuarioAtual();
-  return { ok: true };
-}
-
-function romperLacre(n, locacaoId, veiculoId){
-  n = String(n).trim();
-  const l = lacreDe(n);
-  if(!l) return { erro: 'Lacre ' + n + ' não existe no estoque.' };
-  l.status = 'rompido'; l.rompidoEm = Date.now(); l.rompidoPor = usuarioAtual();
-  l.locacaoId = locacaoId || null; l.veiculoId = veiculoId || l.veiculoId;
-  return { ok: true };
-}
-
-/* ---------- estoque ---------- */
-function registrarLoteLacres(de, ate){
-  de = parseInt(de,10); ate = parseInt(ate,10);
-  if(!(ate >= de)) return { erro: 'Faixa inválida.' };
-  if(ate - de > 5000) return { erro: 'Faixa muito grande. Registre no máximo 5000 por vez.' };
-  let novos = 0, repetidos = 0;
-  for(let i = de; i <= ate; i++){
-    const n = String(i);
-    if(DB.lacres[n]){ repetidos++; continue; }
-    DB.lacres[n] = { n, status:'estoque', veiculoId:null, recebidoEm:Date.now(), recebidoPor:usuarioAtual() };
-    novos++;
-  }
-  return { ok:true, novos, repetidos };
-}
-
-/* ---------- painel de lacres (Configurações) ---------- */
-function renderLacres(){
-  const est = lacresPorStatus('estoque').length;
-  const apl = lacresPorStatus('aplicado').length;
-  const rom = lacresPorStatus('rompido').length;
-  const semLacre = DB.veiculos.filter(v=>v.status==='loja' && !lacreDoVeiculo(v.id)).length;
-  $('#lacResumo').innerHTML =
-    '<div class="kpis" style="margin:0 0 12px">'+
-      kpi('Em estoque', est, est<20?'w':'g')+
-      kpi('Aplicados', apl, 'b')+
-      kpi('Rompidos', rom, '')+
-      kpi('Sem lacre na loja', semLacre, semLacre?'r':'g')+
-    '</div>'+
-    (semLacre ? '<div class="fnota">'+semLacre+' veículo(s) na loja estão sem lacre. Enquanto isso, eles podem sair sem deixar rastro.</div>' : '');
-}
-
-function abrirLoteLacres(){
-  if(!exigirAdministrador('registrar lacres')) return;
-  const ov = abrirModal('<header><h3>Registrar lote de lacres</h3><button class="x">&times;</button></header>'+
-    '<div class="body">'+
-      '<p style="margin-top:0;font-size:13.5px">Informe a faixa de números impressa nos lacres que você comprou. '+
-      'Só números registrados aqui podem ser usados no balcão.</p>'+
-      '<div class="grid2">'+
-        '<label class="f"><span>Do número</span><input type="number" id="loDe" placeholder="4001" autofocus></label>'+
-        '<label class="f"><span>Até o número</span><input type="number" id="loAte" placeholder="5000"></label>'+
-      '</div>'+
-      '<div class="aviso">Guarde os lacres com você e entregue ao atendente só o necessário para o turno. '+
-      'É esse controle que faz o sistema funcionar — se ele tiver acesso livre ao lote, o lacre não prova nada.</div>'+
-    '</div>'+
-    '<footer><button class="btn sec" id="c">Cancelar</button><button class="btn" id="s">Registrar</button></footer>');
-  ov.querySelector('#c').onclick = ()=> fecharModal(ov);
-  ov.querySelector('#s').onclick = ()=>{
-    const r = registrarLoteLacres(ov.querySelector('#loDe').value, ov.querySelector('#loAte').value);
-    if(r.erro) return toast(r.erro);
-    log('lacres_lote', r.novos+' lacres registrados');
-    persist(); fecharModal(ov); renderConfig();
-    toast(r.novos+' lacres no estoque'+(r.repetidos?' ('+r.repetidos+' já existiam)':'')+'.');
-  };
-}
-
-/* aplicação inicial: percorre os veículos da loja que ainda não têm lacre */
-function abrirAplicarLacres(){
-  const pendentes = DB.veiculos.filter(v=>v.status==='loja' && !lacreDoVeiculo(v.id))
-    .sort((a,b)=>a.codigo.localeCompare(b.codigo,'pt-BR',{numeric:true}));
-  if(!pendentes.length) return toast('Todos os veículos da loja já estão lacrados.');
-  const livres = lacresPorStatus('estoque').map(l=>+l.n).sort((a,b)=>a-b);
-  if(!livres.length) return toast('Não há lacres em estoque. Registre um lote primeiro.');
-
-  const ov = abrirModal('<header><h3>Aplicar lacres na frota</h3><button class="x">&times;</button></header>'+
-    '<div class="body">'+
-      '<p style="margin-top:0;font-size:13.5px">'+pendentes.length+' veículo(s) sem lacre. '+
-      'Preencha com o número do lacre que você colocou em cada um.</p>'+
-      '<div style="display:flex;gap:9px;align-items:end;margin-bottom:13px;flex-wrap:wrap">'+
-        '<label class="f" style="margin:0"><span>Preencher em sequência a partir de</span>'+
-        '<input type="number" id="apDe" value="'+livres[0]+'" style="width:150px"></label>'+
-        '<button class="btn sec sm" id="apAuto">Preencher</button>'+
-        '<span class="muted" style="font-size:12px;align-self:center">confira um a um antes de salvar</span>'+
-      '</div>'+
-      '<div class="tablewrap" style="max-height:44vh"><table id="apTab"></table></div>'+
-    '</div>'+
-    '<footer><button class="btn sec" id="c">Cancelar</button><button class="btn" id="s">Salvar aplicação</button></footer>', {wide:true});
-
-  const pinta = ()=>{
-    ov.querySelector('#apTab').innerHTML =
-      '<thead><tr><th>Veículo</th><th>Tipo</th><th style="width:170px">Nº do lacre</th></tr></thead><tbody>'+
-      pendentes.map(v=>'<tr><td><b>'+esc(v.codigo)+'</b></td><td class="muted">'+esc(getTipo(v.tipoId).nome)+'</td>'+
-        '<td><input type="number" data-v="'+v.id+'" placeholder="—"></td></tr>').join('')+'</tbody>';
-  };
-  pinta();
-  ov.querySelector('#apAuto').onclick = ()=>{
-    let n = parseInt(ov.querySelector('#apDe').value,10);
-    ov.querySelectorAll('#apTab input').forEach(inp=>{
-      while(n && DB.lacres[String(n)] && DB.lacres[String(n)].status!=='estoque') n++;
-      inp.value = n; n++;
-    });
-  };
-  ov.querySelector('#c').onclick = ()=> fecharModal(ov);
-  ov.querySelector('#s').onclick = ()=>{
-    const erros = [];
-    let n = 0;
-    ov.querySelectorAll('#apTab input').forEach(inp=>{
-      const val = (inp.value||'').trim();
-      if(!val) return;
-      const r = aplicarLacre(val, +inp.dataset.v);
-      if(r.erro) erros.push(r.erro); else n++;
-    });
-    persist(); renderConfig();
-    if(erros.length) toast(erros[0]);
-    else { fecharModal(ov); toast(n+' veículo(s) lacrados.'); }
-    log('lacres_aplicados', n+' veículos');
-  };
-}
-
 /* ---------- divergências ---------- */
 const TIPOS_DIVERG = {
-  lacre_trocado:      'Lacre diferente do esperado',
-  lacre_rompido_solto:'Lacre rompido sem locação',
-  lacre_sumido:       'Lacre sumiu do estoque',
-  veiculo_sem_lacre:  'Veículo na loja sem lacre',
   contagem:           'Divergência na conferência',
   veiculo_nao_encontrado:  'VEÍCULO NÃO ENCONTRADO',
   veiculo_na_loja_como_rua:'Veículo na loja, sistema diz alugado'
@@ -4764,60 +4633,9 @@ window.resolverDivergencia = function(id){
   };
 };
 
-/* ---------- conferência de lacres (fechamento) ---------- */
-window.abrirConferenciaLacres = function(){
-  const naLoja = DB.veiculos.filter(v=>v.status==='loja')
-    .sort((a,b)=>a.codigo.localeCompare(b.codigo,'pt-BR',{numeric:true}));
-  const ov = abrirModal('<header><h3>Conferência de lacres</h3><button class="x">&times;</button></header>'+
-    '<div class="body">'+
-      '<div class="fnota">Confira veículo por veículo. O número esperado só aparece depois que você digitar o seu — assim a conferência vale alguma coisa.</div>'+
-      '<div style="margin-bottom:12px"><b>'+naLoja.length+'</b> veículo(s) deveriam estar na loja</div>'+
-      '<div class="tablewrap" style="max-height:48vh"><table id="cfTab"></table></div>'+
-    '</div>'+
-    '<footer><button class="btn sec" id="c">Cancelar</button><button class="btn ok" id="s">Concluir conferência</button></footer>', {wide:true});
-  ov.querySelector('#cfTab').innerHTML =
-    '<thead><tr><th>Veículo</th><th style="width:160px">Lacre encontrado</th><th style="width:150px">Resultado</th></tr></thead><tbody>'+
-    naLoja.map(v=>'<tr><td><b>'+esc(v.codigo)+'</b></td>'+
-      '<td><input type="number" data-v="'+v.id+'" placeholder="digite o número"></td>'+
-      '<td data-res="'+v.id+'" class="muted">—</td></tr>').join('')+'</tbody>';
-  ov.querySelectorAll('#cfTab input').forEach(inp=> inp.onblur = ()=>{
-    const vid = +inp.dataset.v;
-    const esperado = numeroLacreDoVeiculo(vid);
-    const cel = ov.querySelector('[data-res="'+vid+'"]');
-    const val = (inp.value||'').trim();
-    if(!val){ cel.innerHTML='<span class="muted">—</span>'; return; }
-    if(!esperado) cel.innerHTML = '<span class="pill manut">sem lacre no sistema</span>';
-    else if(String(esperado) === val) cel.innerHTML = '<span class="pill loja">confere</span>';
-    else cel.innerHTML = '<span class="pill est">esperado '+esc(esperado)+'</span>';
-  });
-  ov.querySelector('#c').onclick = ()=> fecharModal(ov);
-  ov.querySelector('#s').onclick = ()=>{
-    let ok=0, div=0, vazios=0;
-    ov.querySelectorAll('#cfTab input').forEach(inp=>{
-      const vid = +inp.dataset.v, val = (inp.value||'').trim();
-      const v = getVeiculo(vid), esperado = numeroLacreDoVeiculo(vid);
-      if(!val){ vazios++;
-        registrarDivergencia('contagem', v.codigo+' não foi conferido no fechamento', {veiculoId:vid});
-        div++; return; }
-      if(!esperado){
-        registrarDivergencia('veiculo_sem_lacre', v.codigo+' estava sem lacre no sistema (encontrado '+val+')', {veiculoId:vid});
-        div++; return; }
-      if(String(esperado) !== val){
-        registrarDivergencia('lacre_trocado', v.codigo+' — esperado '+esperado+', encontrado '+val,
-          {veiculoId:vid, esperado:String(esperado), informado:val});
-        div++; return; }
-      ok++;
-    });
-    log('conferencia_lacres', ok+' conferem, '+div+' divergência(s)');
-    persist(); fecharModal(ov); renderCaixa(); renderConfig();
-    toast(div ? div+' divergência(s) registrada(s)' : 'Conferência sem divergência.');
-  };
-};
-
 /* =====================================================================
    INVENTÁRIO DA FROTA
-   Diferente da conferência de lacres, que só olha o que está na loja:
-   aqui a frota inteira é conferida, inclusive o que está na rua e em
+   A conferência olha a frota inteira, inclusive o que está na rua e em
    manutenção. É o que responde "sumiu algum?".
    Quem faz a contagem digita ou lê os códigos que encontrou; a lista de pendentes
    fica escondida por padrão, para a contagem valer alguma coisa.
