@@ -1705,8 +1705,8 @@ function avancarWizard(){
     if(soDigitos(tel).length<10) return toast('Informe um telefone válido.');
     W.obs = $('#wObs').value.trim();
     const dados = { nome, cpf:maskCPF(cpf), telefone:maskTel(tel), email:$('#wEmail').value.trim(), doc:$('#wDoc').value };
-    if(W.clienteId){ Object.assign(getCliente(W.clienteId), dados); W.novoCliente=null; }
-    else W.novoCliente = dados;
+    if(W.clienteId && getCliente(W.clienteId)){ Object.assign(getCliente(W.clienteId), dados); W.novoCliente=null; }
+    else { W.clienteId = null; W.novoCliente = dados; }
     W.passo=3; return pintaWizard();
   }
   if(W.passo===3){
@@ -2163,7 +2163,8 @@ function renderClientes(){
       const tot = ls.reduce((s,l)=>s+totalLoc(l),0);
       return '<tr><td><b>'+esc(c.nome)+'</b></td><td class="mono">'+esc(c.cpf)+'</td><td class="mono">'+esc(c.telefone||'—')+'</td>'+
         '<td>'+esc(c.email||'—')+'</td><td class="mono">'+ls.length+'</td><td class="mono">'+brl(tot)+'</td>'+
-        '<td class="right"><button class="btn sm sec" onclick="editarCliente('+c.id+')">Editar</button></td></tr>';
+        '<td class="right"><button class="btn sm sec" onclick="editarCliente('+c.id+')">Editar</button> '+
+        '<button class="btn sm danger" onclick="excluirCliente('+c.id+')" title="Excluir este cadastro">Excluir</button></td></tr>';
     }).join('') : '<tr><td colspan="7" class="empty">Nenhum cliente cadastrado ainda.</td></tr>')+'</tbody>';
 }
 $('#fCliBusca').oninput = renderClientes;
@@ -2201,6 +2202,25 @@ window.editarCliente = function(id){
     persist(); fecharModal(ov); renderClientes(); toast('Cliente atualizado.');
   };
 };
+/* Excluir cadastro: some só a ficha. As locações já guardam nome e CPF em
+   cada registro, então o histórico, o caixa e os relatórios continuam iguais.
+   Com locação em aberto não dá para excluir — a devolução precisa do cliente. */
+function excluirCliente(id){
+  const c = getCliente(id); if(!c) return;
+  const ls = DB.locacoes.filter(l=>l.clienteId===c.id);
+  const abertas = ls.filter(l=>l.status==='ativa').length;
+  if(abertas) return toast('Cliente com '+abertas+' locação'+(abertas===1?'':'ões')+
+    ' em aberto: feche a devolução antes de excluir.');
+  const msg = ls.length
+    ? 'Excluir o cadastro de '+c.nome+'?\n\nEle tem '+ls.length+' locação'+(ls.length===1?'':'ões')+
+      ' no histórico. Nome e CPF já estão gravados em cada locação — some só a ficha do cliente.'
+    : 'Excluir o cadastro de '+c.nome+'?';
+  if(!confirm(msg)) return;
+  DB.clientes = DB.clientes.filter(x=>x.id!==c.id);
+  log('cliente_excluido', c.nome + (ls.length ? ' — '+ls.length+' locação'+(ls.length===1?'':'ões')+' no histórico' : ''));
+  persist(); renderClientes(); toast('Cadastro de '+c.nome+' excluído.');
+}
+window.excluirCliente = excluirCliente;
 /* ===================== HISTÓRICO ===================== */
 function histFiltrado(){
   const de = $('#fHistDe').value, ate = $('#fHistAte').value;

@@ -255,10 +255,10 @@ const JPG = '/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE
 
   const pagHome = await fetch(BASE + '/');
   const txtHome = pagHome.status === 200 ? await pagHome.text() : '';
-  check(pagHome.status === 200 && txtHome.indexOf('data-tab="etiquetas"') >= 0 &&
-        txtHome.indexOf('id="page-etiquetas"') >= 0 && txtHome.indexOf('jspdf') >= 0 &&
-        txtHome.indexOf('function qrFonte(') >= 0,
-        'a aba QR Codes está publicada na home, com o gerador de etiquetas e o jsPDF',
+  check(pagHome.status === 200 && txtHome.indexOf('data-tab="etiquetas"') < 0 &&
+        txtHome.indexOf('id="page-etiquetas"') < 0 && txtHome.indexOf('id="secEtiquetas"') >= 0 &&
+        txtHome.indexOf('jspdf') >= 0 && txtHome.indexOf('function qrFonte(') >= 0,
+        'os QR Codes estão publicados como seção recolhível de Configurações',
         'status ' + pagHome.status);
 
   check(txtHome.indexOf('data-pgmodo="unica"') >= 0 && txtHome.indexOf('data-pgmodo="porVeiculo"') >= 0 &&

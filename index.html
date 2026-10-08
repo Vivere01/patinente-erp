@@ -108,7 +108,7 @@ input[type=checkbox]{width:18px;height:18px;accent-color:var(--brand)}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius)}
 .card.pad{padding:18px}
 .card>div:first-child{border-radius:var(--radius) var(--radius) 0 0}
-/* seções recolhíveis do painel (caixa do dia e relatórios) */
+/* seções recolhíveis (caixa do dia e relatórios no painel, QR Codes nas configurações) */
 .secaoPainel{margin-top:16px;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
 .secaoPainel>.tgl{width:100%;display:flex;align-items:center;gap:12px;padding:14px 16px;background:none;border:0;
   font:inherit;font-weight:700;font-size:15px;color:var(--text);text-align:left;cursor:pointer}
@@ -364,7 +364,6 @@ tr.estornada td:last-child{opacity:1;text-decoration:none}
   <nav class="tabs">
     <button data-tab="painel" class="active">Painel</button>
     <button data-tab="frota">Frota</button>
-    <button data-tab="etiquetas">QR Codes</button>
     <button data-tab="vistoria">Vistoria</button>
     <button data-tab="clientes">Clientes</button>
     <button data-tab="historico">Histórico</button>
@@ -479,30 +478,6 @@ tr.estornada td:last-child{opacity:1;text-decoration:none}
       </select>
     </div>
     <div class="card"><div class="tablewrap"><table id="tbFrota"></table></div></div>
-  </section>
-
-  <!-- ============ QR CODES (ETIQUETAS) ============ -->
-  <section class="page" id="page-etiquetas">
-    <div class="pagehead">
-      <h2>QR Codes da frota</h2>
-      <div class="sp"></div>
-      <button class="btn sec" id="btnEtqImprimir">Imprimir folha</button>
-      <button class="btn sec" id="btnEtqPng">PNG</button>
-      <button class="btn sec" id="btnEtqSvg">SVG</button>
-      <button class="btn" id="btnEtqPdf">Baixar PDF</button>
-    </div>
-    <div class="card pad" style="margin-bottom:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-      <input type="text" id="fEtqBusca" placeholder="Buscar código" style="max-width:220px">
-      <select id="fEtqTipo" style="max-width:190px"><option value="">Todos os tipos</option></select>
-      <span class="muted" id="etqInfo" style="font-size:12.5px"></span>
-      <div class="sp"></div>
-      <button class="btn sm sec" id="btnEtqFoco" style="display:none">Ver toda a frota</button>
-    </div>
-    <div class="card">
-      <div class="cabec"><span><b>Etiquetas</b> — o QR de cada patinete é exatamente o código que o celular lê na vistoria</span>
-        <span class="muted" id="etqQtd" style="font-size:12.5px"></span></div>
-      <div id="etqGrade" class="etqgrade"></div>
-    </div>
   </section>
 
   <!-- ============ VISTORIA ============ -->
@@ -645,6 +620,37 @@ tr.estornada td:last-child{opacity:1;text-decoration:none}
   </section>
   <section class="page" id="page-config">
     <div class="pagehead"><h2>Configurações</h2></div>
+
+    <!-- ============ QR CODES (seção recolhível das configurações) ============ -->
+    <div class="secaoPainel" id="secEtiquetas">
+      <button class="tgl" type="button" id="tglEtiquetas">
+        <span>QR Codes da frota</span>
+        <span class="muted" id="tglEtqResumo" style="font-weight:500;font-size:13px"></span>
+        <span class="seta">▾</span>
+      </button>
+      <div class="corpo">
+        <div class="pagehead">
+          <div class="sp"></div>
+          <button class="btn sec" id="btnEtqImprimir">Imprimir folha</button>
+          <button class="btn sec" id="btnEtqPng">PNG</button>
+          <button class="btn sec" id="btnEtqSvg">SVG</button>
+          <button class="btn" id="btnEtqPdf">Baixar PDF</button>
+        </div>
+        <div class="card pad" style="margin-bottom:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+          <input type="text" id="fEtqBusca" placeholder="Buscar código" style="max-width:220px">
+          <select id="fEtqTipo" style="max-width:190px"><option value="">Todos os tipos</option></select>
+          <span class="muted" id="etqInfo" style="font-size:12.5px"></span>
+          <div class="sp"></div>
+          <button class="btn sm sec" id="btnEtqFoco" style="display:none">Ver toda a frota</button>
+        </div>
+        <div class="card">
+          <div class="cabec"><span><b>Etiquetas</b> — o QR de cada patinete é exatamente o código que o celular lê na vistoria</span>
+            <span class="muted" id="etqQtd" style="font-size:12.5px"></span></div>
+          <div id="etqGrade" class="etqgrade"></div>
+        </div>
+      </div>
+    </div>
+
     <div class="grid2" style="gap:14px;align-items:start">
       <div>
         <div class="card pad" style="margin-bottom:14px">
@@ -963,7 +969,7 @@ function repintarTela(){
   if(typeof renderPainel==='function') renderPainel();
   const ativa = document.querySelector('.page.active');
   const aba = ativa ? String(ativa.id||'').replace('page-','') : '';
-  const mapa = { frota:'renderFrota', etiquetas:'renderEtiquetas', vistoria:'renderVistoria', clientes:'renderClientes',
+  const mapa = { frota:'renderFrota', vistoria:'renderVistoria', clientes:'renderClientes',
                  historico:'renderHistorico', financeiro:'renderFinanceiro',
                  usuarios:'renderUsuarios', config:'renderConfig' };
   const nome = mapa[aba];
@@ -1428,7 +1434,6 @@ function irPara(tab){
   $$('.page').forEach(p=>p.classList.toggle('active', p.id==='page-'+tab));
   if(tab==='painel') renderPainel();
   if(tab==='frota') renderFrota();
-  if(tab==='etiquetas') renderEtiquetas();
   if(tab==='vistoria') renderVistoria();
   if(tab==='clientes') renderClientes();
   if(tab==='historico') renderHistorico();
@@ -2493,8 +2498,8 @@ async function avancarWizard(){
                     doc:$('#wDoc').value,
                     docFoto: W.docFoto ? { id:W.docFoto.id, caminho:W.docFoto.caminho,
                                            legenda:W.docFoto.legenda, ts:W.docFoto.ts } : null };
-    if(W.clienteId){ Object.assign(getCliente(W.clienteId), dados); W.novoCliente=null; }
-    else W.novoCliente = dados;
+    if(W.clienteId && getCliente(W.clienteId)){ Object.assign(getCliente(W.clienteId), dados); W.novoCliente=null; }
+    else { W.clienteId = null; W.novoCliente = dados; }
     W.passo=3; return pintaWizard();
   }
   if(W.passo===3){
@@ -3157,6 +3162,7 @@ function renderEtiquetas(){
   const lista = etiquetasLista();
   const folhas = Math.max(1, Math.ceil(lista.length/(ETQ_COL*ETQ_LIN)));
   if($('#etqQtd')) $('#etqQtd').textContent = lista.length + (lista.length===1 ? ' etiqueta' : ' etiquetas');
+  if($('#tglEtqResumo')) $('#tglEtqResumo').textContent = lista.length + (lista.length===1 ? ' etiqueta' : ' etiquetas');
   if($('#etqInfo')) $('#etqInfo').textContent = !lista.length ? '' :
     folhas + (folhas===1 ? ' folha A4' : ' folhas A4') + ' · ' + ETQ_COL + '×' + ETQ_LIN + ' por folha';
   if($('#btnEtqFoco')) $('#btnEtqFoco').style.display = etqFoco ? '' : 'none';
@@ -3250,7 +3256,7 @@ function oferecerEtiquetas(ids){
     'em PNG, SVG, PDF ou imprima a folha A4 e cole no patinete.</p></div>'+
     '<footer><button class="btn sec" id="c">Agora não</button><button class="btn" id="e">Gerar etiquetas</button></footer>');
   ov.querySelector('#c').onclick = ()=>fecharModal(ov);
-  ov.querySelector('#e').onclick = ()=>{ etqFoco = ids; fecharModal(ov); irPara('etiquetas'); };
+  ov.querySelector('#e').onclick = ()=>{ etqFoco = ids; fecharModal(ov); abrirSecaoEtiquetas(); };
 }
 
 /* ===================== ABA VISTORIA =====================
@@ -3525,7 +3531,8 @@ function renderClientes(){
       const tot = ls.reduce((s,l)=>s+totalLoc(l),0);
       return '<tr><td><b>'+esc(c.nome)+'</b></td><td class="mono">'+esc(c.cpf)+'</td><td class="mono">'+esc(c.telefone||'—')+'</td>'+
         '<td>'+esc(c.email||'—')+'</td><td class="mono">'+ls.length+'</td><td class="mono">'+brl(tot)+'</td>'+
-        '<td class="right"><button class="btn sm sec" onclick="editarCliente('+c.id+')">Editar</button></td></tr>';
+        '<td class="right"><button class="btn sm sec" onclick="editarCliente('+c.id+')">Editar</button> '+
+        '<button class="btn sm danger" onclick="excluirCliente('+c.id+')" title="Excluir este cadastro">Excluir</button></td></tr>';
     }).join('') : '<tr><td colspan="7" class="empty">Nenhum cliente cadastrado ainda.</td></tr>')+'</tbody>';
 }
 $('#fCliBusca').oninput = renderClientes;
@@ -3563,6 +3570,25 @@ window.editarCliente = function(id){
     persist(); fecharModal(ov); renderClientes(); toast('Cliente atualizado.');
   };
 };
+/* Excluir cadastro: some só a ficha. As locações já guardam nome e CPF em
+   cada registro, então o histórico, o caixa e os relatórios continuam iguais.
+   Com locação em aberto não dá para excluir — a devolução precisa do cliente. */
+function excluirCliente(id){
+  const c = getCliente(id); if(!c) return;
+  const ls = DB.locacoes.filter(l=>l.clienteId===c.id);
+  const abertas = ls.filter(l=>l.status==='ativa').length;
+  if(abertas) return toast('Cliente com '+abertas+' locação'+(abertas===1?'':'ões')+
+    ' em aberto: feche a devolução antes de excluir.');
+  const msg = ls.length
+    ? 'Excluir o cadastro de '+c.nome+'?\n\nEle tem '+ls.length+' locação'+(ls.length===1?'':'ões')+
+      ' no histórico. Nome e CPF já estão gravados em cada locação — some só a ficha do cliente.'
+    : 'Excluir o cadastro de '+c.nome+'?';
+  if(!confirm(msg)) return;
+  DB.clientes = DB.clientes.filter(x=>x.id!==c.id);
+  log('cliente_excluido', c.nome + (ls.length ? ' — '+ls.length+' locação'+(ls.length===1?'':'ões')+' no histórico' : ''));
+  persist(); renderClientes(); toast('Cadastro de '+c.nome+' excluído.');
+}
+window.excluirCliente = excluirCliente;
 /* ===================== HISTÓRICO ===================== */
 function histFiltrado(){
   const de = $('#fHistDe').value, ate = $('#fHistAte').value;
@@ -4261,7 +4287,19 @@ function renderConfig(){
     log('tipo_excluido', r.ok.nome);
     persist(); renderConfig(); renderFrota(); toast('Tipo excluído.');
   });
+  if($('#secEtiquetas') && $('#secEtiquetas').classList.contains('aberto')) renderEtiquetas();
 }
+
+/* Os QR Codes viraram uma seção recolhível das configurações: abrir aqui
+   expande a seção e gera a grade na hora (é o caminho do "cadastrar em lote"). */
+function abrirSecaoEtiquetas(){
+  const s = $('#secEtiquetas'); if(s) s.classList.add('aberto');
+  irPara('config');
+}
+$('#tglEtiquetas').onclick = ()=>{
+  const s = $('#secEtiquetas'); s.classList.toggle('aberto');
+  if(s.classList.contains('aberto')) renderEtiquetas();
+};
 $('#btnSalvarEmpresa').onclick = ()=>{
   DB.empresa = { nome:$('#cfgNome').value.trim(), cnpj:$('#cfgCnpj').value.trim(),
                  endereco:$('#cfgEnd').value.trim(), telefone:$('#cfgTel').value.trim() };

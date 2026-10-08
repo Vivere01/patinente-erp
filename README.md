@@ -190,9 +190,11 @@ público da vistoria** com QR Code para passar adiante.
   alguém estiver fotografando ou digitando. Ela usa a logo em caminho **absoluto**
   (`/assets/…`), porque o link abre em `/vistoria/{token}`.
 
-### QR Codes (etiquetas da frota)
+### QR Codes (etiquetas da frota, dentro de Configurações)
 
-A aba **QR Codes** gera a etiqueta de cada patinete. O QR leva **só o código**
+A seção **QR Codes** fica no topo de **Configurações**, **recolhida por padrão** (a
+navegação não tem mais essa aba): um clique expande e a grade é gerada na hora. Ela gera
+a etiqueta de cada patinete. O QR leva **só o código**
 (`PAT-001`) — é exatamente o que o celular da vistoria lê e o que o servidor confere.
 
 - **Quatro saídas da mesma folha A4** (3 × 6 etiquetas de 66 × 46 mm): **Baixar PDF**
@@ -252,7 +254,7 @@ O código continua público no repositório.
 ## Testes
 
 ```bash
-npm test        # verificações locais (partes A a N)
+npm test        # verificações locais (partes A a O)
 npm run verificar   # 57 verificações contra o site publicado
 ```
 
@@ -299,10 +301,11 @@ npm run verificar   # 57 verificações contra o site publicado
   lacre em nenhum ponto**, exige foto conforme a configuração e
   grava com lock otimista; e a página `vistoria.html` lê o token do link, abre o visor
   da câmera (ZXing) para escanear a etiqueta e fala só com a API.
-- **L. QR Codes** — a aba existe, é redesenhada ao entrar, o PDF sai pelo jsPDF em A4
+- **L. QR Codes** — a seção existe dentro de Configurações (recolhida por padrão, expande
+  com um clique e redesenha ao abrir), o PDF sai pelo jsPDF em A4
   3 × 6, a matriz do QR é lida do gerador (linha nítida no SVG), a folha de impressão
   usa o `#printarea`, cada linha da Frota baixa a etiqueta em PNG, o lote oferece as
-  etiquetas da frota nova e sem conexão a tela avisa em vez de quebrar.
+  etiquetas da frota nova levando até a seção, e sem conexão a tela avisa em vez de quebrar.
 - **M. Forma de pagamento** — o passo 3 escolhe entre **uma forma para toda a locação** e
   **uma forma por veículo** (tabela com select por patinete/moto, soma por forma na hora e
   "aplicar a forma padrão a todas"); `itensDaLocacao()` devolve a forma de cada veículo,
@@ -316,6 +319,10 @@ npm run verificar   # 57 verificações contra o site publicado
   filtro da frota, e o wizard continua mostrando só as durações comuns quando os modelos
   têm tabelas diferentes. **Configurações → Tabela de preços** apaga tipo sem uso (recusa
   se tem veículo ou histórico), e criar/excluir fica na auditoria.
+- **O. Clientes** — a lista traz **Editar** e **Excluir**: a exclusão recusa cliente com
+  devolução em aberto, com histórico avisa que nome e CPF já gravados em cada locação
+  seguem lá (some só a ficha), confirmado apaga o cadastro e grava `cliente_excluido` na
+  auditoria — e as locações do histórico ficam intactas, no index e no app.
 - **`verificar-ar`** — roda a operação inteira no site publicado: login, estado com
   lock, histórico, foto com link assinado, contrato assinado no celular, limpeza, a
   identidade no ar (página, login por e-mail, seção Relatórios no painel e o logo
@@ -323,7 +330,8 @@ npm run verificar   # 57 verificações contra o site publicado
   imagem), o usuário do sistema (criar conta, entrar pelo e-mail, recusar senha
   errada e conta bloqueada, e devolver o documento intacto), a vistoria pública
   (token, fila sem CPF, recusa de token/ação/locação inválidos, a página do celular com
-  logo em caminho absoluto, a aba QR Codes publicada e o cadastro de tipo de veículo
+  logo em caminho absoluto, a seção QR Codes publicada em Configurações e o cadastro de
+  tipo de veículo
   novo) e o ciclo inteiro — liberar e
   chegar pelo link numa locação de teste, **com o código escaneado conferido no
   servidor** (400 sem código, 409 de outro patinete) e a locação saindo do documento ao

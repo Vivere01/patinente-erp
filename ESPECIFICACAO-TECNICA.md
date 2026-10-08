@@ -306,7 +306,7 @@ diferença pelo tempo.
   a etiqueta identificou o veículo físico (seção 4.9), então não há número a digitar nem
   divergência a registrar.
 - **Etiqueta do patinete (QR ou código de barras).** A etiqueta colada no veículo leva
-  **só o código** (`PAT-001`), gerado na aba **QR Codes** (seção 4.12). No cartão da
+  **só o código** (`PAT-001`), gerado na seção **QR Codes** de *Configurações* (seção 4.12). No cartão da
   vistoria há um botão **Escanear código do patinete** (e no topo da página, **Escanear
   patinete**): abre um visor escuro com mira e a câmera lê pela **ZXing**
   (`BrowserMultiFormatReader.decodeFromVideoDevice`, CDN carregada sob demanda e
@@ -347,8 +347,9 @@ O módulo de **controle de lacres foi removido** — estoque, aplicação, rompi
 conferência cega e as divergências `lacre_*` não existem mais em nenhuma tela, no
 documento nem na API. O que responde ao mesmo risco hoje é a etiqueta:
 
-- Todo veículo parado na loja tem etiqueta com QR (`PAT-001`), gerada na aba
-  **QR Codes** (seção 4.12). O QR leva **só o código** — é o que o celular lê.
+- Todo veículo parado na loja tem etiqueta com QR (`PAT-001`), gerada na seção
+  **QR Codes** de *Configurações* (seção 4.12). O QR leva **só o código** — é o que o
+  celular lê.
 - **Na saída e na chegada**, a vistoria exige a leitura da etiqueta: sem etiqueta
   lida → `400 veiculo_nao_escaneado`; etiqueta de outro patinete →
   `409 veiculo_incorreto`, com o código lido e o esperado na mensagem. Nenhum número é
@@ -409,7 +410,8 @@ se não for administrador.
 
 ### 4.12 Etiquetas QR da frota
 
-A aba **QR Codes** (entre *Frota* e *Vistoria*) gera a etiqueta colada em cada
+A seção **QR Codes**, dentro de **Configurações** (recolhida por padrão, com um clique
+para expandir), gera a etiqueta colada em cada
 patinete. O QR leva **só o código do veículo** (`PAT-001`) — é o que o celular da
 vistoria lê e o que o servidor confere (seção 4.8). Prefixar o conteúdo mudaria o que o
 servidor espera, então o texto é exatamente `v.codigo`.
@@ -434,8 +436,8 @@ servidor espera, então o texto é exatamente `v.codigo`.
 - **Na Frota**, a linha de cada veículo tem o botão **Etiqueta** (`baixarEtiqueta(id)`),
   que baixa o PNG daquele patinete (66 × 46 mm a 300 dpi).
 - **Cadastrar em lote** termina oferecendo **“Gerar etiquetas”**: grava os ids criados
-  em `etqFoco`, abre a aba e filtra a grade só para aquela frota nova (o botão *Ver toda
-  a frota* limpa o filtro).
+  em `etqFoco`, abre a seção de *Configurações* (`abrirSecaoEtiquetas`) e filtra a grade
+  só para aquela frota nova (o botão *Ver toda a frota* limpa o filtro).
 - A grade mostra até 60 pré-visualizações (SVG) e informa a quantidade de etiquetas e
   de folhas A4; busca por código e filtro por tipo.
 
@@ -476,14 +478,14 @@ Duas vias: **celular do cliente** (fluxo principal) e **balcão** (fallback). O 
 | **Painel** | KPIs; faixa de alerta do atraso mais crítico; veículos na rua agrupados por contrato, com cronômetro, barra de progresso e estado (em uso / terminando nos últimos 10 min / atrasado); alerta sonoro e notificação do navegador ao estourar; **locações abertas** agrupadas por contrato com botão de entrada; **Caixa do dia** (seção recolhível) e **Relatórios do mês** (seção recolhível, só administrador). |
 | **Caixa do dia** | Seção dentro do Painel, recolhível: seletor de data; abertura com fundo de troco; entradas por forma de pagamento; saídas com categoria; fechamento com conferência de dinheiro; impressão do fechamento com linhas de assinatura. |
 | **Frota** | Lista com filtro (busca, **tipo** e status), status, nº de locações e faturamento por veículo; cadastro individual e em lote — os dois com **`+ Novo tipo (marca e modelo)`**, que cria o tipo com preço próprio na hora (seção 4.1); botão de conferência da frota; **botão *Etiqueta* por linha** (PNG da etiqueta QR daquele patinete). Veículo com locação pendente aparece travado, com pill *aguardando vistoria* e atalho para a fila. |
-| **QR Codes** | Etiquetas da frota: grade de pré-visualização com busca e filtro por tipo, contagem de etiquetas e de folhas A4, e quatro saídas da mesma folha (3 × 6): **Baixar PDF**, **PNG**, **SVG** e **Imprimir folha**. Clicar em *Ver toda a frota* limpa o filtro do atalho do lote. |
+| **QR Codes** | Seção recolhível no topo de **Configurações** (a navegação não tem mais essa aba): etiquetas da frota, grade de pré-visualização com busca e filtro por tipo, contagem de etiquetas e de folhas A4, e quatro saídas da mesma folha (3 × 6): **Baixar PDF**, **PNG**, **SVG** e **Imprimir folha**. Clicar em *Ver toda a frota* limpa o filtro do atalho do lote. |
 | **Vistoria** | Fila do celular/balcão em quatro blocos: pago aguardando liberação, na rua, chegada registrada (fechar no balcão) e vistoriadas hoje; link público com QR, copiar, WhatsApp e gerar novo link. No celular, cada cartão tem **Escanear código do patinete** e há **Escanear patinete** no topo (seção 4.8). |
-| **Clientes** | Busca por nome, CPF ou telefone; histórico e total gasto. |
+| **Clientes** | Busca por nome, CPF ou telefone; histórico e total gasto; *Editar* e *Excluir* o cadastro — a exclusão é recusada com devolução em aberto, avisa que o histórico mantém nome e CPF, e vai para a auditoria. |
 | **Histórico** | Locações com filtro por período; base, excedente, avaria e total; acesso às fotos de saída e entrada, ao contrato e ao estorno. |
 | **Financeiro** | Demonstrativo de fluxo do mês (entradas por origem, saídas por categoria, resultado, margem); custos fixos recorrentes; movimento dia a dia com destaque do melhor dia; faturamento por veículo, tipo, pacote e forma de pagamento; exportação CSV. Exclusiva do administrador. |
 | **Relatórios** | Seção recolhível do Painel, com fechamento do mês numa tela: viagens, faturamento, ticket médio, dias com movimento, ranking de clientes, melhor dia, horário de pico com barra e resumo em uma coluna. Seletor de mês. Exclusiva do administrador (seção 4.11). |
 | **Usuários** | Lista da loja (nome, e-mail, papel, último acesso); cadastro e edição de conta — e-mail, senha (mínimo 6, única), nível Atendente ou Administrador e situação ativo/bloqueado — mais a explicação de cada nível. Aba exclusiva do administrador. |
-| **Configurações** | Empresa; tolerância; tabela de preços; tabela de peças; template do contrato; conferência da frota e histórico; divergências; **link da vistoria (QR, copiar, WhatsApp, gerar novo)**; trilha de auditoria; backup e restauração; sair da conta. |
+| **Configurações** | Seção **QR Codes** recolhida no topo; empresa; tolerância; tabela de preços; tabela de peças; template do contrato; conferência da frota e histórico; divergências; **link da vistoria (QR, copiar, WhatsApp, gerar novo)**; trilha de auditoria; backup e restauração; sair da conta. |
 
 Wizard de locação em **3 passos**: veículos (seleção múltipla) → cliente → pagamento,
 contrato e assinatura. No passo 3 a forma de pagamento pode ser **uma só para toda a
@@ -566,7 +568,7 @@ Ao receber UPDATE de outro dispositivo, o `DB` é trocado e as telas repintadas.
 - **Comprovante para o cliente** com número do contrato, impresso ou por WhatsApp — especificado, não construído. Transforma o cliente em conferência da locação registrada.
 - **Foto do documento e selfie do cliente** — especificado, não construído. Componente de captura já existe.
 - **Rastreador com bloqueio remoto nas 10 motos** — decisão de compra do cliente, fora do software. Faixa de mercado levantada: R$ 40 a R$ 60/mês por veículo.
-- **Testes automatizados versionados.** `npm test` cobre as regras de dinheiro, sessão, senha, papéis, relatórios, identidade, vistoria (partes A a N) e o banco (transação descartada); `npm run verificar` repete a operação no site publicado (inclui a vistoria pública). Os cenários abaixo estão no script — vale mantê-los em dia ao mudar regra.
+- **Testes automatizados versionados.** `npm test` cobre as regras de dinheiro, sessão, senha, papéis, relatórios, identidade, vistoria (partes A a O) e o banco (transação descartada); `npm run verificar` repete a operação no site publicado (inclui a vistoria pública). Os cenários abaixo estão no script — vale mantê-los em dia ao mudar regra.
 
 ---
 
@@ -623,7 +625,7 @@ Reproduza estes casos — cobrem as regras que mais custam dinheiro se quebrarem
 34. Leitura com espaço, caixa diferente ou link (`https://…/PAT-001`) conta como o mesmo código; o cartão mostra a identificação e o cartão pisca.
 
 **Etiquetas QR da frota**
-35. A aba QR Codes lista a frota (busca e filtro por tipo), informa nº de etiquetas e folhas A4 e mostra as pré-visualizações em SVG.
+35. A seção QR Codes (dentro de Configurações) lista a frota (busca e filtro por tipo), informa nº de etiquetas e folhas A4 e mostra as pré-visualizações em SVG; recolhida por padrão, expande com um clique.
 36. Baixar PDF gera A4 com 3 × 6 etiquetas e QR em retângulos vetoriais; Imprimir folha usa o `#printarea` com quebra de página; PNG sai até 2 folhas por arquivo; SVG sai folha inteira (todas as páginas).
 37. Cada linha da Frota baixa a etiqueta daquele patinete em PNG (66 × 46 mm); "Cadastrar em lote" abre a oferta de etiquetas e filtra a grade pela frota nova, com *Ver toda a frota* para voltar.
 38. Sem internet, a tela avisa “QR indisponível” em vez de quebrar, e o PDF cai para a folha de impressão.
@@ -635,6 +637,9 @@ Reproduza estes casos — cobrem as regras que mais custam dinheiro se quebrarem
 **Tipos de veículo (marca/modelo)**
 41. No cadastro de veículo (e em *Editar* e *Cadastrar em lote*), trocar o Tipo por `+ Novo tipo (marca e modelo)` abre o bloco com nome, tipo de origem, preço de cada duração e excedente; salvar cria o tipo, grava o veículo com ele e o tipo já aparece no filtro da Frota, no lote, nas peças e no wizard — com preço próprio (ex.: 15 min a R$ 25,00 e excedente a R$ 1,80).
 42. A tabela de peças vem copiada do tipo de origem (dá para desmarcar); Configurações → Tabela de preços edita o preço do tipo novo e o apaga **só** quando está sem veículo e sem histórico, com confirmação — recusa com aviso quando há veículo ou locação. Criar e excluir ficam na auditoria. Com durações diferentes entre modelos, o passo 3 só oferece as comuns.
+
+**Clientes**
+43. A linha do cliente tem *Editar* e *Excluir*. Excluir com devolução em aberto é recusado com o motivo na hora; com histórico, a confirmação avisa que nome e CPF já gravados em cada locação seguem lá e some só a ficha; confirmado, as locações ficam intactas e a ação vai para a auditoria (`cliente_excluido`). Sem locação nenhuma, a confirmação é só o nome.
 
 **Concorrência**
 18. Gravar com versão defasada retorna `ok=false`, não sobrescreve, e o cliente assume o estado do servidor.

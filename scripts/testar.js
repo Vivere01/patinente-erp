@@ -24,7 +24,9 @@
    M. Forma de pagamento — uma para a locação toda ou uma por veículo,
       somando cada forma separadamente no fechamento do caixa.
    N. Tipos de veículo — a loja cadastra marca/modelo novo a partir de um
-      existente, troca o preço por modelo e só apaga tipo sem uso.
+       existente, troca o preço por modelo e só apaga tipo sem uso.
+   O. Clientes — o operador edita e também exclui o cadastro, sem tocar nas
+       locações do histórico e sem excluir com devolução em aberto.
 
    Uso:  npm test
 */
@@ -787,17 +789,24 @@ function testarVistoria(){
 }
 
 /* ------------------------------------------------------------------ L */
-/* A aba QR Codes gera a etiqueta de cada patinete: o QR carrega só o
-   código (PAT-001) e é o que o celular lê na vistoria. */
+/* A seção QR Codes (dentro de Configurações) gera a etiqueta de cada
+   patinete: o QR carrega só o código (PAT-001) e é o que o celular lê. */
 function testarEtiquetas(){
   console.log('\nL. QR Codes — a etiqueta de cada patinete');
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
   const corpo = f => extrairFuncao(html, f);
 
-  ok(/<button data-tab="etiquetas">QR Codes<\/button>/.test(html), 'a navegação tem a aba QR Codes');
-  ok(/<section class="page" id="page-etiquetas">/.test(html), 'a aba tem a página própria');
-  ok(html.indexOf("etiquetas:'renderEtiquetas'") >= 0 && /if\(tab==='etiquetas'\) renderEtiquetas\(\)/.test(html),
-     'a aba é redesenhada ao entrar e quando os dados mudam');
+  ok(!/data-tab="etiquetas"/.test(html) && !/id="page-etiquetas"/.test(html),
+     'a navegação não tem mais a aba QR Codes');
+  ok(/<div class="secaoPainel" id="secEtiquetas">/.test(html) &&
+     /id="page-config"[\s\S]*id="secEtiquetas"/.test(html),
+     'os QR Codes são uma seção recolhível dentro de Configurações');
+  ok(corpo('renderConfig').indexOf('renderEtiquetas()') >= 0 &&
+     html.indexOf("$('#tglEtiquetas').onclick") >= 0,
+     'a seção é redesenhada ao abrir, e o botão expande e desenha a grade');
+  ok(corpo('abrirSecaoEtiquetas').indexOf("irPara('config')") >= 0 &&
+     corpo('oferecerEtiquetas').indexOf('abrirSecaoEtiquetas()') >= 0,
+     'cadastrar em lote já oferece as etiquetas e leva até a seção');
   ok(/jspdf\/2\.5\.1\/jspdf\.umd\.min\.js/.test(html), 'o PDF da folha sai pelo jsPDF, ao lado do gerador de QR');
 
   const qf = corpo('qrFonte');
@@ -814,7 +823,7 @@ function testarEtiquetas(){
   ok(html.indexOf('onclick="baixarEtiqueta(') >= 0 && corpo('baixarEtiqueta').indexOf('.png') >= 0,
      'cada linha da Frota baixa a etiqueta daquele patinete em PNG');
   ok(html.indexOf('oferecerEtiquetas(criados)') >= 0,
-     'cadastrar em lote já oferece as etiquetas da frota nova');
+     'cadastrar em lote continua oferecendo as etiquetas da frota nova');
   ok(corpo('etiquetasLista').indexOf('etqFoco') >= 0 && corpo('renderEtiquetas').indexOf('etiquetasLista') >= 0,
      'a grade mostra a frota filtrada (ou só a que acabou de sair do lote)');
   ok(html.indexOf('QR indisponível') >= 0 && html.indexOf('new QRCode(') >= 0,
@@ -1060,6 +1069,68 @@ function testarTiposDeVeiculo(){
      'base sem tipo nenhum recebe os dois de fábrica no arranque');
 }
 
+/* ------------------------------------------------------------------ O */
+/* O operador cadastra, edita e agora também exclui o cliente. Excluir é
+   apagar só a ficha: cada locação já guarda nome e CPF, então histórico,
+   caixa e relatórios ficam intactos. Com devolução em aberto não dá. */
+function testarClientes(){
+  console.log('\nO. Clientes — editar e excluir cadastro');
+  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  const app = fs.readFileSync(path.join(__dirname, '..', 'app.html'), 'utf8');
+  const corpo = f => extrairFuncao(html, f);
+
+  ok(/onclick="editarCliente\(/.test(html) && /onclick="excluirCliente\(/.test(html),
+     'a linha do cliente traz Editar e Excluir');
+  ok(/onclick="excluirCliente\(/.test(app),
+     'o app.html (demonstração offline) acompanha o mesmo botão');
+  ok(html.indexOf('W.clienteId && getCliente(W.clienteId)') >= 0,
+     'a etapa do cliente só grava no cadastro se ele ainda existir (repasse entre aparelhos)');
+
+  const rodar = (clientes, locacoes, confirmar) => {
+    const r = { toast:null, msg:null, confirmou:0, log:null, persistiu:0 };
+    const ctx = vm.createContext({
+      console,
+      DB: { clientes: clientes.map(c=>Object.assign({},c)), locacoes: locacoes.map(l=>Object.assign({},l)) },
+      confirm: m => { r.confirmou++; r.msg = m; return confirmar; },
+      toast: m => { r.toast = m; },
+      log: (a,d) => { r.log = a + ' — ' + d; },
+      persist: () => { r.persistiu++; },
+      renderClientes: () => {}
+    });
+    ctx.getCliente = id => ctx.DB.clientes.find(c=>c.id===id);
+    vm.runInContext(corpo('excluirCliente') + '; this.chamar = excluirCliente;', ctx);
+    r.chamar = id => ctx.chamar(id);
+    r.ctx = ctx;
+    return r;
+  };
+
+  const r1 = rodar([{id:1, nome:'Ana'}, {id:2, nome:'Beto'}],
+                   [{id:10, clienteId:1, status:'ativa'}], true);
+  r1.chamar(1);
+  ok(r1.confirmou === 0 && /em aberto/.test(r1.toast||'') && r1.ctx.DB.clientes.length === 2,
+     'com locação em aberto a exclusão é recusada e diz o motivo',
+     r1.toast || 'sem aviso');
+
+  const r2 = rodar([{id:1, nome:'Ana'}], [{id:11, clienteId:1, status:'devolvida'}], false);
+  r2.chamar(1);
+  ok(r2.confirmou === 1 && /histórico/.test(r2.msg||'') && r2.ctx.DB.clientes.length === 1,
+     'sem histórico o aviso é curto; com histórico avisa que o nome segue nas locações',
+     r2.msg || 'sem confirmação');
+
+  const r3 = rodar([{id:1, nome:'Ana'}, {id:2, nome:'Beto'}],
+                   [{id:12, clienteId:1, status:'devolvida'}], true);
+  r3.chamar(1);
+  ok(r3.ctx.DB.clientes.length === 1 && r3.ctx.DB.clientes[0].nome === 'Beto' &&
+     r3.ctx.DB.locacoes.length === 1 && r3.persistiu === 1 && /^cliente_excluido/.test(r3.log||''),
+     'confirmado: a ficha sai, a locação continua no histórico e vai para a auditoria',
+     r3.log || 'sem auditoria');
+
+  const r4 = rodar([{id:9, nome:'Zeca'}], [], true);
+  r4.chamar(9);
+  ok(r4.confirmou === 1 && r4.ctx.DB.clientes.length === 0 && /Zeca/.test(r4.msg||''),
+     'sem locação nenhuma, a confirmação é só o nome do cadastro');
+}
+
 (async () => {
   try{ testarRegrasDeDinheiro(); }
   catch(e){ reprovados++; console.log('  ✗ não consegui ler as regras do index.html: ' + e.message); }
@@ -1086,7 +1157,9 @@ function testarTiposDeVeiculo(){
   try{ testarPagamentoPorVeiculo(); }
   catch(e){ reprovados++; console.log('  ✗ pagamento por veículo: ' + e.message); }
   try{ testarTiposDeVeiculo(); }
-  catch(e){ reprovados++; console.log('  ✗ tipos de veículo: ' + e.message); }
+  catch(e){ reprovados++; console.log('  ? tipos de veículo: ' + e.message); }
+  try{ testarClientes(); }
+  catch(e){ reprovados++; console.log('  ? clientes: ' + e.message); }
   await testarBanco();
 
   console.log('\n  ' + aprovados + ' aprovados, ' + reprovados + ' reprovados\n');
