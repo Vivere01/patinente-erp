@@ -2202,7 +2202,7 @@ function manutencaoAbertaDe(veiculoId){
 function miniFotosHTML(fotos){
   if(!fotos || !fotos.length) return '<span class="muted">—</span>';
   return '<span style="display:inline-flex;gap:6px;flex-wrap:wrap">'+fotos.map(f=>
-    '<img src="" data-fotoid="'+esc(f.id||'')+'" data-fotocam="'+esc(f.caminho||'')+'" '+
+    '<img data-fotoid="'+esc(f.id||'')+'" data-fotocam="'+esc(f.caminho||'')+'" '+
     'style="width:54px;height:54px;object-fit:cover;border-radius:8px;border:1px solid var(--line);background:#f2f2f2;cursor:pointer" '+
     'alt="foto do veículo" title="abrir a foto">').join('')+'</span>';
 }

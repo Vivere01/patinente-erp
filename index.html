@@ -3313,7 +3313,7 @@ function manutencaoAbertaDe(veiculoId){
 function miniFotosHTML(fotos){
   if(!fotos || !fotos.length) return '<span class="muted">—</span>';
   return '<span style="display:inline-flex;gap:6px;flex-wrap:wrap">'+fotos.map(f=>
-    '<img src="" data-fotoid="'+esc(f.id||'')+'" data-fotocam="'+esc(f.caminho||'')+'" '+
+    '<img data-fotoid="'+esc(f.id||'')+'" data-fotocam="'+esc(f.caminho||'')+'" '+
     'style="width:54px;height:54px;object-fit:cover;border-radius:8px;border:1px solid var(--line);background:#f2f2f2;cursor:pointer" '+
     'alt="foto do veículo" title="abrir a foto">').join('')+'</span>';
 }
@@ -3585,13 +3585,33 @@ function renderVistoria(){
                             .sort((a,b)=>b.vistoriadaEm-a.vistoriadaEm);
   $('#tbVistHoje').innerHTML =
     '<thead><tr><th>Veículo</th><th>Cliente</th><th>Liberado</th><th>Por</th><th>Fotos</th></tr></thead><tbody>'+
-    (feitos.length ? feitos.map(l=>'<tr>'+
+    (feitos.length ? feitos.map(l=>{
+      const fs = (l.fotosSaida||[]).filter(Boolean);
+      /* As fotos abrem aqui mesmo: o atendente não tem a aba Histórico, e a
+         vistoria de saída tem de ser conferível na hora, pelo balcão. */
+      const cel = fs.length
+        ? '<button class="btn sm sec" onclick="verFotos('+l.id+',\'saida\')" '+
+            'title="ver as '+fs.length+' foto(s) da vistoria de saída" '+
+            'style="display:inline-flex;gap:7px;align-items:center">'+
+            fs.slice(0,3).map(f=>'<img data-fotoid="'+esc(f.id||'')+'" data-fotocam="'+esc(f.caminho||'')+'" '+
+              'style="width:34px;height:34px;object-fit:cover;border-radius:6px;background:#f2f2f2" '+
+              'alt="foto da vistoria de saída">').join('')+
+            '<b>'+fs.length+'</b></button>'
+        : '<span class="muted">—</span>';
+      return '<tr>'+
         '<td><b>'+esc(l.veiculoCodigo)+'</b></td>'+
         '<td>'+esc(l.clienteNome)+'</td>'+
         '<td class="mono">'+hhmm(l.vistoriadaEm)+'</td>'+
         '<td>'+esc(l.vistoriadoPor||'link público')+'</td>'+
-        '<td class="mono">'+((l.fotosSaida||[]).length)+'</td>'+
-      '</tr>').join('') : '<tr><td colspan="5" class="empty">Nenhuma vistoria registrada hoje.</td></tr>')+'</tbody>';
+        '<td>'+cel+'</td>'+
+      '</tr>';
+    }).join('') : '<tr><td colspan="5" class="empty">Nenhuma vistoria registrada hoje.</td></tr>')+'</tbody>';
+  const boxHoje = $('#tbVistHoje');
+  boxHoje && boxHoje.querySelectorAll('img[data-fotoid]').forEach(img=>{
+    if(img.src) return;
+    Fotos.obter(img.dataset.fotoid, img.dataset.fotocam)
+      .then(url=>{ if(url) img.src = url; }).catch(()=>{});
+  });
 }
 $('#btnCopiarLinkVist') && ($('#btnCopiarLinkVist').onclick = async ()=>{
   try{ await navigator.clipboard.writeText(linkVistoria()); toast('Link copiado.'); }

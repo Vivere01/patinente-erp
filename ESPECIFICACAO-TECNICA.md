@@ -353,6 +353,10 @@ diferença pelo tempo.
   link público num `linkbox`; **sem QR e sem botão de WhatsApp** — os dois continuam
   em **Configurações → Link da vistoria**, junto com *Gerar novo link*
   (`gerarNovoLinkVistoria`), que é quem redesenha o QR (`#cfgVistQr`).
+- **Vistoriadas hoje abre as fotos da saída.** A coluna *Fotos* é um botão com as
+  miniaturas (até 3) e a contagem; o clique chama `verFotos(id, 'saida')` e abre as
+  imagens daquela saída com legenda e hora. Como o atendente **não tem a aba
+  Histórico**, é por ali que ele confere a vistoria de saída.
 - **A chegada registrada só existe com o caixa aberto.** O bloco `#vistCardFecha` é
   desenhado só quando `caixaAberto()` é verdadeiro; **ao fechar o caixa**, toda locação
   em `devolvida` do dia vira `finalizada` (com `atendenteEntrada`, grupo fechado e log
@@ -551,7 +555,7 @@ Duas vias: **celular do cliente** (fluxo principal) e **balcão** (fallback). O 
 | **Frota** | Lista com filtro (busca, **tipo** e status), status, nº de locações e faturamento por veículo; cadastro individual e em lote — os dois com **`+ Novo tipo (marca e modelo)`**, que cria o tipo com preço próprio na hora (seção 4.1); botão de conferência da frota; **botão *Etiqueta* por linha** (PNG da etiqueta QR daquele patinete). Veículo com locação pendente aparece travado, com pill *aguardando vistoria* e atalho para a fila. |
 | **QR Codes** | Seção recolhível no topo de **Configurações** (a navegação não tem mais essa aba): etiquetas da frota, grade de pré-visualização com busca e filtro por tipo, contagem de etiquetas e de folhas A4, e quatro saídas da mesma folha (3 × 6): **Baixar PDF**, **PNG**, **SVG** e **Imprimir folha**. Clicar em *Ver toda a frota* limpa o filtro do atalho do lote. |
 | **Manutenção** | Duas tabelas: **Em manutenção** (peças marcadas na tabela do tipo, mais a linha livre *Outra*, fotos, observação, e os botões **Peças e foto** e **Concluir**) e **Concluídas** (quem abriu, quem concluiu e as duas datas). Abre sozinha ao escolher *Manutenção* no cadastro do veículo (seção 4.13). Exclusiva do administrador. |
-| **Vistoria** | Cabeçalho com **Copiar link** e o link público (**sem QR e sem WhatsApp** — os dois ficam em Configurações); quatro blocos: pago aguardando liberação (com **Excluir**, que estorna a pendência e devolve o veículo), na rua (com fechamento no balcão), chegada registrada (**só com o caixa do dia aberto**) e vistoriadas hoje. No celular, cada cartão tem **Escanear código do patinete** e há **Escanear patinete** no topo; a página é um quadro de três colunas (seção 4.8). |
+| **Vistoria** | Cabeçalho com **Copiar link** e o link público (**sem QR e sem WhatsApp** — os dois ficam em Configurações); quatro blocos: pago aguardando liberação (com **Excluir**, que estorna a pendência e devolve o veículo), na rua (com fechamento no balcão), chegada registrada (**só com o caixa do dia aberto**) e vistoriadas hoje (**com as fotos da saída clicáveis**). No celular, cada cartão tem **Escanear código do patinete** e há **Escanear patinete** no topo; a página é um quadro de três colunas (seção 4.8). |
 | **Clientes** | Busca por nome, CPF ou telefone; histórico e total gasto; *Editar* e *Excluir* o cadastro — a exclusão é recusada com devolução em aberto, avisa que o histórico mantém nome e CPF, e vai para a auditoria. |
 | **Histórico** | Locações com filtro por período; base, excedente, avaria e total; acesso às fotos de saída e entrada, ao contrato e ao estorno. |
 | **Financeiro** | Demonstrativo de fluxo do mês (entradas por origem, saídas por categoria, resultado, margem); custos fixos recorrentes; movimento dia a dia com destaque do melhor dia; faturamento por veículo, tipo, pacote e forma de pagamento; exportação CSV. Exclusiva do administrador. |

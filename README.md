@@ -198,6 +198,9 @@ público da vistoria** com QR Code para passar adiante.
   dia, o registro segue no histórico marcado como estornado com motivo, autor e
   log `fila_excluida` — nada é apagado. Se era a única pendência do contrato, o
   grupo fecha junto.
+- **Vistoriadas hoje abre as fotos** — a coluna *Fotos* vira um botão com as
+  miniaturas da saída e o total: um clique abre as imagens na hora
+  (`verFotos(id, 'saida')`). É o caminho do atendente, que **não tem a aba Histórico**.
 - **A chegada registrada só existe com o caixa aberto** — o bloco some quando o
   caixa do dia está fechado e, **ao fechar o caixa, as locações já devolvidas do
   dia viram histórico** (log `chegadas_encerradas`), sem lançar cobrança nova: o

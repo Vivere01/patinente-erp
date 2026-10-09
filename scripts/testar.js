@@ -1197,6 +1197,11 @@ function testarOperacaoEnxuta(){
   ok(fc.indexOf('calcExcedente') < 0 && fc.indexOf('sem lançar cobrança nova') >= 0,
      'o fechamento não lança cobrança nova: o que era devido saiu antes da saída');
 
+  ok(rv.indexOf("verFotos(") >= 0 && rv.indexOf("fotosSaida") >= 0,
+     'Vistoriadas hoje abre as fotos da saída (o atendente não tem a aba Histórico)');
+  ok(!/<img src="" data-fotoid/.test(html) && !/<img src="" data-fotoid/.test(app),
+     'as miniaturas de foto não nascem com src vazio (senão o carregador acha que já carregou)');
+
   /* --- o celular virou um quadro de três colunas --- */
   ok(/class="kanban"/.test(pagina) && /id="colVistoriar"/.test(pagina) &&
      /id="colRua"/.test(pagina) && /id="colEntregues"/.test(pagina),
