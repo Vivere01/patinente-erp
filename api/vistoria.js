@@ -108,8 +108,9 @@ function payload(db, agora){
     fotosSaida: (l.fotosSaida || []).length
   }));
 
-  const chegadas = locs.filter(l => l.status === 'devolvida' && diaDe(l.fimReal) === diaHoje)
-    .map(l => ({
+  const chegadas = (caixaAberto(db, diaHoje)
+    ? locs.filter(l => l.status === 'devolvida' && diaDe(l.fimReal) === diaHoje)
+    : []).map(l => ({
       locacaoId: l.id,     codigo: codigoDoVeiculo(db, l), clienteNome: l.clienteNome,
       fimReal: l.fimReal,
       fotosEntrada: (l.fotosEntrada || []).length
@@ -127,8 +128,19 @@ function payload(db, agora){
     empresa: { nome: (db.empresa && db.empresa.nome) || 'Locadora' },
     exigirFoto: cfg.exigirFoto !== false,
     toleranciaMin: Number(cfg.toleranciaMin) || 0,
+    /* a coluna "Entregues" do Kanban existe só enquanto o caixa do dia
+       está aberto: fechou, as entregas do dia vão para o histórico */
+    caixaAberto: caixaAberto(db, diaHoje),
     pendentes, naRua, chegadas, liberadas
   };
+}
+
+/* O mesmo critério do sistema: caixa aberto é o registro de hoje com
+   status 'aberto'. Sem caixa de hoje, o dia conta como fechado. */
+function caixaAberto(db, diaHoje){
+  const caixas = Array.isArray(db.caixas) ? db.caixas : [];
+  const c = caixas.find(x => x.dia === diaHoje);
+  return !!c && c.status === 'aberto';
 }
 
 function diaDe(ts){

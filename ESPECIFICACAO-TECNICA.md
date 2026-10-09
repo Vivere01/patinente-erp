@@ -145,6 +145,15 @@ Navegador (single-file HTML, sem build, sem framework)
     obs
   }],
 
+  manutencoes: [{
+    id, veiculoId, veiculoCodigo, tipoId,
+    criadoEm, usuario, status: 'aberta'|'fechada',
+    pecas:  [{ pecaId: id|null, nome, valor }],        // pecaId null = linha livre
+    obs,
+    fotos:  [{ id, caminho, legenda, ts }],
+    concluidaEm?, concluidaPor?, obsConclusao?
+  }],
+
   seq: { /* contadores de id por entidade */ }
 }
 ```
@@ -222,10 +231,14 @@ promovido a `email` da conta.
 | Ação | Atendente | Administrador |
 |---|---|---|
 | Operar balcão e caixa | sim | sim |
+| Abrir o registro de manutenção (peças e foto do veículo) | sim | sim |
+| Excluir uma pendência da fila da vistoria (estorno em modo fila) | sim | sim |
 | Ver o financeiro do mês | — | sim |
 | Ver a seção Relatórios do mês no painel | — | sim |
+| Ver a aba Manutenção, a aba Histórico e a aba Configurações | — | sim |
 | Estornar locação ou lançamento | — | sim |
 | Alterar preços e tabela de peças | — | sim |
+| Concluir uma manutenção (devolver o veículo para a loja) | — | sim |
 | Cadastrar usuários | — | sim |
 | Tratar divergências | — | sim |
 | Zerar o sistema | — | sim |
@@ -253,12 +266,18 @@ painel: `arrancar` valida o token, `resolverSessao()` relê o papel pelo e-mail 
 documento e só cai na tela de login se não houver sessão ou ela tiver expirado. Só se
 pede a senha de novo ao expirar, ao sair ou em aparelho sem sessão.
 
-**Atendente.** Opera o balcão — locação, devolução, vistoria, clientes, histórico e
-caixa do dia — mas **não enxerga dinheiro nem cadastro**: as abas *Financeiro* e
-*Usuários* ficam ocultas (`aplicarPermissoes`), a seção *Relatórios do mês* dentro do
-painel nasce escondida (`renderPainel` só a revela para administrador), `irPara` manda
-de volta ao painel se ele chegar por atalho, `renderFinanceiro` e `renderRelatorios`
-têm trava própria e o indicador de faturamento do dia some do painel.
+**Atendente.** Opera o balcão — locação, devolução, vistoria, clientes e caixa do dia —
+e **só enxerga quatro abas: Painel, Frota, Vistoria e Clientes**. As abas *Manutenção,
+Histórico, Configurações, Financeiro e Usuários* estão na constante
+`ABAS_SOMENTE_ADMIN`: `aplicarPermissoes` as esconde e as desliga, `irPara` manda de
+volta ao painel se ele chegar por atalho, `renderHistorico` e `renderConfig` têm
+trava própria dentro da função de desenho, `renderFinanceiro` e `renderRelatorios`
+também, a seção *Relatórios do mês* nasce escondida no painel e o indicador de
+faturamento do dia some. O que ele **pode** fazer sozinho é abrir o registro de
+manutenção do veículo (peças e foto, seção 4.13) e excluir uma pendência da fila da
+vistoria (seção 4.8) — nas duas, o veículo nunca saiu da locadora.
+
+**Aba Manutenção (exclusiva do administrador).** Ver seção 4.13.
 
 **Aba Usuários (exclusiva do administrador).** Criação e edição de usuários saíram de
 *Configurações* para uma aba própria — é ali que se cadastra cada conta com **nome,
@@ -323,6 +342,31 @@ diferença pelo tempo.
   naquela hora (o relógio para) e o veículo volta para `loja`. **A cobrança de
   excedente e de avaria continua sendo fechada no balcão**, na tela de entrada, que já
   lê `fotosEntrada`, `obsVistoria` e a hora registrada no celular.
+- **Excluir da fila (estorno em modo fila).** O cartão *pago aguardando liberação* tem
+  o botão **Excluir** (`excluirDaFila` → `estornarLocacao(id, { fila: true })`). O modo
+  fila serve **só para locação pendente** e **não exige administrador** — quem paga
+  tira da fila e ninguém saiu da locadora. O valor sai do faturamento e das entradas
+  do dia, a locação vira `estornada` com `estorno.fila = true`, motivo, detalhe,
+  usuário e hora, e a auditoria grava `fila_excluida`; se era a última pendência (sem
+  na rua) do contrato, o grupo fecha junto. Nada é apagado.
+- **A aba Vistoria do balcão guarda só o link.** Cabeçalho com **Copiar link** e o
+  link público num `linkbox`; **sem QR e sem botão de WhatsApp** — os dois continuam
+  em **Configurações → Link da vistoria**, junto com *Gerar novo link*
+  (`gerarNovoLinkVistoria`), que é quem redesenha o QR (`#cfgVistQr`).
+- **A chegada registrada só existe com o caixa aberto.** O bloco `#vistCardFecha` é
+  desenhado só quando `caixaAberto()` é verdadeiro; **ao fechar o caixa**, toda locação
+  em `devolvida` do dia vira `finalizada` (com `atendenteEntrada`, grupo fechado e log
+  `chegadas_encerradas`) e o bloco some — **sem lançar cobrança nova**: o que era
+  devido foi cobrado antes da saída, no balcão de entrada. O excedente e a avaria de
+  quem ainda está na rua continuam sendo cobrados na tela de entrada
+  (`abrirDevolucao`, que continua acessível pelo Painel e pela Frota enquanto a
+  locação está `ativa`).
+- **No celular, quadro de três colunas.** `vistoria.html` virou um `.kanban` com
+  **a vistoriar**, **na rua** e **entregues** (mesmos ids `#fila`, `#rua`, `#hoje`).
+  No celular as colunas correm na horizontal com `scroll-snap` (uma por vez); a partir
+  de 900 px as três abrem lado a lado. A coluna *entregues* só recebe as chegadas
+  enquanto a API entregar `caixaAberto !== false` (helper `caixaAberto(db, diaHoje)` em
+  `api/vistoria.js`); fechou, ela limpa sozinha e as entregas ficam no histórico.
 - Mínimo de **1 foto por veículo**, configurável em `config.exigirFoto`.
 - Compressão no cliente: maior lado 900px, JPEG qualidade 0,55; no servidor o limite é
   600 KB por imagem e o caminho é `vistoria/{locacaoId}/…` (URL assinada de 6 h).
@@ -441,6 +485,33 @@ servidor espera, então o texto é exatamente `v.codigo`.
 - A grade mostra até 60 pré-visualizações (SVG) e informa a quantidade de etiquetas e
   de folhas A4; busca por código e filtro por tipo.
 
+### 4.13 Manutenção de veículos
+
+A aba **Manutenção** (logo depois de *Frota* na navegação, exclusiva do administrador
+— `ABAS_SOMENTE_ADMIN`) guarda o conserto de cada veículo parado. O registro mora em
+`DB.manutencoes`, com `seq.manutencao` (seção 3).
+
+- **Lista** — duas tabelas: **Em manutenção** (veículo, tipo, desde quando, as peças,
+  as fotos, a observação e os botões **Peças e foto** e **Concluir**) e **Concluídas**
+  (as mesmas colunas, com quem abriu, quem concluiu e as duas datas).
+  `renderManutencao` tem trava própria de administrador.
+- **Abrir o registro** (`abrirManutencao`) — marca as peças na tabela de peças do
+  tipo do veículo (`DB.pecas` filtrado por `tipoId`), com o valor ao lado, mais a
+  linha livre **Outra (digitar)**; a observação; e até 3 fotos (`LEG_VIST`, o mesmo
+  `painelFotos`/`ligarFotos` das demais telas, miniatura via `Fotos.obter`). O
+  registro nasce `status: 'aberta'`, com `criadoEm`, `usuario` e `veiculoCodigo`;
+  salvar de novo atualiza o mesmo registro. **O atendente também pode abrir** (sem
+  `exigirAdministrador`): escolher *Manutenção* como status no cadastro do veículo
+  abre o quadro logo em seguida (`virouManut`), e a vistoria de chegada marcada como
+  *manutenção* já aparece na aba sem detalhamento, com o botão **Peças e foto**.
+- **Concluir** (`concluirManutencao`) — exige dizer o que foi feito; então o veículo
+  volta para `loja`, os registros abertos viram `fechada` com `concluidaEm`,
+  `concluidaPor` e `obsConclusao`, e a auditoria grava `manutencao_concluida`
+  (`manutencao_aberta` e `manutencao_atualizada` ao abrir e ao salvar).
+- **Espelho no app offline** — `app.html` tem a mesma aba, as mesmas funções e a
+  migração do banco local; só a trava de papel não existe lá, porque o demo não tem
+  login.
+
 ---
 
 ## 5. Contrato
@@ -479,7 +550,8 @@ Duas vias: **celular do cliente** (fluxo principal) e **balcão** (fallback). O 
 | **Caixa do dia** | Seção dentro do Painel, recolhível: seletor de data; abertura com fundo de troco; entradas por forma de pagamento; saídas com categoria; fechamento com conferência de dinheiro; impressão do fechamento com linhas de assinatura. |
 | **Frota** | Lista com filtro (busca, **tipo** e status), status, nº de locações e faturamento por veículo; cadastro individual e em lote — os dois com **`+ Novo tipo (marca e modelo)`**, que cria o tipo com preço próprio na hora (seção 4.1); botão de conferência da frota; **botão *Etiqueta* por linha** (PNG da etiqueta QR daquele patinete). Veículo com locação pendente aparece travado, com pill *aguardando vistoria* e atalho para a fila. |
 | **QR Codes** | Seção recolhível no topo de **Configurações** (a navegação não tem mais essa aba): etiquetas da frota, grade de pré-visualização com busca e filtro por tipo, contagem de etiquetas e de folhas A4, e quatro saídas da mesma folha (3 × 6): **Baixar PDF**, **PNG**, **SVG** e **Imprimir folha**. Clicar em *Ver toda a frota* limpa o filtro do atalho do lote. |
-| **Vistoria** | Fila do celular/balcão em quatro blocos: pago aguardando liberação, na rua, chegada registrada (fechar no balcão) e vistoriadas hoje; link público com QR, copiar, WhatsApp e gerar novo link. No celular, cada cartão tem **Escanear código do patinete** e há **Escanear patinete** no topo (seção 4.8). |
+| **Manutenção** | Duas tabelas: **Em manutenção** (peças marcadas na tabela do tipo, mais a linha livre *Outra*, fotos, observação, e os botões **Peças e foto** e **Concluir**) e **Concluídas** (quem abriu, quem concluiu e as duas datas). Abre sozinha ao escolher *Manutenção* no cadastro do veículo (seção 4.13). Exclusiva do administrador. |
+| **Vistoria** | Cabeçalho com **Copiar link** e o link público (**sem QR e sem WhatsApp** — os dois ficam em Configurações); quatro blocos: pago aguardando liberação (com **Excluir**, que estorna a pendência e devolve o veículo), na rua (com fechamento no balcão), chegada registrada (**só com o caixa do dia aberto**) e vistoriadas hoje. No celular, cada cartão tem **Escanear código do patinete** e há **Escanear patinete** no topo; a página é um quadro de três colunas (seção 4.8). |
 | **Clientes** | Busca por nome, CPF ou telefone; histórico e total gasto; *Editar* e *Excluir* o cadastro — a exclusão é recusada com devolução em aberto, avisa que o histórico mantém nome e CPF, e vai para a auditoria. |
 | **Histórico** | Locações com filtro por período; base, excedente, avaria e total; acesso às fotos de saída e entrada, ao contrato e ao estorno. |
 | **Financeiro** | Demonstrativo de fluxo do mês (entradas por origem, saídas por categoria, resultado, margem); custos fixos recorrentes; movimento dia a dia com destaque do melhor dia; faturamento por veículo, tipo, pacote e forma de pagamento; exportação CSV. Exclusiva do administrador. |
@@ -568,7 +640,21 @@ Ao receber UPDATE de outro dispositivo, o `DB` é trocado e as telas repintadas.
 - **Comprovante para o cliente** com número do contrato, impresso ou por WhatsApp — especificado, não construído. Transforma o cliente em conferência da locação registrada.
 - **Foto do documento e selfie do cliente** — especificado, não construído. Componente de captura já existe.
 - **Rastreador com bloqueio remoto nas 10 motos** — decisão de compra do cliente, fora do software. Faixa de mercado levantada: R$ 40 a R$ 60/mês por veículo.
-- **Testes automatizados versionados.** `npm test` cobre as regras de dinheiro, sessão, senha, papéis, relatórios, identidade, vistoria (partes A a O) e o banco (transação descartada); `npm run verificar` repete a operação no site publicado (inclui a vistoria pública). Os cenários abaixo estão no script — vale mantê-los em dia ao mudar regra.
+- **Fechamento do caixa encerra as chegadas sem cobrança nova.** Todas as locações
+  `devolvida` do dia viram `finalizada` no fechamento (seção 4.8). Se o balcão deixar
+  passar, **excedente e avaria de uma chegada já registrada não são cobrados** — não
+  há mais tela de entrada para ela. Hoje a cobrança é feita antes da saída, no
+  balcão de entrada. Defesa possível: rodar `abrirDevolucao` para essas locações
+  antes de fechar, ou lançar a diferença na hora.
+- **Atendente pode excluir pendências da fila.** O modo fila do estorno (seção 4.8)
+  dispensa o administrador porque o veículo nunca saiu da locadora. É decisão do
+  operador: para exigir senha do administrador, trocar `!fila &&` por
+  `exigirAdministrador(...)` em `estornarLocacao`.
+- **Testes automatizados versionados.** `npm test` cobre as regras de dinheiro, sessão,
+  senha, papéis, relatórios, identidade, vistoria, a operação enxuta e o banco
+  (transação descartada); `npm run verificar` repete a operação no site publicado
+  (inclui a vistoria pública). Os cenários abaixo estão no script — vale mantê-los em
+  dia ao mudar regra.
 
 ---
 

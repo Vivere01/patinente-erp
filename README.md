@@ -110,14 +110,15 @@ e `vercel env add LOJA_SENHA production`.
 
 | Papel | O que faz |
 |---|---|
-| **Atendente** | Opera o balcão: locação, devolução, vistoria, clientes, histórico e caixa do dia. **Não enxerga o financeiro, os relatórios nem os usuários** — a aba *Financeiro*, a seção *Relatórios do mês* do painel e o faturamento do dia ficam escondidos. |
-| **Administrador** | Tudo do atendente, mais o financeiro do mês, a seção **Relatórios do mês** no painel e a aba **Usuários**: estorna locações e lançamentos, altera preços e tabela de peças, cadastra usuários, trata divergências e zera o sistema. |
+| **Atendente** | Opera o balcão: locação, devolução, vistoria, clientes e o caixa do dia. **Só enxerga quatro abas — Painel, Frota, Vistoria e Clientes**: Histórico, Configurações, Financeiro, Manutenção e Usuários ficam escondidos, junto com a seção *Relatórios do mês* do painel e o faturamento do dia. Para sair do sistema, toca no nome no canto do topo. |
+| **Administrador** | Tudo do atendente, mais as abas **Manutenção**, **Histórico**, **Configurações**, **Financeiro** e **Usuários**, a seção **Relatórios do mês** no painel e a tabela de peças: estorna locações (e exclui pendências da fila), altera preços e tabela de peças, cadastra usuários, trata divergências e zera o sistema. |
 
 Sempre deve existir pelo menos um administrador ativo.
 
-As abas **Financeiro** e **Usuários** são exclusivas do administrador, e dentro do
-**Painel** a seção **Relatórios do mês** só aparece para ele. Quem não é administrador
-não vê nenhuma das três — se chegar por atalho, volta para o painel. É na aba
+As abas **Manutenção, Histórico, Configurações, Financeiro e Usuários** estão na
+lista `ABAS_SOMENTE_ADMIN` do `index.html`: quem não é administrador não vê nenhuma
+das cinco, e se chegar por atalho volta para o painel (a tabela de Histórico e a de
+Configurações têm ainda uma trava própria dentro da função de desenho). É na aba
 **Usuários** que se cria cada conta com **e-mail, senha e nível**;
 a senha nunca fica em texto claro: o navegador deriva PBKDF2-SHA256 com salt próprio
 (120 mil iterações) e o servidor guarda só o hash.
@@ -143,6 +144,21 @@ de calendário escolhe o mês e a página responde: viagens, faturamento, ticket
 dias com movimento, os clientes que mais viajaram (com faturamento), o melhor dia, as
 horas de pico com barra de movimento e um resumo em uma coluna. Sem viagens no mês,
 tudo aparece em zero.
+
+### Manutenção (o que está em conserto)
+
+A aba **Manutenção** (só administrador) guarda o que precisa ser feito em cada
+veículo parado:
+
+- **Em manutenção**: veículo, tipo, desde quando, as **peças a trocar** (marcadas na
+  tabela de peças do tipo, mais a linha livre *Outra (digitar)*) e a **observação**,
+  ao lado das **fotos do veículo**. Cada linha tem **Peças e foto** (abre o registro)
+  e **Concluir** — que exige dizer o que foi feito e devolve o veículo para a loja.
+- **Concluídas**: as mesmas colunas com quem abriu, quem concluiu e as duas datas.
+- O registro é aberto **também pelo atendente**: escolher *Manutenção* na hora de
+  cadastrar ou editar um veículo abre o quadro de peças e foto em seguida, e a
+  vistoria de chegada marcada como *manutenção* já aparece na aba com o botão
+  **Peças e foto**.
 
 ### Foto do documento do cliente (CNH/RG)
 
@@ -172,9 +188,27 @@ público da vistoria** com QR Code para passar adiante.
 - **Link único e estável** — `/vistoria/{token}`, o mesmo todo dia, guardado em
   **Configurações → Link da vistoria** (com QR, copiar, WhatsApp e *Gerar novo link*).
   Quem tem o link **não entra no sistema**: só vê a fila e registra a vistoria.
-- **No celular** (aba **Vistoria**, ou o link) há quatro blocos: *pago aguardando
-  liberação*, *na rua*, *chegada registrada* (fechar no balcão) e *vistoriadas hoje*.
-  Cada cartão tem um botão **Escanear código do patinete** (e há outro **Escanear
+- **A aba Vistoria no balcão guarda só o link** (botão **Copiar link**) e as quatro
+  filas do dia: *pago aguardando liberação*, *na rua*, *chegada registrada* e
+  *vistoriadas hoje*. O QR e o botão de WhatsApp saíram daqui e continuam em
+  **Configurações → Link da vistoria**.
+- **Excluir da fila** — o cartão *pago aguardando liberação* tem o botão
+  **Excluir**: é o estorno em modo fila, que o próprio operador pode fazer (o
+  veículo nunca saiu da locadora). O valor sai do faturamento e das entradas do
+  dia, o registro segue no histórico marcado como estornado com motivo, autor e
+  log `fila_excluida` — nada é apagado. Se era a única pendência do contrato, o
+  grupo fecha junto.
+- **A chegada registrada só existe com o caixa aberto** — o bloco some quando o
+  caixa do dia está fechado e, **ao fechar o caixa, as locações já devolvidas do
+  dia viram histórico** (log `chegadas_encerradas`), sem lançar cobrança nova: o
+  que era devido foi cobrado antes da saída, no balcão. O excedente e a avaria de
+  quem ainda está na rua continuam sendo cobrados na tela de entrada.
+- **No celular** a página virou um **quadro de três colunas** — *a vistoriar*,
+  *na rua* e *entregues*: no celular as colunas correm na horizontal com
+  *scroll-snap* (uma por vez), e em telas a partir de 900 px as três abrem lado a
+  lado. A coluna *entregues* só recebe as chegadas enquanto o caixa está aberto;
+  fechou, ela limpa sozinha e as entregas vão para o histórico.
+- Cada cartão tem um botão **Escanear código do patinete** (e há outro **Escanear
   patinete** no topo): a câmera lê o QR ou a tarja da etiqueta — ZXing carregado sob
   demanda — e, sem câmera, dá para **digitar o código**. O código lido é conferido no
   servidor contra o do cartão: código de outro patinete é recusado na hora.
@@ -254,7 +288,7 @@ O código continua público no repositório.
 ## Testes
 
 ```bash
-npm test        # verificações locais (partes A a O)
+npm test        # verificações locais (partes A a P)
 npm run verificar   # 57 verificações contra o site publicado
 ```
 
@@ -270,8 +304,10 @@ npm run verificar   # 57 verificações contra o site publicado
 - **E. Módulos de api/** — todos carregam. Um `require` com caminho errado só estoura
   no ar como `FUNCTION_INVOCATION_FAILED`; aqui ele reprova antes do deploy.
 - **F. Níveis de acesso e foto do documento** — uma tela única de e-mail + senha (sem PIN),
-  os dois níveis (Administrador/Atendente) com a migração dos papéis antigos, a aba
-  *Financeiro* e a aba *Usuários* bloqueadas e escondidas para o atendente, a seção
+  os dois níveis (Administrador/Atendente) com a migração dos papéis antigos, o atendente
+  vendo **só Painel, Frota, Vistoria e Clientes** (Manutenção, Histórico, Configurações,
+  Financeiro e Usuários escondidos e bloqueados por atalho, com trava própria em
+  Histórico e Configurações), a seção
   *Relatórios do mês* do painel visível só para o administrador, a validação do
   formulário de usuário (e-mail único, senha mínima) e o quadro do documento com
   câmera + upload.
@@ -322,7 +358,17 @@ npm run verificar   # 57 verificações contra o site publicado
 - **O. Clientes** — a lista traz **Editar** e **Excluir**: a exclusão recusa cliente com
   devolução em aberto, com histórico avisa que nome e CPF já gravados em cada locação
   seguem lá (some só a ficha), confirmado apaga o cadastro e grava `cliente_excluido` na
-  auditoria — e as locações do histórico ficam intactas, no index e no app.
+   auditoria — e as locações do histórico ficam intactas, no index e no app.
+- **P. Operação enxuta** — a aba Vistoria guarda só o link (sem QR, sem WhatsApp) e o
+  QR continua em Configurações; a fila tem **Excluir** em modo fila (só pendente,
+  sem exigir administrador, auditoria `fila_excluida`); a chegada registrada aparece
+  só com o caixa aberto e o fechamento do caixa encerra as locações devolvidas
+  (`chegadas_encerradas`) sem lançar cobrança nova; `vistoria.html` é um quadro de
+  três colunas com `Entregues` escondida com o caixa fechado, e a API entrega
+  `caixaAberto`; a aba **Manutenção** existe no sistema (migração, lista abertas e
+  concluídas, peças da tabela do tipo + linha livre, fotos, conclusão obrigatória,
+  abertura ao trocar o status) e está espelhada no app offline; e o contrato espera
+  a assinatura carregar antes de imprimir, no index e no app.
 - **`verificar-ar`** — roda a operação inteira no site publicado: login, estado com
   lock, histórico, foto com link assinado, contrato assinado no celular, limpeza, a
   identidade no ar (página, login por e-mail, seção Relatórios no painel e o logo

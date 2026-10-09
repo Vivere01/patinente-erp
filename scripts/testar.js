@@ -27,6 +27,9 @@
        existente, troca o preço por modelo e só apaga tipo sem uso.
    O. Clientes — o operador edita e também exclui o cadastro, sem tocar nas
        locações do histórico e sem excluir com devolução em aberto.
+   P. Operação enxuta — a aba Vistoria guarda só o link, a fila pode ser
+       limpa pelo operador, o celular virou um quadro de três colunas e a
+       manutenção tem aba, registro de peças e foto (no sistema e no app).
 
    Uso:  npm test
 */
@@ -280,14 +283,19 @@ function testarPapelEDocumento(){
      corpo('aplicarMigracoes').indexOf("u.email = String(") >= 0,
      'a migração converte o papel antigo, apaga o PIN e completa o e-mail');
 
-  /* --- o atendente não vê dinheiro nem usuários --- */
+  /* --- o atendente só enxerga as quatro abas dele --- */
   const irPara = corpo('irPara');
-  ok(irPara.indexOf("(tab==='financeiro' || tab==='usuarios') && !ehAdministrador()") >= 0,
-     'irPara bloqueia financeiro e usuários para quem não é administrador');
+  ok(irPara.indexOf('ABAS_SOMENTE_ADMIN.indexOf(tab) >= 0') >= 0,
+     'irPara bloqueia as abas do administrador para quem não é administrador');
   const perm = corpo('aplicarPermissoes');
-  ok(perm.indexOf("soAdmin('financeiro')") >= 0 && perm.indexOf("soAdmin('usuarios')") >= 0 &&
-     perm.indexOf("soAdmin('relatorios')") < 0,
-     'aplicarPermissoes esconde só as abas de dinheiro, sem aba de relatórios');
+  ok(perm.indexOf('ABAS_SOMENTE_ADMIN.forEach(soAdmin)') >= 0 &&
+     html.indexOf("const ABAS_SOMENTE_ADMIN = ['manutencao','historico','config','financeiro','usuarios']") >= 0,
+     'o atendente não vê Manutenção, Histórico, Configurações, Financeiro nem Usuários');
+  ok(['painel','frota','vistoria','clientes'].every(t=>
+        new RegExp('data-tab="'+t+'"').test(html)),
+     'o atendente continua com Painel, Frota, Vistoria e Clientes');
+  ok(perm.indexOf("soAdmin('relatorios')") < 0 && html.indexOf('data-tab="relatorios"') < 0,
+     'sem aba de relatórios: ela é seção do painel');
   ok(perm.indexOf("irPara('painel')") >= 0,
      'quem está numa aba proibida volta para o painel');
   ok(/<button data-tab="usuarios">/.test(html) && /id="page-usuarios"/.test(html),
@@ -317,6 +325,9 @@ function testarPapelEDocumento(){
      'renderFinanceiro tem trava própria para o atendente');
   ok(corpo('renderRelatorios').indexOf('if(!ehAdministrador()) return;') >= 0,
      'renderRelatorios tem trava própria para o atendente');
+  ok(corpo('renderHistorico').indexOf('if(!ehAdministrador()) return;') >= 0 &&
+     corpo('renderConfig').indexOf('if(!ehAdministrador()) return;') >= 0,
+     'Histórico e Configurações também têm trava própria para o atendente');
   ok(corpo('renderPainel').indexOf('!ehAdministrador()) kpis.splice') >= 0,
      'KPI de faturamento fica de fora do painel do atendente');
   ok(/#btnNovoUsuario'\)\.onclick[\s\S]{0,200}exigirAdministrador\('cadastrar usuários'\)/.test(html),
@@ -1131,6 +1142,128 @@ function testarClientes(){
      'sem locação nenhuma, a confirmação é só o nome do cadastro');
 }
 
+/* ------------------------------------------------------------------ P */
+/* A operação enxuta do balcão: a aba Vistoria guarda só o link, a fila
+   pode ser limpa pelo próprio operador, o celular virou um quadro de três
+   colunas e a manutenção tem aba, registro de peças e foto. */
+function testarOperacaoEnxuta(){
+  console.log('\nP. Operação enxuta — fila da vistoria, Kanban e manutenção');
+  const raiz = path.join(__dirname, '..');
+  const html = fs.readFileSync(path.join(raiz,'index.html'),'utf8');
+  const app = fs.readFileSync(path.join(raiz,'app.html'),'utf8');
+  const pagina = fs.readFileSync(path.join(raiz,'vistoria.html'),'utf8');
+  const api = fs.readFileSync(path.join(raiz,'api','vistoria.js'),'utf8');
+  const corpo = f => extrairFuncao(html, f);
+  /* funções publicadas em window.X = function(){...} */
+  const deJanela = nome=>{
+    const i = html.indexOf('window.'+nome+' = function'); if(i < 0) return '';
+    let prof = 0;
+    for(let k = html.indexOf('{', i); k >= 0 && k < html.length; k++){
+      if(html[k] === '{') prof++;
+      else if(html[k] === '}'){ prof--; if(prof === 0) return html.slice(i, k+1); }
+    }
+    return '';
+  };
+
+  /* --- a aba Vistoria virou só o link --- */
+  ok(/id="btnCopiarLinkVist"/.test(html) && !/id="vistQr"/.test(html) &&
+     html.indexOf('vistWhats') < 0,
+     'a aba Vistoria guarda só o link público: sem QR e sem botão de WhatsApp');
+  ok(html.indexOf('function pintarQr(') >= 0 && html.indexOf('cfgVistQr') >= 0,
+     'o QR continua sendo gerado em Configurações, que gera um link novo');
+  ok(/id="vistLink"/.test(html) && /id="vistQtdPend"/.test(html),
+     'o link público e a fila continuam visíveis na aba');
+
+  /* --- excluir a pendência da fila --- */
+  ok(/window\.excluirDaFila = function\(locId\)\{ estornarLocacao\(locId, \{ fila:true \}\); \}/.test(html),
+     'a fila tem o atalho excluirDaFila, que chama o estorno em modo fila');
+  ok(html.indexOf("if(fila && loc.status !== 'pendente') return;") >= 0 &&
+     html.indexOf("if(!fila && !exigirAdministrador('estornar uma locação')) return;") >= 0,
+     'modo fila serve só para locação pendente e dispensa o administrador');
+  ok(html.indexOf("(fila?'Excluir da fila':'Confirmar estorno')") >= 0 &&
+     html.indexOf("log(fila?'fila_excluida':'estorno'") >= 0,
+     'o modal muda o texto e a auditoria registra a exclusão da fila');
+  ok(/onclick="excluirDaFila\(/.test(html) && /colspan="7"/.test(html),
+     'a tabela da fila tem a coluna de ação com o botão Excluir');
+
+  /* --- a chegada só existe com o caixa aberto --- */
+  const rv = corpo('renderVistoria');
+  ok(rv.indexOf('const comCaixa = caixaAberto();') >= 0 &&
+     rv.indexOf("cardFecha.style.display = comCaixa ? '' : 'none'") >= 0,
+     'o bloco da chegada registrada aparece só com o caixa do dia aberto');
+  const fc = corpo('fecharCaixaModal');
+  ok(fc.indexOf("l.status = 'finalizada'") >= 0 && fc.indexOf('chegadas_encerradas') >= 0,
+     'fechar o caixa encerra as chegadas do dia e manda para o histórico');
+  ok(fc.indexOf('calcExcedente') < 0 && fc.indexOf('sem lançar cobrança nova') >= 0,
+     'o fechamento não lança cobrança nova: o que era devido saiu antes da saída');
+
+  /* --- o celular virou um quadro de três colunas --- */
+  ok(/class="kanban"/.test(pagina) && /id="colVistoriar"/.test(pagina) &&
+     /id="colRua"/.test(pagina) && /id="colEntregues"/.test(pagina),
+     'a página do celular é um quadro com três colunas');
+  ok(/id="fila"/.test(pagina) && /id="rua"/.test(pagina) && /id="hoje"/.test(pagina),
+     'as colunas continuam sendo alimentadas pelos mesmos ids');
+  ok(pagina.indexOf('dados.caixaAberto !== false') >= 0 && /Entregues/.test(pagina),
+     'a coluna Entregues some quando o caixa do dia está fechado');
+  ok(pagina.indexOf('@media (min-width:900px)') >= 0 && pagina.indexOf('scroll-snap-type') >= 0,
+     'no celular as colunas correm na horizontal; no desktop as três abrem juntas');
+
+  /* --- a API entrega o estado do caixa --- */
+  ok(extrairFuncao(api,'payload').indexOf('caixaAberto') >= 0 &&
+     api.indexOf('function caixaAberto(') >= 0,
+     'a API diz se o caixa do dia está aberto para a página esconder a coluna');
+
+  /* --- aba Manutenção --- */
+  ok(/<button data-tab="manutencao">/.test(html) && /id="page-manutencao"/.test(html),
+     'a navegação tem a aba Manutenção com página própria');
+  ok(html.indexOf("if(!DB.manutencoes) DB.manutencoes = [];") >= 0 &&
+     html.indexOf('if(!DB.seq.manutencao)') >= 0,
+     'o banco migra bancos antigos com a lista de manutenções');
+  const rm = corpo('renderManutencao');
+  ok(rm.indexOf('if(!ehAdministrador()) return;') >= 0,
+     'a aba de manutenção é do administrador (defesa dupla)');
+  ok(rm.indexOf("v.status==='manutencao'") >= 0 && rm.indexOf('#tbManAbertas') >= 0 &&
+     rm.indexOf('#tbManFechadas') >= 0,
+     'a aba lista o que está em manutenção e o que foi concluído');
+  ok(rm.indexOf('manutencaoAbertaDe') >= 0 && rm.indexOf('miniFotosHTML') >= 0 &&
+     rm.indexOf('abrirManutencao(') >= 0 && rm.indexOf('concluirManutencao(') >= 0,
+     'cada linha mostra as peças e as fotos e tem os dois botões de ação');
+  ok(html.indexOf('window.abrirManutencao = function(veiculoId)') >= 0 &&
+     html.indexOf('class="manPeca"') >= 0 && html.indexOf('id="manOutraTexto"') >= 0,
+     'o registro marca as peças da tabela do tipo e aceita uma linha livre');
+  ok(html.indexOf("fotos: fotos.filter(Boolean)") >= 0,
+     'o registro guarda as fotos do veículo junto com as peças');
+  const cm = deJanela('concluirManutencao');
+  ok(cm.indexOf("obs.length < 3") >= 0 && cm.indexOf("v.status = 'loja'") >= 0,
+     'concluir exige dizer o que foi feito e devolve o veículo para a loja');
+  ok(html.indexOf('if(virouManut){ abrirManutencao(v.id); return; }') >= 0 &&
+     html.indexOf('if(novo.status===\'manutencao\') abrirManutencao(novo.id);') >= 0,
+     'escolher Manutenção no cadastro abre o registro na hora');
+
+  /* --- o app offline espelha a manutenção --- */
+  ok(/<button data-tab="manutencao">/.test(app) && /id="page-manutencao"/.test(app),
+     'o app offline tem a aba Manutenção com página própria');
+  ok(app.indexOf('function renderManutencao(') >= 0 &&
+     app.indexOf('window.abrirManutencao = function(veiculoId)') >= 0 &&
+     app.indexOf('window.concluirManutencao = function(veiculoId)') >= 0,
+     'o app tem as mesmas telas de manutenção');
+  ok(app.indexOf("if(!DB.manutencoes) DB.manutencoes = [];") >= 0 &&
+     app.indexOf("if(tab==='manutencao') renderManutencao();") >= 0,
+     'o app migra o banco local e abre a aba na navegação');
+  ok(app.indexOf('if(virouManut){ abrirManutencao(v.id); return; }') >= 0,
+     'no app o cadastro também abre o registro ao virar manutenção');
+
+  /* --- a assinatura sai na primeira impressão --- */
+  [ ['index', html], ['app', app] ].forEach(([nome, fonte])=>{
+    const chamada = "imprimirQuandoPronto($('#printarea'));";
+    const ajuda = fonte.indexOf('function imprimirQuandoPronto(');
+    const corpoAjuda = ajuda >= 0 ? fonte.slice(ajuda, ajuda + 700) : '';
+    ok(fonte.indexOf(chamada) >= 0 && /Promise\.all\(imgs\.map\(esperar\)\)/.test(corpoAjuda) &&
+       corpoAjuda.indexOf('window.print()') >= 0,
+       nome + ': o contrato espera a assinatura carregar antes de imprimir');
+  });
+}
+
 (async () => {
   try{ testarRegrasDeDinheiro(); }
   catch(e){ reprovados++; console.log('  ✗ não consegui ler as regras do index.html: ' + e.message); }
@@ -1160,6 +1293,8 @@ function testarClientes(){
   catch(e){ reprovados++; console.log('  ? tipos de veículo: ' + e.message); }
   try{ testarClientes(); }
   catch(e){ reprovados++; console.log('  ? clientes: ' + e.message); }
+  try{ testarOperacaoEnxuta(); }
+  catch(e){ reprovados++; console.log('  ✗ operação enxuta: ' + e.message); }
   await testarBanco();
 
   console.log('\n  ' + aprovados + ' aprovados, ' + reprovados + ' reprovados\n');

@@ -347,6 +347,7 @@ tr.estornada td:last-child{opacity:1;text-decoration:none}
   <nav class="tabs">
     <button data-tab="painel" class="active">Painel</button>
     <button data-tab="frota">Frota</button>
+    <button data-tab="manutencao">Manutenção</button>
     <button data-tab="clientes">Clientes</button>
     <button data-tab="historico">Histórico</button>
     <button data-tab="financeiro">Financeiro</button>
@@ -424,6 +425,23 @@ tr.estornada td:last-child{opacity:1;text-decoration:none}
       </select>
     </div>
     <div class="card"><div class="tablewrap"><table id="tbFrota"></table></div></div>
+  </section>
+
+  <!-- ============ MANUTENÇÃO ============ -->
+  <section class="page" id="page-manutencao">
+    <div class="pagehead">
+      <h2>Manutenção</h2>
+      <div class="sp"></div>
+      <span class="muted" id="manResumo" style="font-size:12.5px"></span>
+    </div>
+    <div class="card" style="margin-bottom:14px">
+      <div class="cabec"><span><b>Em manutenção</b> — peças a trocar ou reparar, com a foto do veículo</span></div>
+      <div class="tablewrap"><table id="tbManAbertas"></table></div>
+    </div>
+    <div class="card">
+      <div class="cabec"><span><b>Concluídas</b></span></div>
+      <div class="tablewrap"><table id="tbManFechadas"></table></div>
+    </div>
   </section>
 
   <!-- ============ CLIENTES ============ -->
@@ -760,7 +778,8 @@ function dbPadrao(){
     auditoria: [],
     divergencias: [],
     inventarios: [],
-    seq:{ veiculo:1, cliente:1, locacao:1, peca:100, grupo:1, despesa:1, fixo:1, usuario:1, audit:1, foto:1, diverg:1 }
+    manutencoes: [],
+    seq:{ veiculo:1, cliente:1, locacao:1, peca:100, grupo:1, despesa:1, fixo:1, usuario:1, audit:1, foto:1, diverg:1, manutencao:1 }
   };
 }
 const CATEGORIAS = ['Aluguel','Folha e salários','Energia','Água','Internet e telefone',
@@ -785,6 +804,8 @@ if(!DB.auditoria) DB.auditoria = [];
   if(!DB.seq.inventario) DB.seq.inventario = 1;
   if(!DB.config.inventarioDias) DB.config.inventarioDias = 7;
   if(!DB.seq.diverg) DB.seq.diverg = 1;
+  if(!DB.manutencoes) DB.manutencoes = [];
+  if(!DB.seq.manutencao) DB.seq.manutencao = 1;
   /* o módulo de lacre saiu do sistema: veículo, liberação e auditoria são
      identificados pelo QR. O que ficou gravado de antes é apagado. */
   if(DB.lacres) delete DB.lacres;
@@ -942,6 +963,7 @@ function irPara(tab){
   $$('.page').forEach(p=>p.classList.toggle('active', p.id==='page-'+tab));
   if(tab==='painel') renderPainel();
   if(tab==='frota') renderFrota();
+  if(tab==='manutencao') renderManutencao();
   if(tab==='clientes') renderClientes();
   if(tab==='historico') renderHistorico();
   if(tab==='financeiro') renderFinanceiro();
@@ -1792,6 +1814,16 @@ function perguntarImprimir(grupo){
   ov.querySelector('#okImprimir').onclick = ()=>{ fecharModal(ov); imprimirContrato(grupo.id); };
 }
 
+/* A assinatura é uma imagem: espera ela carregar antes de chamar a
+   impressão, senão a primeira abertura sai sem a assinatura do cliente
+   (na segunda já está no cache e aparece). */
+function imprimirQuandoPronto(area){
+  const imgs = Array.prototype.slice.call((area||document).querySelectorAll('img'));
+  const esperar = img => (img.complete && img.naturalWidth)
+    ? Promise.resolve()
+    : new Promise(res=>{ img.onload = res; img.onerror = res; setTimeout(res, 4000); });
+  Promise.all(imgs.map(esperar)).catch(()=>{}).then(()=> window.print());
+}
 window.imprimirContrato = function(grupoId){
   const g = getGrupo(grupoId); if(!g) return;
   $('#printarea').innerHTML =
@@ -1812,7 +1844,7 @@ window.imprimirContrato = function(grupoId){
       locsDoGrupo(g.id).reduce((s,l)=>s+((l.fotosSaida||[]).length),0)+' imagem(ns) arquivada(s).'+
     '</div>'+
     '<div style="margin-top:14px;font-size:10px;color:#666">Emitido em '+dtFmt(Date.now())+'</div>';
-  window.print();
+  imprimirQuandoPronto($('#printarea'));
 };
 /* =====================================================================
    ESTORNO — nada é apagado. O registro original fica e recebe a marca
@@ -2096,9 +2128,11 @@ $('#btnNovoVeiculo').onclick = ()=>{
     const cod = ov.querySelector('#vCod').value.trim();
     if(!cod) return toast('Informe o código.');
     if(DB.veiculos.some(v=>v.codigo.toLowerCase()===cod.toLowerCase())) return toast('Já existe veículo com esse código.');
-    DB.veiculos.push({ id:uid('veiculo'), codigo:cod, tipoId:ov.querySelector('#vTipo').value,
-      placa:ov.querySelector('#vPlaca').value.trim(), status:ov.querySelector('#vStatus').value });
+    const novo = { id:uid('veiculo'), codigo:cod, tipoId:ov.querySelector('#vTipo').value,
+      placa:ov.querySelector('#vPlaca').value.trim(), status:ov.querySelector('#vStatus').value };
+    DB.veiculos.push(novo);
     persist(); fecharModal(ov); renderFrota(); renderPainel(); toast('Veículo cadastrado.');
+    if(novo.status==='manutencao') abrirManutencao(novo.id);
   };
 };
 window.editarVeiculo = function(id){
@@ -2118,8 +2152,13 @@ window.editarVeiculo = function(id){
     v.codigo = ov.querySelector('#vCod').value.trim() || v.codigo;
     v.tipoId = ov.querySelector('#vTipo').value;
     v.placa  = ov.querySelector('#vPlaca').value.trim();
+    const eraManut = v.status==='manutencao';
     if(v.status!=='rua') v.status = ov.querySelector('#vStatus').value;
-    persist(); fecharModal(ov); renderFrota(); renderPainel(); toast('Veículo atualizado.');
+    const virouManut = v.status==='manutencao' && !eraManut;
+    persist(); fecharModal(ov); renderFrota(); renderPainel();
+    /* escolheu Manutenção: na hora abre o registro de peças + foto */
+    if(virouManut){ abrirManutencao(v.id); return; }
+    toast('Veículo atualizado.');
   };
 };
 $('#btnInventario').onclick = ()=> abrirInventario();
@@ -2151,6 +2190,201 @@ $('#btnLote').onclick = ()=>{
 };
 
 /* ===================== CLIENTES ===================== */
+/* ===================== MANUTENÇÃO =====================
+   Cada veículo com status de manutenção tem um registro com as peças a
+   trocar (da tabela de peças do tipo dele, mais uma linha livre) e as
+   fotos do veículo. */
+function manutencaoAbertaDe(veiculoId){
+  return DB.manutencoes
+    .filter(m=>String(m.veiculoId)===String(veiculoId) && m.status==='aberta')
+    .sort((a,b)=>(b.criadoEm||0)-(a.criadoEm||0))[0] || null;
+}
+function miniFotosHTML(fotos){
+  if(!fotos || !fotos.length) return '<span class="muted">—</span>';
+  return '<span style="display:inline-flex;gap:6px;flex-wrap:wrap">'+fotos.map(f=>
+    '<img src="" data-fotoid="'+esc(f.id||'')+'" data-fotocam="'+esc(f.caminho||'')+'" '+
+    'style="width:54px;height:54px;object-fit:cover;border-radius:8px;border:1px solid var(--line);background:#f2f2f2;cursor:pointer" '+
+    'alt="foto do veículo" title="abrir a foto">').join('')+'</span>';
+}
+function carregarMiniFotos(box){
+  if(!box) return;
+  box.querySelectorAll('img[data-fotoid]').forEach(img=>{
+    if(img.src) return;
+    Fotos.obter(img.dataset.fotoid, img.dataset.fotocam).then(url=>{ if(url) img.src = url; }).catch(()=>{});
+    img.onclick = ()=>{
+      const src = img.src; if(!src) return;
+      abrirModal('<header><h3>Foto do veículo</h3><button class="x">&times;</button></header>'+
+        '<div class="body" style="text-align:center"><img src="'+src+'" alt="foto" style="max-width:100%;border-radius:12px"></div>'+
+        '<footer><button class="btn sec" id="fc">Fechar</button></footer>')
+        .querySelector('#fc').onclick = function(){ fecharModal(this.closest('.overlay')); };
+    };
+  });
+}
+function renderManutencao(){
+  const emManut = DB.veiculos.filter(v=>v.status==='manutencao');
+  $('#manResumo').textContent = emManut.length ? emManut.length+' veículo(s)' : '';
+  $('#tbManAbertas').innerHTML =
+    '<thead><tr><th>Veículo</th><th>Tipo</th><th>Desde</th><th>Peças / o que fazer</th>'+
+    '<th>Fotos</th><th>Observação</th><th></th></tr></thead><tbody>'+
+    (emManut.length ? emManut.map(v=>{
+      const m = manutencaoAbertaDe(v.id);
+      const tipo = getTipo(v.tipoId) || {};
+      const pecas = m && (m.pecas||[]).length
+        ? m.pecas.map(p=>esc(p.nome)+(p.valor?' <span class="muted">'+brl(p.valor)+'</span>':'')).join(', ')
+        : '<span class="muted">sem detalhamento</span>';
+      return '<tr>'+
+        '<td><b>'+esc(v.codigo)+'</b></td>'+
+        '<td>'+esc(tipo.nome||'')+'</td>'+
+        '<td class="mono">'+(m ? dtFmt(m.criadoEm) : '—')+'</td>'+
+        '<td>'+pecas+'</td>'+
+        '<td>'+(m ? miniFotosHTML(m.fotos) : '<span class="muted">—</span>')+'</td>'+
+        '<td>'+esc(m && m.obs ? m.obs : '')+'</td>'+
+        '<td class="right" style="white-space:nowrap">'+
+          '<button class="btn sm sec" onclick="abrirManutencao('+v.id+')">Peças e foto</button> '+
+          '<button class="btn sm ok" onclick="concluirManutencao('+v.id+')">Concluir</button>'+
+        '</td></tr>';
+    }).join('') : '<tr><td colspan="7" class="empty">Nenhum veículo em manutenção.</td></tr>')+'</tbody>';
+
+  const fechadas = DB.manutencoes.filter(m=>m.status==='fechada')
+    .sort((a,b)=>(b.concluidaEm||0)-(a.criadoEm||0)).slice(0,120);
+  $('#tbManFechadas').innerHTML =
+    '<thead><tr><th>Veículo</th><th>Peças / o que fazer</th><th>Fotos</th><th>Aberta</th>'+
+    '<th>Concluída</th><th>Por</th></tr></thead><tbody>'+
+    (fechadas.length ? fechadas.map(m=>
+      '<tr>'+
+        '<td><b>'+esc(m.veiculoCodigo||'')+'</b></td>'+
+        '<td>'+((m.pecas||[]).map(p=>esc(p.nome)).join(', ') || '<span class="muted">—</span>')+'</td>'+
+        '<td>'+miniFotosHTML(m.fotos)+'</td>'+
+        '<td class="mono">'+dtFmt(m.criadoEm)+'</td>'+
+        '<td class="mono">'+dtFmt(m.concluidaEm)+'</td>'+
+        '<td>'+esc(m.concluidaPor||m.usuario||'—')+'</td>'+
+      '</tr>').join('')
+      : '<tr><td colspan="6" class="empty">Nenhuma manutenção concluída.</td></tr>')+'</tbody>';
+  carregarMiniFotos($('#tbManAbertas'));
+  carregarMiniFotos($('#tbManFechadas'));
+}
+
+window.abrirManutencao = function(veiculoId){
+  const v = getVeiculo(veiculoId); if(!v) return;
+  const atual = manutencaoAbertaDe(v.id);
+  const pecasDoTipo = DB.pecas.filter(p=>String(p.tipoId)===String(v.tipoId));
+  const fotos = [null,null,null];
+  if(atual) (atual.fotos||[]).slice(0,3).forEach((f,i)=>{ fotos[i] = { id:f.id, caminho:f.caminho, legenda:f.legenda, ts:f.ts, thumb:null }; });
+  const ov = abrirModal(
+    '<header><h3>Manutenção — '+esc(v.codigo)+'</h3><button class="x">&times;</button></header>'+
+    '<div class="body">'+
+      '<div class="fnota">Marque as peças a trocar ou reparar e fotografe o veículo. '+
+      'O registro vai para a aba Manutenção.</div>'+
+      '<div style="border:1px solid var(--line);border-radius:10px;padding:13px;margin-bottom:11px;background:#fafbfc">'+
+        '<div style="font-weight:700;font-size:13px;margin-bottom:9px">Peças a trocar / reparar</div>'+
+        '<div style="display:flex;flex-direction:column;gap:7px;max-height:230px;overflow:auto">'+
+          (pecasDoTipo.length ? pecasDoTipo.map(p=>{
+            const marcado = !!(atual && (atual.pecas||[]).some(x=>String(x.pecaId)===String(p.id)));
+            return '<label style="display:flex;gap:9px;align-items:center;font-size:13px">'+
+              '<input type="checkbox" class="manPeca" value="'+p.id+'"'+(marcado?' checked':'')+'>'+
+              '<span>'+esc(p.nome)+'</span>'+
+              '<span class="muted" style="margin-left:auto;white-space:nowrap">'+brl(p.valor)+'</span></label>';
+          }).join('') : '<div class="muted" style="font-size:12.5px">Este tipo ainda não tem tabela de peças.</div>')+
+          '<label style="display:flex;gap:9px;align-items:center;font-size:13px;border-top:1px dashed var(--line);padding-top:8px">'+
+            '<input type="checkbox" id="manOutra">'+
+            '<span>Outra (digitar)</span>'+
+            '<input type="text" id="manOutraTexto" placeholder="ex.: trocar cabo de carga" style="flex:1;min-width:0;padding:7px 9px;font-size:13px;border:1px solid var(--line);border-radius:8px">'+
+          '</label>'+
+        '</div>'+
+      '</div>'+
+      '<label class="f"><span>Observação</span><input type="text" id="manObs" '+
+        'placeholder="ex.: bateria fraca, freio solto" value="'+esc(atual&&atual.obs?atual.obs:'')+'"></label>'+
+      '<div class="f"><span style="display:block;font-weight:600;font-size:13px;margin-bottom:6px">Fotos do veículo</span>'+
+        '<div id="manFotosBox"></div></div>'+
+    '</div>'+
+    '<footer><button class="btn sec" id="c">Cancelar</button>'+
+      '<button class="btn ok" id="s">'+(atual?'Salvar registro':'Enviar para manutenção')+'</button></footer>');
+
+  const pintaFotos = ()=>{
+    ov.querySelector('#manFotosBox').innerHTML = painelFotos('manFotos', fotos, LEG_VIST);
+    ligarFotos('manFotos', fotos, LEG_VIST, pintaFotos);
+  };
+  pintaFotos();
+  fotos.forEach((f,i)=>{
+    if(!f || f.thumb) return;
+    Fotos.obter(f.id, f.caminho).then(url=>{
+      if(url && fotos[i]){ fotos[i] = Object.assign({}, fotos[i], { thumb:url }); pintaFotos(); }
+    }).catch(()=>{});
+  });
+
+  const foraTxt = ov.querySelector('#manOutraTexto');
+  ov.querySelector('#manOutra').onchange = e=>{
+    foraTxt.disabled = !e.target.checked;
+    if(e.target.checked) foraTxt.focus();
+    else foraTxt.value = '';
+  };
+  foraTxt.disabled = !ov.querySelector('#manOutra').checked;
+
+  ov.querySelector('#c').onclick = ()=> fecharModal(ov);
+  ov.querySelector('#s').onclick = ()=>{
+    const pecas = [];
+    ov.querySelectorAll('.manPeca').forEach(cb=>{
+      if(!cb.checked) return;
+      const p = DB.pecas.find(x=>String(x.id)===String(cb.value));
+      if(p) pecas.push({ pecaId:p.id, nome:p.nome, valor:p.valor });
+    });
+    const usouOutra = ov.querySelector('#manOutra').checked;
+    const outra = foraTxt.value.trim();
+    if(usouOutra && !outra) return toast('Descreva a outra peça ou serviço.');
+    if(outra) pecas.push({ pecaId:null, nome:outra, valor:0 });
+    const obs = ov.querySelector('#manObs').value.trim();
+    if(!pecas.length && !obs && !fotos.filter(Boolean).length)
+      return toast('Marque ao menos uma peça, escreva a observação ou tire uma foto.');
+    const jaTem = manutencaoAbertaDe(v.id);
+    const registro = {
+      id: jaTem ? jaTem.id : uid('manutencao'),
+      veiculoId: v.id, veiculoCodigo: v.codigo, tipoId: v.tipoId,
+      criadoEm: jaTem ? jaTem.criadoEm : Date.now(),
+      usuario: jaTem ? jaTem.usuario : usuarioAtual(),
+      pecas, obs, status:'aberta',
+      fotos: fotos.filter(Boolean).map(f=>({ id:f.id, caminho:f.caminho, legenda:f.legenda, ts:f.ts }))
+    };
+    if(jaTem) Object.assign(jaTem, registro);
+    else DB.manutencoes.push(registro);
+    v.status = 'manutencao';
+    log(jaTem?'manutencao_atualizada':'manutencao_aberta',
+        v.codigo+' — '+(pecas.map(p=>p.nome).join(', ')||'só observação')+(obs?' — '+obs:''));
+    persist(); fecharModal(ov);
+    renderManutencao(); renderFrota(); renderPainel();
+    toast(jaTem ? 'Registro de manutenção atualizado.' : 'Veículo enviado para a manutenção.');
+  };
+};
+
+window.concluirManutencao = function(veiculoId){
+  const v = getVeiculo(veiculoId); if(!v || v.status!=='manutencao') return;
+  const ov = abrirModal(
+    '<header><h3>Concluir manutenção — '+esc(v.codigo)+'</h3><button class="x">&times;</button></header>'+
+    '<div class="body">'+
+      '<div class="fnota">O veículo volta para a loja e o registro entra em Concluídas, '+
+      'com as peças, as fotos e quem resolveu.</div>'+
+      '<label class="f"><span>O que foi feito (obrigatório)</span><input type="text" id="mcObs" '+
+        'placeholder="ex.: trocada a bateria e o freio traseiro" autofocus></label>'+
+      '<div class="resumo"><div class="l"><span>Situação</span><b>Volta para a loja, disponível para locação</b></div></div>'+
+    '</div>'+
+    '<footer><button class="btn sec" id="c">Cancelar</button>'+
+      '<button class="btn ok" id="s">Concluir e devolver para a loja</button></footer>');
+  ov.querySelector('#c').onclick = ()=> fecharModal(ov);
+  ov.querySelector('#s').onclick = ()=>{
+    const obs = ov.querySelector('#mcObs').value.trim();
+    if(obs.length < 3) return toast('Descreva o que foi feito.');
+    v.status = 'loja';
+    const abertas = DB.manutencoes.filter(m=>String(m.veiculoId)===String(v.id) && m.status==='aberta');
+    abertas.forEach(m=>{
+      m.status = 'fechada'; m.concluidaEm = Date.now();
+      m.concluidaPor = usuarioAtual(); m.obsConclusao = obs;
+    });
+    log('manutencao_concluida', v.codigo+' — '+obs+(abertas.length?'':' (sem registro de peças)'));
+    persist(); fecharModal(ov);
+    renderManutencao(); renderFrota(); renderPainel();
+    toast(v.codigo+' voltou para a loja.');
+  };
+};
+
 function renderClientes(){
   const q = ($('#fCliBusca').value||'').trim().toLowerCase();
   let lista = DB.clientes.slice();

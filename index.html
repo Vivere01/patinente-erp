@@ -364,6 +364,7 @@ tr.estornada td:last-child{opacity:1;text-decoration:none}
   <nav class="tabs">
     <button data-tab="painel" class="active">Painel</button>
     <button data-tab="frota">Frota</button>
+    <button data-tab="manutencao">Manutenção</button>
     <button data-tab="vistoria">Vistoria</button>
     <button data-tab="clientes">Clientes</button>
     <button data-tab="historico">Histórico</button>
@@ -480,25 +481,36 @@ tr.estornada td:last-child{opacity:1;text-decoration:none}
     <div class="card"><div class="tablewrap"><table id="tbFrota"></table></div></div>
   </section>
 
+  <!-- ============ MANUTENÇÃO ============ -->
+  <section class="page" id="page-manutencao">
+    <div class="pagehead">
+      <h2>Manutenção</h2>
+      <div class="sp"></div>
+      <span class="muted" id="manResumo" style="font-size:12.5px"></span>
+    </div>
+    <div class="card" style="margin-bottom:14px">
+      <div class="cabec"><span><b>Em manutenção</b> — peças a trocar ou reparar, com a foto do veículo</span></div>
+      <div class="tablewrap"><table id="tbManAbertas"></table></div>
+    </div>
+    <div class="card">
+      <div class="cabec"><span><b>Concluídas</b></span></div>
+      <div class="tablewrap"><table id="tbManFechadas"></table></div>
+    </div>
+  </section>
+
   <!-- ============ VISTORIA ============ -->
   <section class="page" id="page-vistoria">
     <div class="pagehead">
       <h2>Vistoria</h2>
       <div class="sp"></div>
       <button class="btn sec" id="btnCopiarLinkVist">Copiar link</button>
-      <button class="btn sec" id="btnWhatsLinkVist">WhatsApp</button>
-      <button class="btn" id="btnNovaLinkVist">Gerar novo link</button>
     </div>
-    <div class="card pad" style="margin-bottom:14px;display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
-      <div class="assqr" style="margin:0"><div id="vistQr"></div></div>
-      <div style="flex:1;min-width:260px">
-        <b style="font-size:13.5px">Link público da vistoria</b>
-        <p class="muted" style="font-size:12.5px;margin:5px 0 8px">É o mesmo link sempre. Passe para quem vai conferir a saída
-        (e para quem recebe a devolução): o celular abre a fila, registra fotos, escaneia a etiqueta e marca o horário e libera o veículo —
-        ou marca a chegada quando o cliente devolver.</p>
-        <div class="linkbox" id="vistLink"></div>
-        <p class="muted" style="font-size:12px;margin:8px 0 0">Quem tem o link <b>não entra no sistema</b>: só vê e registra a vistoria.</p>
-      </div>
+    <div class="card pad" style="margin-bottom:14px">
+      <b style="font-size:13.5px">Link público da vistoria</b>
+      <p class="muted" style="font-size:12.5px;margin:5px 0 8px">É o mesmo link sempre. Passe para quem confere a saída e para quem
+        recebe a devolução: o celular abre a fila, escaneia a etiqueta e registra fotos e horário.</p>
+      <div class="linkbox" id="vistLink"></div>
+      <p class="muted" style="font-size:12px;margin:8px 0 0">Quem tem o link <b>não entra no sistema</b>: só vê e registra a vistoria.</p>
     </div>
     <div class="card" style="margin-bottom:14px">
       <div class="cabec"><span><b>Pago, aguardando liberação</b> — o relógio começa quando a liberação for confirmada</span>
@@ -510,8 +522,8 @@ tr.estornada td:last-child{opacity:1;text-decoration:none}
         <span class="muted" id="vistQtdRua" style="font-size:12.5px"></span></div>
       <div class="tablewrap"><table id="tbVistRua"></table></div>
     </div>
-    <div class="card" style="margin-bottom:14px">
-      <div class="cabec"><span><b>Chegada registrada</b> — fechar a cobrança no balcão</span>
+    <div class="card" style="margin-bottom:14px" id="vistCardFecha">
+      <div class="cabec"><span><b>Chegada registrada</b> — só com o caixa do dia aberto; ao fechar, vai para o histórico</span>
         <span class="muted" id="vistQtdFecha" style="font-size:12.5px"></span></div>
       <div class="tablewrap"><table id="tbVistFecha"></table></div>
     </div>
@@ -969,8 +981,8 @@ function repintarTela(){
   if(typeof renderPainel==='function') renderPainel();
   const ativa = document.querySelector('.page.active');
   const aba = ativa ? String(ativa.id||'').replace('page-','') : '';
-  const mapa = { frota:'renderFrota', vistoria:'renderVistoria', clientes:'renderClientes',
-                 historico:'renderHistorico', financeiro:'renderFinanceiro',
+  const mapa = { frota:'renderFrota', manutencao:'renderManutencao', vistoria:'renderVistoria',
+                 clientes:'renderClientes', historico:'renderHistorico', financeiro:'renderFinanceiro',
                  usuarios:'renderUsuarios', config:'renderConfig' };
   const nome = mapa[aba];
   if(nome && typeof window[nome]==='function') window[nome]();
@@ -1168,6 +1180,8 @@ function aplicarMigracoes(){
   if(!DB.divergencias) DB.divergencias = [];
   if(!DB.inventarios) DB.inventarios = [];
   if(!DB.seq.inventario) DB.seq.inventario = 1;
+  if(!DB.manutencoes) DB.manutencoes = [];
+  if(!DB.seq.manutencao) DB.seq.manutencao = 1;
   if(!DB.config.inventarioDias) DB.config.inventarioDias = 7;
   if(!DB.seq.diverg) DB.seq.diverg = 1;
   /* o módulo de lacre saiu do sistema: veículo, liberação e auditoria são
@@ -1276,21 +1290,22 @@ function exigirAdministrador(acao){
   return false;
 }
 
-/* Quem enxerga o quê: financeiro e usuários são do administrador, e os
-   relatórios do mês moram dentro do painel também só para ele. Aqui é só
-   visão — quem decide o que pode ser gravado continua sendo
-   exigirAdministrador, que recusa na hora do botão. */
+/* Quem enxerga o quê: o atendente opera em quatro abas — Painel, Frota,
+   Vistoria e Clientes. Histórico, Configurações (com os QR Codes dentro),
+   Financeiro e Usuários são do administrador. Aqui é só visão — quem
+   decide o que pode ser gravado continua sendo exigirAdministrador, que
+   recusa na hora do botão. */
+const ABAS_SOMENTE_ADMIN = ['manutencao','historico','config','financeiro','usuarios'];
 function aplicarPermissoes(){
   const soAdmin = tab => {
     const b = document.querySelector('nav.tabs button[data-tab="'+tab+'"]');
     if(b) b.style.display = ehAdministrador() ? '' : 'none';
   };
-  soAdmin('financeiro');
-  soAdmin('usuarios');
+  ABAS_SOMENTE_ADMIN.forEach(soAdmin);
   if(!ehAdministrador()){
     const ativa = document.querySelector('.page.active');
     const aba = ativa ? String(ativa.id||'').replace('page-','') : '';
-    if(aba==='financeiro' || aba==='usuarios') irPara('painel');
+    if(ABAS_SOMENTE_ADMIN.indexOf(aba) >= 0) irPara('painel');
   }
 }
 
@@ -1426,7 +1441,7 @@ function excluirTipo(id, confirmar){
 }
 /* ===================== navegação ===================== */
 function irPara(tab){
-  if((tab==='financeiro' || tab==='usuarios') && !ehAdministrador()){
+  if(!ehAdministrador() && ABAS_SOMENTE_ADMIN.indexOf(tab) >= 0){
     toast('Acesso restrito: essa área é do administrador.');
     tab = 'painel';
   }
@@ -1434,6 +1449,7 @@ function irPara(tab){
   $$('.page').forEach(p=>p.classList.toggle('active', p.id==='page-'+tab));
   if(tab==='painel') renderPainel();
   if(tab==='frota') renderFrota();
+  if(tab==='manutencao') renderManutencao();
   if(tab==='vistoria') renderVistoria();
   if(tab==='clientes') renderClientes();
   if(tab==='historico') renderHistorico();
@@ -2641,27 +2657,45 @@ window.imprimirContrato = function(grupoId){
       locsDoGrupo(g.id).reduce((s,l)=>s+((l.fotosSaida||[]).length),0)+' imagem(ns) arquivada(s).'+
     '</div>'+
     '<div style="margin-top:14px;font-size:10px;color:#666">Emitido em '+dtFmt(Date.now())+'</div>';
-  window.print();
+  /* A assinatura é uma imagem: espera ela carregar antes de chamar a
+     impressão, senão a primeira abertura sai sem a assinatura do cliente
+     (na segunda já está no cache e aparece). */
+  imprimirQuandoPronto($('#printarea'));
 };
+function imprimirQuandoPronto(area){
+  const imgs = Array.prototype.slice.call((area||document).querySelectorAll('img'));
+  const esperar = img => (img.complete && img.naturalWidth)
+    ? Promise.resolve()
+    : new Promise(res=>{ img.onload = res; img.onerror = res; setTimeout(res, 4000); });
+  Promise.all(imgs.map(esperar)).catch(()=>{}).then(()=> window.print());
+}
 /* =====================================================================
    ESTORNO — nada é apagado. O registro original fica e recebe a marca
    de estornado, com motivo, autor e data. É assim que o histórico
    continua contando a verdade, inclusive os erros.
    ===================================================================== */
-window.estornarLocacao = function(locId){
-  if(!exigirAdministrador('estornar uma locação')) return;
+/* opcoes.fila: excluir um registro que ainda está na fila da vistoria
+   (pago, aguardando liberação). Nesse caso qualquer operador pode — o
+   veículo nunca saiu da loja — e o efeito é o mesmo estorno: valor sai do
+   faturamento e das entradas do dia, e nada é apagado do documento. */
+window.estornarLocacao = function(locId, opcoes){
+  const fila = !!(opcoes && opcoes.fila);
   const loc = DB.locacoes.find(l=>l.id===locId); if(!loc || estornada(loc)) return;
+  if(fila && loc.status !== 'pendente') return;
+  if(!fila && !exigirAdministrador('estornar uma locação')) return;
   const valor = totalLoc(loc);
   const ov = abrirModal(
-    '<header><h3>Estornar locação — '+esc(loc.veiculoCodigo)+'</h3><button class="x">&times;</button></header>'+
+    '<header><h3>'+(fila?'Excluir da fila — ':'Estornar locação — ')+esc(loc.veiculoCodigo)+'</h3><button class="x">&times;</button></header>'+
     '<div class="body">'+
-      '<div class="fnota">O lançamento não será apagado. Ele fica no histórico marcado como estornado, com o seu nome e o motivo, e deixa de contar no faturamento.</div>'+
+      '<div class="fnota">'+(fila
+        ? 'A locação sai da fila da vistoria e o veículo volta para a loja. O valor pago é estornado: sai do faturamento e das entradas do caixa do dia. Nada é apagado — o registro segue no histórico marcado como estornado, com o seu nome e o motivo.'
+        : 'O lançamento não será apagado. Ele fica no histórico marcado como estornado, com o seu nome e o motivo, e deixa de contar no faturamento.')+'</div>'+
       '<div class="resumo">'+
         '<div class="l"><span>Cliente</span><b>'+esc(loc.clienteNome)+'</b></div>'+
-        '<div class="l"><span>Saída</span><b>'+dtFmt(loc.inicio)+'</b></div>'+
+        '<div class="l"><span>'+(fila?'Pago em':'Saída')+'</span><b>'+(fila?dtFmt(loc.pagoEm):dtFmt(loc.inicio))+'</b></div>'+
         '<div class="l"><span>Situação</span><b>'+
           (loc.status==='ativa' ? 'na rua — o veículo volta para a loja'
-           : loc.status==='pendente' ? 'pago, aguardando a vistoria de liberação'
+           : loc.status==='pendente' ? 'pago, aguardando a vistoria de liberação — o veículo segue na loja'
            : loc.status==='devolvida' ? 'chegada registrada — fechar a cobrança no balcão'
            : 'já finalizada')+'</b></div>'+
         '<div class="l tot"><span>Valor a estornar</span><span>'+brl(valor)+'</span></div>'+
@@ -2671,7 +2705,8 @@ window.estornarLocacao = function(locId){
           .map(m=>'<option>'+m+'</option>').join('')+'</select></label>'+
       '<label class="f"><span>Detalhe (obrigatório)</span><input type="text" id="esObs" placeholder="explique o que aconteceu" autofocus></label>'+
     '</div>'+
-    '<footer><button class="btn sec" id="c">Cancelar</button><button class="btn danger" id="s">Confirmar estorno</button></footer>');
+    '<footer><button class="btn sec" id="c">Cancelar</button><button class="btn danger" id="s">'+
+      (fila?'Excluir da fila':'Confirmar estorno')+'</button></footer>');
   ov.querySelector('#c').onclick=()=>fecharModal(ov);
   ov.querySelector('#s').onclick=()=>{
     const obs = ov.querySelector('#esObs').value.trim();
@@ -2679,15 +2714,21 @@ window.estornarLocacao = function(locId){
     const eraAtiva = loc.status==='ativa';
     loc.status = 'estornada';
     loc.estorno = { ts:Date.now(), usuario:usuarioAtual(), usuarioId:SESSAO?SESSAO.id:null,
-                    motivo:ov.querySelector('#esMotivo').value, detalhe:obs, valor };
+                    motivo:ov.querySelector('#esMotivo').value, detalhe:obs, valor, fila };
     if(eraAtiva){ const v = getVeiculo(loc.veiculoId); if(v) v.status='loja'; delete jaAlertou[loc.id]; }
-    if(loc.grupoId) fecharGrupoSeCompleto(loc.grupoId);
-    log('estorno', loc.veiculoCodigo+' — '+brl(valor)+' — '+ov.querySelector('#esMotivo').value+': '+obs, loc.id);
+    /* o grupo só fecha quando não sobra nem pendente nem na rua */
+    if(loc.grupoId && !locsDoGrupo(loc.grupoId).some(x=>x.status==='pendente'||x.status==='ativa'))
+      fecharGrupoSeCompleto(loc.grupoId);
+    log(fila?'fila_excluida':'estorno', loc.veiculoCodigo+' — '+brl(valor)+' — '+
+        ov.querySelector('#esMotivo').value+': '+obs, loc.id);
     persist(); fecharModal(ov); renderPainel();
     if($('#page-historico').classList.contains('active')) renderHistorico();
-    toast('Locação estornada.');
+    if($('#page-vistoria').classList.contains('active')) renderVistoria();
+    toast(fila ? 'Registro excluído da fila — veículo na loja.' : 'Locação estornada.');
   };
 };
+/* Atalho da fila da vistoria: tira um registro pago que nunca saiu. */
+window.excluirDaFila = function(locId){ estornarLocacao(locId, { fila:true }); };
 
 window.estornarDespesa = function(id){
   if(!exigirAdministrador('estornar um lançamento')) return;
@@ -3251,6 +3292,7 @@ if($('#fEtqBusca')) $('#fEtqBusca').oninput = renderEtiquetas;
 if($('#fEtqTipo')) $('#fEtqTipo').onchange = renderEtiquetas;
 
 function oferecerEtiquetas(ids){
+  if(!ehAdministrador()) return;   /* a seção de QR Codes mora em Configurações, do admin */
   const ov = abrirModal('<header><h3>'+ids.length+' veículo(s) criado(s)</h3><button class="x">&times;</button></header>'+
     '<div class="body"><p style="margin:0;font-size:13.5px">A frota nova está pronta para etiquetar: gere as etiquetas '+
     'em PNG, SVG, PDF ou imprima a folha A4 e cole no patinete.</p></div>'+
@@ -3259,10 +3301,209 @@ function oferecerEtiquetas(ids){
   ov.querySelector('#e').onclick = ()=>{ etqFoco = ids; fecharModal(ov); abrirSecaoEtiquetas(); };
 }
 
+/* ===================== ABA MANUTENÇÃO =====================
+   Só o administrador entra. Cada veículo com status de manutenção tem um
+   registro com as peças a trocar (da tabela de peças do tipo dele, mais
+   uma linha livre) e as fotos do veículo. */
+function manutencaoAbertaDe(veiculoId){
+  return DB.manutencoes
+    .filter(m=>String(m.veiculoId)===String(veiculoId) && m.status==='aberta')
+    .sort((a,b)=>(b.criadoEm||0)-(a.criadoEm||0))[0] || null;
+}
+function miniFotosHTML(fotos){
+  if(!fotos || !fotos.length) return '<span class="muted">—</span>';
+  return '<span style="display:inline-flex;gap:6px;flex-wrap:wrap">'+fotos.map(f=>
+    '<img src="" data-fotoid="'+esc(f.id||'')+'" data-fotocam="'+esc(f.caminho||'')+'" '+
+    'style="width:54px;height:54px;object-fit:cover;border-radius:8px;border:1px solid var(--line);background:#f2f2f2;cursor:pointer" '+
+    'alt="foto do veículo" title="abrir a foto">').join('')+'</span>';
+}
+function carregarMiniFotos(box){
+  if(!box) return;
+  box.querySelectorAll('img[data-fotoid]').forEach(img=>{
+    if(img.src) return;
+    Fotos.obter(img.dataset.fotoid, img.dataset.fotocam).then(url=>{ if(url) img.src = url; }).catch(()=>{});
+    img.onclick = ()=>{
+      const src = img.src; if(!src) return;
+      abrirModal('<header><h3>Foto do veículo</h3><button class="x">&times;</button></header>'+
+        '<div class="body" style="text-align:center"><img src="'+src+'" alt="foto" style="max-width:100%;border-radius:12px"></div>'+
+        '<footer><button class="btn sec" id="fc">Fechar</button></footer>')
+        .querySelector('#fc').onclick = function(){ fecharModal(this.closest('.overlay')); };
+    };
+  });
+}
+function renderManutencao(){
+  if(!ehAdministrador()) return;   /* a aba já fica escondida — defesa dupla */
+  const emManut = DB.veiculos.filter(v=>v.status==='manutencao');
+  $('#manResumo').textContent = emManut.length ? emManut.length+' veículo(s)' : '';
+  $('#tbManAbertas').innerHTML =
+    '<thead><tr><th>Veículo</th><th>Tipo</th><th>Desde</th><th>Peças / o que fazer</th>'+
+    '<th>Fotos</th><th>Observação</th><th></th></tr></thead><tbody>'+
+    (emManut.length ? emManut.map(v=>{
+      const m = manutencaoAbertaDe(v.id);
+      const tipo = getTipo(v.tipoId) || {};
+      const pecas = m && (m.pecas||[]).length
+        ? m.pecas.map(p=>esc(p.nome)+(p.valor?' <span class="muted">'+brl(p.valor)+'</span>':'')).join(', ')
+        : '<span class="muted">sem detalhamento</span>';
+      return '<tr>'+
+        '<td><b>'+esc(v.codigo)+'</b></td>'+
+        '<td>'+esc(tipo.nome||'')+'</td>'+
+        '<td class="mono">'+(m ? dtFmt(m.criadoEm) : '—')+'</td>'+
+        '<td>'+pecas+'</td>'+
+        '<td>'+(m ? miniFotosHTML(m.fotos) : '<span class="muted">—</span>')+'</td>'+
+        '<td>'+esc(m && m.obs ? m.obs : '')+'</td>'+
+        '<td class="right" style="white-space:nowrap">'+
+          '<button class="btn sm sec" onclick="abrirManutencao('+v.id+')">Peças e foto</button> '+
+          '<button class="btn sm ok" onclick="concluirManutencao('+v.id+')">Concluir</button>'+
+        '</td></tr>';
+    }).join('') : '<tr><td colspan="7" class="empty">Nenhum veículo em manutenção.</td></tr>')+'</tbody>';
+
+  const fechadas = DB.manutencoes.filter(m=>m.status==='fechada')
+    .sort((a,b)=>(b.concluidaEm||0)-(a.criadoEm||0)).slice(0,120);
+  $('#tbManFechadas').innerHTML =
+    '<thead><tr><th>Veículo</th><th>Peças / o que fazer</th><th>Fotos</th><th>Aberta</th>'+
+    '<th>Concluída</th><th>Por</th></tr></thead><tbody>'+
+    (fechadas.length ? fechadas.map(m=>
+      '<tr>'+
+        '<td><b>'+esc(m.veiculoCodigo||'')+'</b></td>'+
+        '<td>'+((m.pecas||[]).map(p=>esc(p.nome)).join(', ') || '<span class="muted">—</span>')+'</td>'+
+        '<td>'+miniFotosHTML(m.fotos)+'</td>'+
+        '<td class="mono">'+dtFmt(m.criadoEm)+'</td>'+
+        '<td class="mono">'+dtFmt(m.concluidaEm)+'</td>'+
+        '<td>'+esc(m.concluidaPor||m.usuario||'—')+'</td>'+
+      '</tr>').join('')
+      : '<tr><td colspan="6" class="empty">Nenhuma manutenção concluída.</td></tr>')+'</tbody>';
+  carregarMiniFotos($('#tbManAbertas'));
+  carregarMiniFotos($('#tbManFechadas'));
+}
+
+window.abrirManutencao = function(veiculoId){
+  /* O atendente abre este popup quando manda um veículo para manutenção;
+     a aba que recebe o registro é do administrador. */
+  const v = getVeiculo(veiculoId); if(!v) return;
+  const atual = manutencaoAbertaDe(v.id);
+  const pecasDoTipo = DB.pecas.filter(p=>String(p.tipoId)===String(v.tipoId));
+  const fotos = [null,null,null];
+  if(atual) (atual.fotos||[]).slice(0,3).forEach((f,i)=>{ fotos[i] = { id:f.id, caminho:f.caminho, legenda:f.legenda, ts:f.ts, thumb:null }; });
+  const ov = abrirModal(
+    '<header><h3>Manutenção — '+esc(v.codigo)+'</h3><button class="x">&times;</button></header>'+
+    '<div class="body">'+
+      '<div class="fnota">Marque as peças a trocar ou reparar e fotografe o veículo. '+
+      'O registro vai para a aba Manutenção, que só o administrador vê.</div>'+
+      '<div style="border:1px solid var(--line);border-radius:10px;padding:13px;margin-bottom:11px;background:#fafbfc">'+
+        '<div style="font-weight:700;font-size:13px;margin-bottom:9px">Peças a trocar / reparar</div>'+
+        '<div style="display:flex;flex-direction:column;gap:7px;max-height:230px;overflow:auto">'+
+          (pecasDoTipo.length ? pecasDoTipo.map(p=>{
+            const marcado = !!(atual && (atual.pecas||[]).some(x=>String(x.pecaId)===String(p.id)));
+            return '<label style="display:flex;gap:9px;align-items:center;font-size:13px">'+
+              '<input type="checkbox" class="manPeca" value="'+p.id+'"'+(marcado?' checked':'')+'>'+
+              '<span>'+esc(p.nome)+'</span>'+
+              '<span class="muted" style="margin-left:auto;white-space:nowrap">'+brl(p.valor)+'</span></label>';
+          }).join('') : '<div class="muted" style="font-size:12.5px">Este tipo ainda não tem tabela de peças.</div>')+
+          '<label style="display:flex;gap:9px;align-items:center;font-size:13px;border-top:1px dashed var(--line);padding-top:8px">'+
+            '<input type="checkbox" id="manOutra">'+
+            '<span>Outra (digitar)</span>'+
+            '<input type="text" id="manOutraTexto" placeholder="ex.: trocar cabo de carga" style="flex:1;min-width:0;padding:7px 9px;font-size:13px;border:1px solid var(--line);border-radius:8px">'+
+          '</label>'+
+        '</div>'+
+      '</div>'+
+      '<label class="f"><span>Observação</span><input type="text" id="manObs" '+
+        'placeholder="ex.: bateria fraca, freio solto" value="'+esc(atual&&atual.obs?atual.obs:'')+'"></label>'+
+      '<div class="f"><span style="display:block;font-weight:600;font-size:13px;margin-bottom:6px">Fotos do veículo</span>'+
+        '<div id="manFotosBox"></div></div>'+
+    '</div>'+
+    '<footer><button class="btn sec" id="c">Cancelar</button>'+
+      '<button class="btn ok" id="s">'+(atual?'Salvar registro':'Enviar para manutenção')+'</button></footer>');
+
+  const pintaFotos = ()=>{
+    ov.querySelector('#manFotosBox').innerHTML = painelFotos('manFotos', fotos, LEG_VIST);
+    ligarFotos('manFotos', fotos, LEG_VIST, pintaFotos);
+  };
+  pintaFotos();
+  fotos.forEach((f,i)=>{
+    if(!f || f.thumb) return;
+    Fotos.obter(f.id, f.caminho).then(url=>{
+      if(url && fotos[i]){ fotos[i] = Object.assign({}, fotos[i], { thumb:url }); pintaFotos(); }
+    }).catch(()=>{});
+  });
+
+  const foraTxt = ov.querySelector('#manOutraTexto');
+  ov.querySelector('#manOutra').onchange = e=>{
+    foraTxt.disabled = !e.target.checked;
+    if(e.target.checked) foraTxt.focus();
+    else foraTxt.value = '';
+  };
+  foraTxt.disabled = !ov.querySelector('#manOutra').checked;
+
+  ov.querySelector('#c').onclick = ()=> fecharModal(ov);
+  ov.querySelector('#s').onclick = ()=>{
+    const pecas = [];
+    ov.querySelectorAll('.manPeca').forEach(cb=>{
+      if(!cb.checked) return;
+      const p = DB.pecas.find(x=>String(x.id)===String(cb.value));
+      if(p) pecas.push({ pecaId:p.id, nome:p.nome, valor:p.valor });
+    });
+    const usouOutra = ov.querySelector('#manOutra').checked;
+    const outra = foraTxt.value.trim();
+    if(usouOutra && !outra) return toast('Descreva a outra peça ou serviço.');
+    if(!usouOutra) ov.querySelector('#manOutraTexto').value = '';
+    if(outra) pecas.push({ pecaId:null, nome:outra, valor:0 });
+    const obs = ov.querySelector('#manObs').value.trim();
+    if(!pecas.length && !obs && !fotos.filter(Boolean).length)
+      return toast('Marque ao menos uma peça, escreva a observação ou tire uma foto.');
+    const jaTem = manutencaoAbertaDe(v.id);
+    const registro = {
+      id: jaTem ? jaTem.id : uid('manutencao'),
+      veiculoId: v.id, veiculoCodigo: v.codigo, tipoId: v.tipoId,
+      criadoEm: jaTem ? jaTem.criadoEm : Date.now(),
+      usuario: jaTem ? jaTem.usuario : usuarioAtual(),
+      pecas, obs, status:'aberta',
+      fotos: fotos.filter(Boolean).map(f=>({ id:f.id, caminho:f.caminho, legenda:f.legenda, ts:f.ts }))
+    };
+    if(jaTem) Object.assign(jaTem, registro);
+    else DB.manutencoes.push(registro);
+    v.status = 'manutencao';
+    log(jaTem?'manutencao_atualizada':'manutencao_aberta',
+        v.codigo+' — '+(pecas.map(p=>p.nome).join(', ')||'só observação')+(obs?' — '+obs:''));
+    persist(); fecharModal(ov);
+    renderManutencao(); renderFrota(); renderPainel();
+    toast(jaTem ? 'Registro de manutenção atualizado.' : 'Veículo enviado para a manutenção.');
+  };
+};
+
+window.concluirManutencao = function(veiculoId){
+  if(!ehAdministrador()) return;
+  const v = getVeiculo(veiculoId); if(!v || v.status!=='manutencao') return;
+  const ov = abrirModal(
+    '<header><h3>Concluir manutenção — '+esc(v.codigo)+'</h3><button class="x">&times;</button></header>'+
+    '<div class="body">'+
+      '<div class="fnota">O veículo volta para a loja e o registro entra em Concluídas, '+
+      'com as peças, as fotos e quem resolveu.</div>'+
+      '<label class="f"><span>O que foi feito (obrigatório)</span><input type="text" id="mcObs" '+
+        'placeholder="ex.: trocada a bateria e o freio traseiro" autofocus></label>'+
+      '<div class="resumo"><div class="l"><span>Situação</span><b>Volta para a loja, disponível para locação</b></div></div>'+
+    '</div>'+
+    '<footer><button class="btn sec" id="c">Cancelar</button>'+
+      '<button class="btn ok" id="s">Concluir e devolver para a loja</button></footer>');
+  ov.querySelector('#c').onclick = ()=> fecharModal(ov);
+  ov.querySelector('#s').onclick = ()=>{
+    const obs = ov.querySelector('#mcObs').value.trim();
+    if(obs.length < 3) return toast('Descreva o que foi feito.');
+    v.status = 'loja';
+    const abertas = DB.manutencoes.filter(m=>String(m.veiculoId)===String(v.id) && m.status==='aberta');
+    abertas.forEach(m=>{
+      m.status = 'fechada'; m.concluidaEm = Date.now();
+      m.concluidaPor = usuarioAtual(); m.obsConclusao = obs;
+    });
+    log('manutencao_concluida', v.codigo+' — '+obs+(abertas.length?'':' (sem registro de peças)'));
+    persist(); fecharModal(ov);
+    renderManutencao(); renderFrota(); renderPainel();
+    toast(v.codigo+' voltou para a loja.');
+  };
+};
+
 /* ===================== ABA VISTORIA =====================
    O balcão só mostra o que está na fila e entrega o link. Quem fotografa,
    escaneia a etiqueta e libera faz isso no celular, pelo link público. */
-let _qrToken = null;
 function pintarQr(sel, texto, chave){
   const qr = $(sel); if(!qr) return;
   if(qr.dataset.chave === chave && qr.firstChild) return;
@@ -3276,8 +3517,6 @@ function pintarQr(sel, texto, chave){
 function renderVistoria(){
   const link = linkVistoria();
   const box = $('#vistLink'); if(box) box.textContent = link;
-  pintarQr('#vistQr', link, DB.config.vistoriaToken);
-  _qrToken = DB.config.vistoriaToken;
 
   const pend = locPendentes();
   const pendGrupos = {};
@@ -3285,7 +3524,7 @@ function renderVistoria(){
   const agora = Date.now();
   $('#vistQtdPend').textContent = pend.length ? pend.length+' aguardando' : '';
   $('#tbVistPend').innerHTML =
-    '<thead><tr><th>Veículo</th><th>Tipo</th><th>Cliente</th><th>Pago há</th><th>Pacote</th><th>Estimativa</th></tr></thead><tbody>'+
+    '<thead><tr><th>Veículo</th><th>Tipo</th><th>Cliente</th><th>Pago há</th><th>Pacote</th><th>Estimativa</th><th></th></tr></thead><tbody>'+
     (pend.length ? Object.values(pendGrupos).map(ls=>{
       const l = ls[0];
       const mins = Math.max(0, Math.round((agora - (l.pagoEm||agora))/60000));
@@ -3299,9 +3538,11 @@ function renderVistoria(){
           '<td class="mono">'+(mins<1?'agora':mins+' min')+'</td>'+
           '<td>'+esc(x.tarifaLabel)+'</td>'+
           '<td class="mono">'+(x.duracaoMin ? x.duracaoMin+' min' : '—')+'</td>'+
+          '<td class="right"><button class="btn sm sec" onclick="excluirDaFila('+x.id+')" '+
+            'title="tira da fila, estorna o pagamento e devolve o veículo para a loja">Excluir</button></td>'+
         '</tr>';
       }).join('');
-    }).join('') : '<tr><td colspan="6" class="empty">Nada na fila — toda locação paga já foi liberada.</td></tr>')+'</tbody>';
+    }).join('') : '<tr><td colspan="7" class="empty">Nada na fila — toda locação paga já foi liberada.</td></tr>')+'</tbody>';
 
   const rua = locAtivas();
   $('#vistQtdRua').textContent = rua.length ? rua.length+' na rua' : '';
@@ -3319,10 +3560,16 @@ function renderVistoria(){
       '</tr>';
     }).join('') : '<tr><td colspan="5" class="empty">Nenhum veículo na rua.</td></tr>')+'</tbody>';
 
+  /* A chegada registrada é assunto do dia: só existe enquanto o caixa está
+     aberto. Ao fechar o caixa as locações são encerradas e este bloco some,
+     indo para o histórico. */
   const fecha = locDevolvidas();
-  $('#vistQtdFecha').textContent = fecha.length ? fecha.length+' para fechar' : '';
-  $('#tbVistFecha').innerHTML =
-    '<thead><tr><th>Veículo</th><th>Cliente</th><th>Chegada</th><th>Estado</th><th></th></tr></thead><tbody>'+
+  const comCaixa = caixaAberto();
+  const cardFecha = $('#vistCardFecha');
+  if(cardFecha) cardFecha.style.display = comCaixa ? '' : 'none';
+  $('#vistQtdFecha').textContent = comCaixa ? (fecha.length ? fecha.length+' hoje' : '') : '';
+  $('#tbVistFecha').innerHTML = !comCaixa ? '' :
+    '<thead><tr><th>Veículo</th><th>Cliente</th><th>Chegada</th><th>Estado</th></tr></thead><tbody>'+
     (fecha.length ? fecha.map(l=>{
       const ok = (l.fotosEntrada||[]).filter(Boolean).length;
       return '<tr>'+
@@ -3330,9 +3577,8 @@ function renderVistoria(){
         '<td>'+esc(l.clienteNome)+'</td>'+
         '<td class="mono">'+(l.fimReal?hhmm(l.fimReal):'—')+'</td>'+
         '<td>'+(ok ? '<span class="pill loja">'+ok+' foto(s)</span>' : '<span class="pill manut">sem foto</span>')+'</td>'+
-        '<td class="right"><button class="btn sm ok" onclick="abrirDevolucao('+l.id+')">Fechar no balcão</button></td>'+
       '</tr>';
-    }).join('') : '<tr><td colspan="5" class="empty">Nenhuma chegada registrada hoje.</td></tr>')+'</tbody>';
+    }).join('') : '<tr><td colspan="4" class="empty">Nenhuma chegada registrada hoje.</td></tr>')+'</tbody>';
 
   const hoje = diaKey(agora);
   const feitos = DB.locacoes.filter(l=>l.vistoriadaEm && diaKey(l.vistoriadaEm)===hoje)
@@ -3351,8 +3597,6 @@ $('#btnCopiarLinkVist') && ($('#btnCopiarLinkVist').onclick = async ()=>{
   try{ await navigator.clipboard.writeText(linkVistoria()); toast('Link copiado.'); }
   catch(e){ toast('Selecione o link acima e copie.'); }
 });
-$('#btnWhatsLinkVist') && ($('#btnWhatsLinkVist').onclick = ()=> window.open(
-  'https://wa.me/?text=' + encodeURIComponent('Link da vistoria ('+(DB.empresa.nome||'')+'): ' + linkVistoria()), '_blank'));
 function gerarNovoLinkVistoria(){
   const ov = abrirModal(
     '<header><h3>Gerar um novo link?</h3><button class="x">&times;</button></header>'+
@@ -3361,13 +3605,11 @@ function gerarNovoLinkVistoria(){
   ov.querySelector('#nvCancel').onclick = ()=> fecharModal(ov);
   ov.querySelector('#nvOk').onclick = ()=>{
     DB.config.vistoriaToken = tokenPublico(24);
-    _qrToken = null;
-    $$('#vistQr,#cfgVistQr').forEach(el=>{ delete el.dataset.chave; });
+    $$('#cfgVistQr').forEach(el=>{ delete el.dataset.chave; });
     persist(); fecharModal(ov); renderVistoria(); renderConfig();
     toast('Novo link da vistoria gerado.');
   };
 }
-$('#btnNovaLinkVist') && ($('#btnNovaLinkVist').onclick = gerarNovoLinkVistoria);
 ['#fFrotaBusca','#fFrotaTipo','#fFrotaStatus'].forEach(s=>{ $(s).oninput = renderFrota; $(s).onchange = renderFrota; });
 
 /* Bloco de criação de tipo embutido no formulário de veículo. 'v' é o do
@@ -3447,10 +3689,12 @@ $('#btnNovoVeiculo').onclick = ()=>{
     if(DB.veiculos.some(v=>v.codigo.toLowerCase()===cod.toLowerCase())) return toast('Já existe veículo com esse código.');
     const r = lerNovoTipo(ov, 'v');
     if(r.erro) return toast(r.erro);
-    DB.veiculos.push({ id:uid('veiculo'), codigo:cod, tipoId:r.tipoId,
-      placa:ov.querySelector('#vPlaca').value.trim(), status:ov.querySelector('#vStatus').value });
+    const novo = { id:uid('veiculo'), codigo:cod, tipoId:r.tipoId,
+      placa:ov.querySelector('#vPlaca').value.trim(), status:ov.querySelector('#vStatus').value };
+    DB.veiculos.push(novo);
     if(r.criado){ log('tipo_novo', r.criado.nome); renderConfig(); }
     persist(); fecharModal(ov); renderFrota(); renderPainel(); toast('Veículo cadastrado.');
+    if(novo.status==='manutencao') abrirManutencao(novo.id);
   };
 };
 window.editarVeiculo = function(id){
@@ -3474,9 +3718,14 @@ window.editarVeiculo = function(id){
     v.codigo = cod || v.codigo;
     v.tipoId = r.tipoId;
     v.placa  = ov.querySelector('#vPlaca').value.trim();
+    const eraManut = v.status==='manutencao';
     if(v.status!=='rua') v.status = ov.querySelector('#vStatus').value;
     if(r.criado){ log('tipo_novo', r.criado.nome); renderConfig(); }
-    persist(); fecharModal(ov); renderFrota(); renderPainel(); toast('Veículo atualizado.');
+    const virouManut = v.status==='manutencao' && !eraManut;
+    persist(); fecharModal(ov); renderFrota(); renderPainel();
+    /* escolheu Manutenção: na hora abre o registro de peças + foto */
+    if(virouManut){ abrirManutencao(v.id); return; }
+    toast('Veículo atualizado.');
   };
 };
 $('#btnInventario').onclick = ()=> abrirInventario();
@@ -3600,6 +3849,7 @@ if(ate) lista = lista.filter(l=> diaKey(tsCobranca(l)) <= ate);
   return lista.sort((a,b)=>(tsCobranca(b)||0)-(tsCobranca(a)||0));
 }
 function renderHistorico(){
+  if(!ehAdministrador()) return;   /* a aba já fica escondida — defesa dupla */
   const lista = histFiltrado();
   $('#tbHist').innerHTML =
     '<thead><tr><th>#</th><th>Veículo</th><th>Cliente</th><th>Saída</th><th>Entrada</th><th>Pacote</th>'+
@@ -4127,6 +4377,21 @@ function fecharCaixaModal(dia, esperado){
     cx.operadorFech = usuarioAtual();
     cx.obs = ov.querySelector('#fcObs').value.trim();
     cx.fechamentoTs = Date.now(); cx.status='fechado';
+    /* O fechamento encerra o dia da vistoria: o que já chegou e estava
+       esperando o balcão sai da fila (o bloco some com o caixa fechado) e
+       vai para o histórico, sem lançar cobrança nova — o que é devido foi
+       cobrado antes da saída. */
+    let encerradas = 0;
+    DB.locacoes.forEach(l=>{
+      if(l.status !== 'devolvida') return;
+      l.status = 'finalizada';
+      if(!l.atendenteEntrada) l.atendenteEntrada = usuarioAtual();
+      if(l.grupoId && !locsDoGrupo(l.grupoId).some(x=>x.status==='pendente'||x.status==='ativa'))
+        fecharGrupoSeCompleto(l.grupoId);
+      encerradas++;
+    });
+    if(encerradas) log('chegadas_encerradas',
+      encerradas+' chegada(s) do dia encerrada(s) no fechamento do caixa');
     const dif = cx.saldoContado - esperado;
     log('caixa_fechamento', diaLegivel(dia)+' — esperado '+brl(esperado)+', contado '+brl(cx.saldoContado)+
       (Math.abs(dif)<0.01?' (sem diferença)':(dif>0?' (sobra ':' (falta ')+brl(Math.abs(dif))+')'));
@@ -4251,6 +4516,7 @@ window.editarFixo = function(id){
 
 /* ===================== CONFIG ===================== */
 function renderConfig(){
+  if(!ehAdministrador()) return;   /* a aba já fica escondida — defesa dupla */
   $('#cfgNome').value = DB.empresa.nome||''; $('#cfgCnpj').value = DB.empresa.cnpj||'';
   $('#cfgEnd').value = DB.empresa.endereco||''; $('#cfgTel').value = DB.empresa.telefone||'';
   $('#cfgTol').value = DB.config.toleranciaMin||0;
