@@ -223,6 +223,13 @@ público da vistoria** com QR Code para passar adiante.
   **“chegada registrada”** (o relógio parou naquela hora). A cobrança de excedente e de
   avaria é fechada **no balcão**, na tela de entrada, que já mostra as fotos e a hora do
   celular.
+- **Remover a multa de atraso** — na tela de entrada (de um veículo ou do grupo),
+  quando há excedente aparece **Remover a multa de atraso**: fecha pelo valor
+  original, sem cobrar os minutos. Exige o motivo, grava `excedente_removido` na
+  auditoria com quem removeu, o atraso continua registrado em minutos **sem entrar
+  no dinheiro do dia**, e o Histórico mostra *multa removida*. **A atendente faz
+  sozinha**, sem chamar o administrador — é para a correria do balcão, quando a
+  entrada não foi fechada na hora e o relógio correu com o veículo já na loja.
 - A página `vistoria.html` atualiza sozinha a cada 8 s, mas **não redesenha** enquanto
   alguém estiver fotografando ou digitando. Ela usa a logo em caminho **absoluto**
   (`/assets/…`), porque o link abre em `/vistoria/{token}`.
@@ -370,8 +377,10 @@ npm run verificar   # 57 verificações contra o site publicado
   três colunas com `Entregues` escondida com o caixa fechado, e a API entrega
   `caixaAberto`; a aba **Manutenção** existe no sistema (migração, lista abertas e
   concluídas, peças da tabela do tipo + linha livre, fotos, conclusão obrigatória,
-  abertura ao trocar o status) e está espelhada no app offline; e o contrato espera
-  a assinatura carregar antes de imprimir, no index e no app.
+  abertura ao trocar o status) e está espelhada no app offline; o contrato espera
+  a assinatura carregar antes de imprimir, no index e no app; e a entrada (de um
+  veículo ou do grupo) remove a multa de atraso com motivo e auditoria, sem pedir
+  o administrador, no index e no app.
 - **`verificar-ar`** — roda a operação inteira no site publicado: login, estado com
   lock, histórico, foto com link assinado, contrato assinado no celular, limpeza, a
   identidade no ar (página, login por e-mail, seção Relatórios no painel e o logo

@@ -111,7 +111,8 @@ Navegador (single-file HTML, sem build, sem framework)
     fotosSaida:   [{ id, caminho, legenda, ts }],
     fotosEntrada: [{ id, caminho, legenda, ts }],
     status: 'ativa'|'finalizada'|'estornada',
-    estorno?: { ts, usuario, usuarioId, motivo, detalhe, valor }
+    estorno?: { ts, usuario, usuarioId, motivo, detalhe, valor },
+    excedenteRemovido?: { minutos, valor, motivo, usuario, ts }
   }],
 
   despesas: [{
@@ -233,6 +234,7 @@ promovido a `email` da conta.
 | Operar balcão e caixa | sim | sim |
 | Abrir o registro de manutenção (peças e foto do veículo) | sim | sim |
 | Excluir uma pendência da fila da vistoria (estorno em modo fila) | sim | sim |
+| Remover a multa de atraso na entrada (fecha pelo valor original) | sim | sim |
 | Ver o financeiro do mês | — | sim |
 | Ver a seção Relatórios do mês no painel | — | sim |
 | Ver a aba Manutenção, a aba Histórico e a aba Configurações | — | sim |
@@ -342,6 +344,18 @@ diferença pelo tempo.
   naquela hora (o relógio para) e o veículo volta para `loja`. **A cobrança de
   excedente e de avaria continua sendo fechada no balcão**, na tela de entrada, que já
   lê `fotosEntrada`, `obsVistoria` e a hora registrada no celular.
+- **Remover a multa de atraso.** Na tela de entrada — individual (`abrirDevolucao`)
+  ou do grupo (`devolverGrupo`) —, quando `calcExcedente` dá valor, aparece a opção
+  **Remover a multa de atraso**: fecha pelo valor original, sem cobrar os minutos.
+  Exige o motivo (`#dRemExMotivo`/`#gMotivo`, mínimo de 3 caracteres), grava
+  `loc.excedenteRemovido = { minutos, valor, motivo, usuario, ts }`, zera
+  `loc.valorExcedente` (o atraso continua registrado em `loc.minutosExcedente`),
+  grava `excedente_removido` na auditoria, marca `(multa removida)` no
+  `log('devolucao')` e o Histórico mostra o pill *multa removida*. **Não exige
+  administrador** — é a autonomia da atendente na correria do balcão, quando a
+  entrada não foi fechada na hora e o relógio correu com o veículo já na loja.
+  Como `valorExcedente` fica 0, a multa não entra em `entradasDoDia`,
+  `entradasDoMes`, no fluxo, no relatório nem no CSV.
 - **Excluir da fila (estorno em modo fila).** O cartão *pago aguardando liberação* tem
   o botão **Excluir** (`excluirDaFila` → `estornarLocacao(id, { fila: true })`). O modo
   fila serve **só para locação pendente** e **não exige administrador** — quem paga
@@ -555,7 +569,7 @@ Duas vias: **celular do cliente** (fluxo principal) e **balcão** (fallback). O 
 | **Frota** | Lista com filtro (busca, **tipo** e status), status, nº de locações e faturamento por veículo; cadastro individual e em lote — os dois com **`+ Novo tipo (marca e modelo)`**, que cria o tipo com preço próprio na hora (seção 4.1); botão de conferência da frota; **botão *Etiqueta* por linha** (PNG da etiqueta QR daquele patinete). Veículo com locação pendente aparece travado, com pill *aguardando vistoria* e atalho para a fila. |
 | **QR Codes** | Seção recolhível no topo de **Configurações** (a navegação não tem mais essa aba): etiquetas da frota, grade de pré-visualização com busca e filtro por tipo, contagem de etiquetas e de folhas A4, e quatro saídas da mesma folha (3 × 6): **Baixar PDF**, **PNG**, **SVG** e **Imprimir folha**. Clicar em *Ver toda a frota* limpa o filtro do atalho do lote. |
 | **Manutenção** | Duas tabelas: **Em manutenção** (peças marcadas na tabela do tipo, mais a linha livre *Outra*, fotos, observação, e os botões **Peças e foto** e **Concluir**) e **Concluídas** (quem abriu, quem concluiu e as duas datas). Abre sozinha ao escolher *Manutenção* no cadastro do veículo (seção 4.13). Exclusiva do administrador. |
-| **Vistoria** | Cabeçalho com **Copiar link** e o link público (**sem QR e sem WhatsApp** — os dois ficam em Configurações); quatro blocos: pago aguardando liberação (com **Excluir**, que estorna a pendência e devolve o veículo), na rua (com fechamento no balcão), chegada registrada (**só com o caixa do dia aberto**) e vistoriadas hoje (**com as fotos da saída clicáveis**). No celular, cada cartão tem **Escanear código do patinete** e há **Escanear patinete** no topo; a página é um quadro de três colunas (seção 4.8). |
+| **Vistoria** | Cabeçalho com **Copiar link** e o link público (**sem QR e sem WhatsApp** — os dois ficam em Configurações); quatro blocos: pago aguardando liberação (com **Excluir**, que estorna a pendência e devolve o veículo), na rua (com fechamento no balcão, que pode **remover a multa de atraso** com motivo), chegada registrada (**só com o caixa do dia aberto**) e vistoriadas hoje (**com as fotos da saída clicáveis**). No celular, cada cartão tem **Escanear código do patinete** e há **Escanear patinete** no topo; a página é um quadro de três colunas (seção 4.8). |
 | **Clientes** | Busca por nome, CPF ou telefone; histórico e total gasto; *Editar* e *Excluir* o cadastro — a exclusão é recusada com devolução em aberto, avisa que o histórico mantém nome e CPF, e vai para a auditoria. |
 | **Histórico** | Locações com filtro por período; base, excedente, avaria e total; acesso às fotos de saída e entrada, ao contrato e ao estorno. |
 | **Financeiro** | Demonstrativo de fluxo do mês (entradas por origem, saídas por categoria, resultado, margem); custos fixos recorrentes; movimento dia a dia com destaque do melhor dia; faturamento por veículo, tipo, pacote e forma de pagamento; exportação CSV. Exclusiva do administrador. |

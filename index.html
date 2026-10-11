@@ -2769,28 +2769,54 @@ window.devolverGrupo = function(gid){
           '<td class="right mono"'+(x.ex.valor?' style="color:var(--danger)"':'')+'>'+brl(x.ex.valor)+'</td>'+
           '</tr>').join('')+
         '</tbody></table></div>'+
-      '<div class="resumo"><div class="l tot"><span>A receber agora</span><span>'+brl(totalEx)+'</span></div></div>'+
-      (totalEx>0 ? '<label class="f"><span>Forma de pagamento</span><select id="gPgto">'+
-        PAGAMENTOS.map(p=>'<option>'+p+'</option>').join('')+'</select></label>' : '')+
+      '<div class="resumo"><div class="l tot"><span>A receber agora</span><span id="gTotalEx">'+brl(totalEx)+'</span></div></div>'+
+      (totalEx>0
+        ? '<div id="gPgtoWrap"><label class="f"><span>Forma de pagamento</span><select id="gPgto">'+
+          PAGAMENTOS.map(p=>'<option>'+p+'</option>').join('')+'</select></label></div>'+
+          '<label class="f" style="flex-direction:row;gap:9px;align-items:flex-start;margin-top:10px">'+
+            '<input type="checkbox" id="gRemEx" style="width:auto;margin-top:3px">'+
+            '<span><b>Remover as multas de atraso de todos</b><br>'+
+            '<span class="muted" style="font-size:12.5px">Fecha pelo valor original, sem cobrar. Fica registrado o motivo e quem removeu.</span></span></label>'+
+          '<label class="f" id="gMotivoBox" style="display:none"><span>Motivo da remoção (obrigatório)</span>'+
+            '<input type="text" id="gMotivo" placeholder="ex.: entradas não foram fechadas na correria do balcão"></label>'
+        : '')+
       '<label class="f"><span>Observações</span><input type="text" id="gObs" placeholder="ex: todos devolvidos sem avaria"></label>'+
       '<div class="aviso" style="font-size:12.5px">Esta tela devolve todos os veículos <b>sem avaria</b>. Se algum voltou danificado, feche esse veículo individualmente pelo card dele para lançar as peças.</div>'+
     '</div>'+
     '<footer><button class="btn sec" id="gCancel">Cancelar</button><button class="btn ok" id="gOk">Confirmar entrada de todos</button></footer>');
   ov.querySelector('#gCancel').onclick = ()=> fecharModal(ov);
+  const gRemCk = ov.querySelector('#gRemEx');
+  if(gRemCk) gRemCk.onchange = ()=>{
+    const rem = gRemCk.checked;
+    ov.querySelector('#gMotivoBox').style.display = rem ? '' : 'none';
+    const pw = ov.querySelector('#gPgtoWrap'); if(pw) pw.style.display = rem ? 'none' : '';
+    ov.querySelector('#gTotalEx').textContent = brl(rem?0:totalEx);
+  };
   ov.querySelector('#gOk').onclick = ()=>{
+    const remTudo = !!(ov.querySelector('#gRemEx')||{}).checked;
+    const motivoG = remTudo ? ov.querySelector('#gMotivo').value.trim() : '';
+    if(remTudo && motivoG.length<3) return toast('Descreva o motivo da remoção das multas.');
     const fim = Date.now();
     const pg = (ov.querySelector('#gPgto')||{}).value||null;
     const obs = ov.querySelector('#gObs').value.trim();
     let cobrar = 0;
     locs.forEach(l=>{
       const ex = calcExcedente(l, fim);
-      l.fimReal = fim; l.minutosExcedente = ex.minutos; l.valorExcedente = ex.valor;
+      l.fimReal = fim; l.minutosExcedente = ex.minutos;
+      if(remTudo){
+        l.valorExcedente = 0;
+        l.excedenteRemovido = { minutos:ex.minutos, valor:ex.valor, motivo:motivoG,
+          usuario:usuarioAtual(), ts:Date.now() };
+        log('excedente_removido', l.veiculoCodigo+' — '+ex.minutos+' min ('+brl(ex.valor)+'): '+motivoG, l.id);
+      } else {
+        l.valorExcedente = ex.valor; delete l.excedenteRemovido;
+      }
       l.danos = []; l.valorDanos = 0;
-      l.pagamentoExcedente = ex.valor>0 ? pg : null;
+      l.pagamentoExcedente = (ex.valor>0 && !remTudo) ? pg : null;
       l.obsEntrada = obs; l.status = 'finalizada'; l.atendenteEntrada = usuarioAtual();
       const v = getVeiculo(l.veiculoId); if(v) v.status = 'loja';
       delete jaAlertou[l.id];
-      cobrar += ex.valor;
+      cobrar += remTudo ? 0 : ex.valor;
     });
     fecharGrupoSeCompleto(+gid);
     persist(); fecharModal(ov); renderPainel();
@@ -2832,6 +2858,17 @@ window.abrirDevolucao = function(locId){
           ? '<div class="l" style="color:var(--danger)"><span>Excedente: '+ex.minutos+' min × '+brl(tipo.excedenteMin)+'</span><b>'+brl(ex.valor)+'</b></div>'
           : '<div class="l" style="color:var(--ok)"><span>Sem excedente</span><b>'+(fim>loc.fimPrevisto?'dentro da tolerância':'no prazo')+'</b></div>')+
       '</div>'+
+      /* A correria do balcão faz a entrada sair atrasada: o relógio correu, mas
+         o veículo já estava na loja. A atendente pode remover a multa e fechar
+         pelo valor original — com motivo obrigatório e tudo na auditoria. */
+      (ex.valor>0
+        ? '<label class="f" style="flex-direction:row;gap:9px;align-items:flex-start;margin-top:10px">'+
+          '<input type="checkbox" id="dRemEx" style="width:auto;margin-top:3px">'+
+          '<span><b>Remover a multa de atraso</b><br>'+
+          '<span class="muted" style="font-size:12.5px">Fecha pelo valor original, sem cobrar os '+ex.minutos+' min. Fica registrado o motivo e quem removeu.</span></span></label>'+
+          '<label class="f" id="dRemExBox" style="display:none"><span>Motivo da remoção (obrigatório)</span>'+
+            '<input type="text" id="dRemExMotivo" placeholder="ex.: cliente voltou no horário, a entrada não foi fechada na correria"></label>'
+        : '')+
       '<label class="f"><span>Estado do veículo</span><select id="dEstado">'+
         '<option value="loja">OK — sem avarias, volta para a loja</option>'+
         '<option value="manutencao">Com avaria — enviar para manutenção</option></select></label>'+
@@ -2879,6 +2916,14 @@ window.abrirDevolucao = function(locId){
   pintaFotos();
   ov.querySelector('#dEstornar').onclick = ()=>{ fecharModal(ov); estornarLocacao(loc.id); };
 
+  let remEx = false;
+  const remExCk = ov.querySelector('#dRemEx');
+  if(remExCk) remExCk.onchange = ()=>{
+    remEx = remExCk.checked;
+    ov.querySelector('#dRemExBox').style.display = remEx ? '' : 'none';
+    pintaTotais();
+  };
+
   const danos = [];
   const totalDanos = ()=> danos.reduce((s,d)=>s+(+d.valor||0),0);
   function pintaDanos(){
@@ -2894,9 +2939,11 @@ window.abrirDevolucao = function(locId){
       danos.splice(+b.dataset.rm,1); pintaDanos(); pintaTotais(); });
   }
   function pintaTotais(){
-    const aCobrar = ex.valor + totalDanos();
+    const exCobra = remEx ? 0 : ex.valor;
+    const aCobrar = exCobra + totalDanos();
     ov.querySelector('#dTotalBox').innerHTML = '<div class="resumo" style="margin-bottom:14px">'+
-      (ex.valor>0?'<div class="l"><span>Excedente de tempo</span><b>'+brl(ex.valor)+'</b></div>':'')+
+      (exCobra>0?'<div class="l"><span>Excedente de tempo</span><b>'+brl(exCobra)+'</b></div>':'')+
+      (remEx?'<div class="l" style="color:var(--ok)"><span>Multa de atraso removida ('+ex.minutos+' min)</span><b>− '+brl(ex.valor)+'</b></div>':'')+
       (totalDanos()>0?'<div class="l"><span>Peças danificadas ('+danos.length+')</span><b>'+brl(totalDanos())+'</b></div>':'')+
       '<div class="l tot"><span>A receber agora</span><span>'+brl(aCobrar)+'</span></div></div>';
     ov.querySelector('#dPgtoBox').innerHTML = aCobrar>0
@@ -2915,23 +2962,35 @@ window.abrirDevolucao = function(locId){
   pintaDanos(); pintaTotais();
   ov.querySelector('#dCancel').onclick = ()=> fecharModal(ov);
   ov.querySelector('#dOk').onclick = ()=>{
+    const motivoRem = remEx ? ov.querySelector('#dRemExMotivo').value.trim() : '';
+    if(remEx && motivoRem.length<3) return toast('Descreva o motivo da remoção da multa.');
     /* o relógio parou na chegada da vistoria; sem chegada registrada,
        para agora, na hora da confirmação do balcão */
     const fim = loc.fimReal || Date.now();
     const ex2 = calcExcedente(loc, fim);
     loc.fimReal = fim;
     loc.minutosExcedente = ex2.minutos;
-    loc.valorExcedente = ex2.valor;
+    if(remEx){
+      /* fecha pelo valor original: o atraso continua registrado em minutos,
+         mas nada é cobrado nem entra no dinheiro do dia */
+      loc.valorExcedente = 0;
+      loc.excedenteRemovido = { minutos:ex2.minutos, valor:ex2.valor, motivo:motivoRem,
+        usuario:usuarioAtual(), ts:Date.now() };
+    } else {
+      loc.valorExcedente = ex2.valor;
+      delete loc.excedenteRemovido;
+    }
     loc.danos = danos.slice();
     loc.valorDanos = totalDanos();
-    const aCobrar = ex2.valor + loc.valorDanos;
+    const aCobrar = (remEx?0:ex2.valor) + loc.valorDanos;
     loc.pagamentoExcedente = aCobrar>0 ? ((ov.querySelector('#dPgto')||{}).value||null) : null;
     loc.obsEntrada = ov.querySelector('#dObs').value.trim();
     if(!loc.atendenteEntrada) loc.atendenteEntrada = usuarioAtual();
     const feitas = fotosEnt.filter(Boolean).map(f=>({id:f.id, caminho:f.caminho, legenda:f.legenda, ts:f.ts}));
     if(feitas.length) loc.fotosEntrada = feitas;   /* mantém as da vistoria */
     loc.status = 'finalizada';
-    log('devolucao', loc.veiculoCodigo+(aCobrar>0?' — cobrado '+brl(aCobrar):' — sem cobrança'), loc.id);
+    if(remEx) log('excedente_removido', loc.veiculoCodigo+' — '+ex2.minutos+' min ('+brl(ex2.valor)+'): '+motivoRem, loc.id);
+    log('devolucao', loc.veiculoCodigo+(aCobrar>0?' — cobrado '+brl(aCobrar):' — sem cobrança')+(remEx?' (multa removida)':''), loc.id);
     const v = getVeiculo(loc.veiculoId);
     if(v) v.status = ov.querySelector('#dEstado').value;
     delete jaAlertou[loc.id];
@@ -3881,7 +3940,8 @@ function renderHistorico(){
       return '<tr'+(est?' class="estornada"':'')+'><td class="mono">'+l.id+'</td><td><b>'+esc(l.veiculoCodigo)+'</b></td><td>'+esc(l.clienteNome)+'</td>'+
       '<td class="mono">'+dtFmt(l.inicio)+'</td><td class="mono">'+dtFmt(l.fimReal)+'</td><td>'+esc(l.tarifaLabel)+'</td>'+
       '<td class="right mono">'+brl(l.valorBase)+'</td>'+
-      '<td class="right mono"'+(l.valorExcedente?' style="color:var(--danger)"':'')+'>'+brl(l.valorExcedente)+'</td>'+
+      '<td class="right mono"'+(l.valorExcedente?' style="color:var(--danger)"':'')+'>'+brl(l.valorExcedente)+
+        (l.excedenteRemovido?'<br><span class="pill loja" title="'+esc(l.excedenteRemovido.motivo+' — '+l.excedenteRemovido.usuario)+'">multa removida</span>':'')+'</td>'+
       '<td class="right mono"'+(l.valorDanos?' style="color:var(--danger)"':'')+'>'+brl(l.valorDanos||0)+'</td>'+
       '<td class="right mono"><b>'+brl(totalLoc(l))+'</b></td>'+
       '<td>'+pill+'</td>'+

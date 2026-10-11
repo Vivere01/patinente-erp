@@ -1197,6 +1197,20 @@ function testarOperacaoEnxuta(){
   ok(fc.indexOf('calcExcedente') < 0 && fc.indexOf('sem lançar cobrança nova') >= 0,
      'o fechamento não lança cobrança nova: o que era devido saiu antes da saída');
 
+  /* --- a multa de atraso pode ser removida no fechamento --- */
+  ok(/id="dRemEx"/.test(html) && /id="dRemExMotivo"/.test(html) &&
+     html.indexOf('loc.excedenteRemovido = {') >= 0 &&
+     html.indexOf("log('excedente_removido'") >= 0,
+     'a entrada permite remover a multa de atraso com motivo obrigatório e auditoria');
+  ok(deJanela('abrirDevolucao').indexOf('exigirAdministrador') < 0,
+     'remover a multa não pede o administrador: a atendente fecha pelo valor original');
+  ok(/id="gRemEx"/.test(html) && html.indexOf('l.excedenteRemovido = {') >= 0 &&
+     html.indexOf('multa removida') >= 0,
+     'a entrada em grupo remove as multas de todos e o histórico marca a remoção');
+  ok(/id="dRemEx"/.test(app) && app.indexOf('loc.excedenteRemovido = {') >= 0 &&
+     /id="gRemEx"/.test(app),
+     'o app offline tem a mesma remoção da multa (na entrada e no grupo)');
+
   ok(rv.indexOf("verFotos(") >= 0 && rv.indexOf("fotosSaida") >= 0,
      'Vistoriadas hoje abre as fotos da saída (o atendente não tem a aba Histórico)');
   ok(!/<img src="" data-fotoid/.test(html) && !/<img src="" data-fotoid/.test(app),
