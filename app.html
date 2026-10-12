@@ -340,7 +340,7 @@ tr.estornada td:last-child{opacity:1;text-decoration:none}
 }
 
 </style>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 </head>
 <body>
 
@@ -834,6 +834,10 @@ function persist(){ Store.save(DB); }
    ===================================================================== */
 const Fotos = {
   _db:null, _mem:{},
+  _aparar(max){
+    const ks = Object.keys(this._mem);
+    if(ks.length > max) ks.slice(0, ks.length - max).forEach(k=>{ delete this._mem[k]; });
+  },
   async abrir(){
     if(this._db!==null) return this._db;
     if(typeof indexedDB==='undefined'){ this._db=false; return false; }
@@ -848,7 +852,7 @@ const Fotos = {
   },
   async salvar(id, dataUrl){
     const db = await this.abrir();
-    if(!db){ this._mem[id]=dataUrl; return id; }
+    if(!db){ this._mem[id]=dataUrl; this._aparar(120); return id; }
     return new Promise((ok,err)=>{
       const tx = db.transaction('fotos','readwrite');
       tx.objectStore('fotos').put({id, dataUrl, ts:Date.now()});
@@ -1138,6 +1142,7 @@ function pintaAlertaAtraso(loc, agora){
     '<button class="btn danger" onclick="abrirDevolucao('+loc.id+')">Registrar entrada</button></div>';
 }
 setInterval(()=>{
+  if(document.hidden) return;
   $('#relogio').textContent = new Date().toLocaleString('pt-BR',{weekday:'short',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'});
   if($('#page-painel').classList.contains('active')) tickTimers();
 }, 1000);

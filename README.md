@@ -295,6 +295,22 @@ npx vercel --prod --yes
 Variáveis novas: `Settings → Environment Variables` no painel, ou
 `vercel env add NOME production` (diga a variável no stdin).
 
+### Versão igual em todo aparelho (sem limpar cache)
+
+- O HTML revalida a cada abertura (`Cache-Control: public, max-age=0,
+  must-revalidate` no `vercel.json`) e a API responde `no-store`: abrir a página
+  já traz a versão nova — **ninguém precisa limpar o cache do navegador**.
+- Quem fica com a página aberta há horas (balcão ou celular da vistoria) recebe a
+  faixa **Nova versão disponível** com botão **Recarregar**: a sondagem do balcão e
+  a fila do celular carregam o carimbo do deploy e avisam quando ele muda.
+- Os CDN têm versão fixa (`qrcodejs 1.0.0`, `jspdf 2.5.1`, ZXing `0.21.3` — este
+  último só quando abre o leitor) e entram com `defer`, sem segurar a primeira
+  pintura da tela.
+- Com a tela apagada o balcão e o celular **não sondam** (economia de bateria e de
+  dados); ao voltar, conferem na hora.
+- O cache de fotos do aparelho tem teto (300 do servidor, 120 locais): não cresce
+  sem limite num dia de muito movimento.
+
 ### O que não vai para o deploy
 
 `.vercelignore` mantém fora do site `ESPECIFICACAO-TECNICA.md`, `docs/` e `*.sql`.
@@ -391,7 +407,9 @@ npm run verificar   # 57 verificações contra o site publicado
   abertura ao trocar o status) e está espelhada no app offline; o contrato espera
   a assinatura carregar antes de imprimir, no index e no app; e a entrada (de um
   veículo ou do grupo) remove a multa de atraso com motivo e auditoria, sem pedir
-  o administrador, no index e no app.
+  o administrador, no index e no app; e a versão igual em todo aparelho sem
+  limpar cache (HTML revalidado, CDN com defer, faixa de nova versão, sem
+  sondagem apagada e teto no cache de fotos).
 - **`verificar-ar`** — roda a operação inteira no site publicado: login, estado com
   lock, histórico, foto com link assinado, contrato assinado no celular, limpeza, a
   identidade no ar (página, login por e-mail, seção Relatórios no painel e o logo

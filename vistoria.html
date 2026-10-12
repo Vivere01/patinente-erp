@@ -124,6 +124,7 @@
 
 <main>
   <div id="telaErro" class="aviso erro escondido" style="margin-bottom:14px"></div>
+  <div id="bannerVersao" class="aviso escondido" style="margin-bottom:14px"><b>Nova versão disponível.</b> Toque em <b>Atualizar</b> para recarregar — sem precisar limpar o cache.</div>
 
   <div class="barra" id="barra">
     <span id="situacao">Carregando a fila…</span>
@@ -187,12 +188,19 @@
     el.innerHTML = txt;
   }
   let toastT;
-  function toast(msg){
-    let el = document.querySelector('.toast');
+  function toast(msg){    let el = document.querySelector('.toast');
     if(!el){ el = document.createElement('div'); el.className = 'toast'; document.body.appendChild(el); }
     el.textContent = msg;
     clearTimeout(toastT);
     toastT = setTimeout(()=>{ el.remove(); }, 3200);
+  }
+  /* depois de cada deploy, o celular com a página aberta continua no código
+     antigo: a fila avisa e a pessoa toca em Atualizar, sem limpar cache */
+  let deployVisto = '';
+  function notarDeploy(sha){
+    if(!sha) return;
+    if(!deployVisto){ deployVisto = sha; return; }
+    if(deployVisto !== sha) $('#bannerVersao').classList.remove('escondido');
   }
   function travar(){
     document.querySelectorAll('.btn').forEach(b=>{ if(b.id!=='btnAtualizar') b.disabled = postando; });
@@ -558,6 +566,7 @@
         return;
       }
       if(!r.ok) throw new Error(j.mensagem || 'erro');
+      if(j && j.deploy) notarDeploy(j.deploy);
       dados = j;
       sujo = false;
       aviso('');
@@ -665,9 +674,9 @@
   $('#btnScanTopo').onclick = ()=> abrirVisor({ tipo:'topo' });
 
   /* o celular não perde o que já fotografou: só recarrega sozinho quando
-     ninguém está mexendo em nada */
+     ninguém está mexendo em nada — e nunca com a tela apagada */
   setInterval(()=>{
-    if(postando || carregando) return;
+    if(document.hidden || postando || carregando) return;
     const focado = document.activeElement;
     const mexendo = focado && (focado.tagName === 'INPUT' || focado.tagName === 'SELECT' || focado.tagName === 'TEXTAREA');
     if(sujo || mexendo){ $('#situacao').textContent = 'Alterações não salvas — toque em Atualizar depois'; return; }

@@ -356,8 +356,8 @@ tr.estornada td:last-child{opacity:1;text-decoration:none}
 }
 
 </style>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </head>
 <body>
 
@@ -380,6 +380,11 @@ tr.estornada td:last-child{opacity:1;text-decoration:none}
 <button data-tab="config">Configurações</button>
   </nav>
 </header>
+<div id="bannerVersao" class="hidden" style="position:fixed;left:12px;right:12px;bottom:12px;z-index:400;background:var(--surface);border:1px solid var(--brand);border-radius:12px;padding:10px 14px;display:flex;gap:10px;align-items:center;box-shadow:var(--shadow)">
+  <span style="font-size:13px"><b>Nova versão do sistema disponível.</b> <span class="muted">Recarregue para usar a mais nova — sem precisar limpar cache.</span></span>
+  <span style="flex:1"></span>
+  <button class="btn sm" onclick="location.reload()">Recarregar</button>
+</div>
 
 <main>
   <!-- ============ PAINEL ============ -->
@@ -945,8 +950,10 @@ const Nuvem = {
 
   async sondar(){
     if(!this.online || this.salvando || this.fila) return;
+    if(typeof document !== 'undefined' && document.hidden) return;
     try{
       const s = await this.chamar('/estado?versao=1');
+      if(s && s.deploy && typeof notarDeploy === 'function') notarDeploy(s.deploy);
       if(!s || s.versao === this.versao) return;
       const d = await this.chamar('/estado');
       if(!d || d.versao === this.versao) return;
@@ -1010,6 +1017,18 @@ function marcarSync(estado){
   const m = mapa[estado] || mapa.ok;
   el.textContent = m[0];
   el.className = 'syncchip ' + m[1];
+}
+
+/* Depois de cada deploy, quem está com a página aberta há horas continua no
+   código antigo: a sondagem avisa com a faixa de recarregar, sem a pessoa
+   precisar limpar o cache do navegador. */
+function notarDeploy(sha){
+  if(!sha) return;
+  if(!window._deployVisto){ window._deployVisto = sha; return; }
+  if(window._deployVisto !== sha){
+    const b = document.getElementById('bannerVersao');
+    if(b) b.classList.remove('hidden');
+  }
 }
 
 /* mantém o mesmo nome usado no resto do sistema */
@@ -1232,15 +1251,22 @@ function persist(){ Store.save(DB); }
    ===================================================================== */
 const Fotos = {
   _mem:{}, _cache:{},
+  /* o aparelho não cresce sem limite: acima do teto, as mais antigas saem
+     (as do servidor são buscadas de novo; as locais sem rede são ~50 KB) */
+  _aparar(obj, max){
+    const ks = Object.keys(obj);
+    if(ks.length > max) ks.slice(0, ks.length - max).forEach(k=>{ delete obj[k]; });
+  },
   async salvar(id, dataUrl){
     try{
       if(Nuvem.online){
         const caminho = new Date().toISOString().slice(0,10) + '/' + id + '.jpg';
         const d = await Nuvem.chamar('/fotos', { method:'POST', body:{ caminho, dataUrl } });
-        if(d && d.url){ this._cache[id] = d.url; return d.caminho; }
+        if(d && d.url){ this._cache[id] = d.url; this._aparar(this._cache, 300); return d.caminho; }
       }
     }catch(e){ console.error('foto', e); }
     this._mem[id] = dataUrl;              // reserva local
+    this._aparar(this._mem, 120);
     return id;
   },
   async obter(id, caminho){
@@ -1248,7 +1274,7 @@ const Fotos = {
     try{
       if(Nuvem.online && caminho){
         const d = await Nuvem.chamar('/fotos?caminho=' + encodeURIComponent(caminho));
-        if(d && d.url){ this._cache[id] = d.url; return d.url; }
+        if(d && d.url){ this._cache[id] = d.url; this._aparar(this._cache, 300); return d.url; }
       }
     }catch(e){ console.error('foto', e); }
     return this._mem[id] || null;
@@ -1660,6 +1686,7 @@ function pintaAlertaAtraso(loc, agora){
     '<button class="btn danger" onclick="abrirDevolucao('+loc.id+')">Registrar entrada</button></div>';
 }
 setInterval(()=>{
+  if(document.hidden) return;
   $('#relogio').textContent = new Date().toLocaleString('pt-BR',{weekday:'short',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'});
   if($('#page-painel').classList.contains('active')) tickTimers();
 }, 1000);

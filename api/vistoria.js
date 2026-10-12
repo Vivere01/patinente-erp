@@ -125,6 +125,9 @@ function payload(db, agora){
 
   return {
     ok: true, agora,
+    /* carimbo do deploy: o celular compara com o que viu ao abrir e avisa
+       quando há versão nova, sem precisar limpar o cache do navegador */
+    deploy: (process.env.VERCEL_GIT_COMMIT_SHA || '').slice(0, 7) || null,
     empresa: { nome: (db.empresa && db.empresa.nome) || 'Locadora' },
     exigirFoto: cfg.exigirFoto !== false,
     toleranciaMin: Number(cfg.toleranciaMin) || 0,

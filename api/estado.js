@@ -17,6 +17,13 @@ function exigirBanco(res){
   return false;
 }
 
+/* carimbo do deploy (7 letras do commit): a sondagem do balcão e do celular
+   compara com o que viu ao abrir e avisa quando há versão nova, sem ninguém
+   precisar limpar o cache do navegador. */
+function deployAtual(){
+  return (process.env.VERCEL_GIT_COMMIT_SHA || '').slice(0, 7) || null;
+}
+
 module.exports = async (req, res) => {
   if(req.method !== 'GET' && req.method !== 'POST') return metodoInvalido(res, ['GET', 'POST']);
   if(!exigirBanco(res)) return;
@@ -27,7 +34,7 @@ module.exports = async (req, res) => {
       const soVersao = String((req.query || {}).versao || '') === '1';
       if(soVersao){
         const r = await sql('select versao from public.estado where id = 1');
-        return json(res, 200, { ok: true, versao: Number(r.rows[0].versao) });
+        return json(res, 200, { ok: true, versao: Number(r.rows[0].versao), deploy: deployAtual() });
       }
       const r = await sql('select doc, versao from public.estado where id = 1');
       const linha = r.rows[0] || { doc: {}, versao: 0 };

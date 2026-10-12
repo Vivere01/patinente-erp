@@ -1170,7 +1170,8 @@ function testarClientes(){
 /* ------------------------------------------------------------------ P */
 /* A operação enxuta do balcão: a aba Vistoria guarda só o link, a fila
    pode ser limpa pelo próprio operador, o celular virou um quadro de três
-   colunas e a manutenção tem aba, registro de peças e foto. */
+   colunas, a manutenção tem aba, registro de peças e foto, e a versão é a
+   mesma em todo aparelho sem limpar cache. */
 function testarOperacaoEnxuta(){
   console.log('\nP. Operação enxuta — fila da vistoria, Kanban e manutenção');
   const raiz = path.join(__dirname, '..');
@@ -1306,6 +1307,28 @@ function testarOperacaoEnxuta(){
        corpoAjuda.indexOf('window.print()') >= 0,
        nome + ': o contrato espera a assinatura carregar antes de imprimir');
   });
+
+  /* --- versão igual em todo aparelho, sem limpar cache --- */
+  const vercel = JSON.parse(fs.readFileSync(path.join(raiz,'vercel.json'),'utf8'));
+  const cabecalhos = vercel.headers || [];
+  ok(cabecalhos.some(h=>/html/.test(h.source||'') && (h.headers||[]).some(x=>
+       x.key === 'Cache-Control' && /must-revalidate/.test(x.value||''))),
+     'o HTML revalida a cada abertura: deploy novo aparece sem limpar cache');
+  ok(/<script defer src="https:\/\/cdnjs/.test(html) && /<script defer src="https:\/\/cdnjs/.test(app),
+     'os CDN pesados entram com defer e não seguram a primeira pintura');
+  ok(html.indexOf('function notarDeploy(') >= 0 && html.indexOf('id="bannerVersao"') >= 0 &&
+     pagina.indexOf('notarDeploy') >= 0 && pagina.indexOf('id="bannerVersao"') >= 0,
+     'balcão e celular avisam quando há versão nova, com botão de recarregar');
+  const apiEstado = fs.readFileSync(path.join(raiz,'api','estado.js'),'utf8');
+  ok(apiEstado.indexOf('deploy') >= 0 && api.indexOf('deploy:') >= 0 &&
+     pagina.indexOf('j.deploy') >= 0,
+     'a sondagem e a fila carregam o carimbo do deploy');
+  ok(pagina.indexOf('if(document.hidden || postando || carregando) return;') >= 0 &&
+     html.indexOf("typeof document !== 'undefined' && document.hidden") >= 0 &&
+     html.indexOf('if(document.hidden) return;') >= 0,
+     'com a tela apagada ninguém sonda: economiza bateria e dados');
+  ok(html.indexOf('_aparar(this._cache, 300)') >= 0 && html.indexOf('_aparar(this._mem, 120)') >= 0,
+     'o cache de fotos do aparelho tem teto e não cresce sem limite');
 }
 
 (async () => {

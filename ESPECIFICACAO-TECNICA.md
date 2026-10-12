@@ -784,6 +784,13 @@ O ambiente Supabase **já está provisionado e testado**. O schema foi aplicado,
 
 **Validação do `index.html` entregue:** testado com cliente Supabase simulado — login recusando senha errada, carga do estado, gravação via RPC, gravação de eventos no histórico imutável, upload de foto, e o caso de conflito de versão com recarga automática. Todos os módulos (inventário, divergências, tema) presentes e funcionais na versão de nuvem.
 
+**Versões e cache.** O `vercel.json` manda o HTML revalidar a cada abertura
+(`public, max-age=0, must-revalidate`) e a API responde `no-store`; quem fica com
+a página aberta recebe a faixa de nova versão (carimbo do deploy na sondagem de
+`/api/estado?versao=1` e na fila de `/api/vistoria`). CDN com versão fixa e
+`defer`, sem sondagem com a tela apagada e teto no cache de fotos do aparelho
+(300 do servidor, 120 locais).
+
 ---
 
 ## 11. Contexto de negócio útil
