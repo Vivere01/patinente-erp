@@ -255,6 +255,11 @@ servidor responde `conta_bloqueada`, não "credenciais inválidas"). Erros poss�
 `credenciais_ausentes` (400), `credenciais_invalidas` (401), `conta_bloqueada` (401),
 `loja_nao_configurada` (503).
 
+O campo de e-mail usa o mesmo estilo dos demais campos (`input[type=email]` no
+seletor base) e o preenchimento automático do navegador continua legível nos dois
+temas (`color-scheme` por tema + regra `:-webkit-autofill` com o fundo e o texto do
+tema).
+
 **Senha derivada, nunca guardada em claro.** O navegador calcula
 `PBKDF2-SHA256(senha, salt, 120000 iterações, 256 bits)` com um salt aleatório de
 16 bytes por usuário; o documento guarda `salt` e `hash` em hex e o servidor
@@ -299,6 +304,19 @@ público `/vistoria/{token}`. O token é gerado uma vez (`config.vistoriaToken`)
 quem tem o link **não entra no sistema**: só enxerga a fila e grava a vistoria. O
 payload público não leva CPF, usuários nem o contrato, e o token é comparado sem vazar
 diferença pelo tempo.
+
+- **"Link inválido" no celular: diagnóstico.** O telefone fala com o **banco do
+  servidor**, não com a tela do balcão — 401 (`token_invalido`) ou fila vazia no
+  celular, com locações visíveis no balcão, quase sempre é uma destas três: (1) o
+  balcão e o celular usam **endereços diferentes ligados a bancos diferentes**
+  (ex.: balcão no `*.vercel.app` e celular no domínio próprio, ou vice-versa);
+  (2) alguém **gerou um link novo** — o antigo morre na hora e precisa ser
+  repassado; (3) o balcão está **sem falar com o servidor** (indicador de
+  sincronização em erro). O botão **Testar link** em
+  **Configurações → Link da vistoria** (`testarLinkVistoria`) cobre os três casos
+  em segundos: pergunta a fila ao servidor com o token atual e mostra o **carimbo
+  do banco** (`bancoId` de `/api/status`, só hospedagem e nome, sem usuário nem
+  senha) — abra `/api/status` no celular e confira se o código é o mesmo.
 
 - **Pagamento — uma forma só ou uma por veículo.** No passo 3 o atendente escolhe entre
   **"Uma forma para toda a locação"** (padrão, o comportamento de sempre) e **"Forma por

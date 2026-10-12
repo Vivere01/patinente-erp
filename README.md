@@ -188,6 +188,13 @@ público da vistoria** com QR Code para passar adiante.
 - **Link único e estável** — `/vistoria/{token}`, o mesmo todo dia, guardado em
   **Configurações → Link da vistoria** (com QR, copiar, WhatsApp e *Gerar novo link*).
   Quem tem o link **não entra no sistema**: só vê a fila e registra a vistoria.
+- **Testar link** — o botão em **Configurações → Link da vistoria** pergunta a fila
+  ao próprio servidor e diz na hora se o celular vai abrir (*Link funcionando*, com
+  fila e rua) ou não (*o servidor não reconhece este link*, sem rede etc.). Junto
+  sai o **carimbo do banco** desta página: abra `/api/status` no celular e confira
+  se o código é o mesmo — código diferente significa balcão e celular falando com
+  bancos diferentes (endereços ou deployments diferentes). **Não gere um link novo
+  à toa**: o antigo morre na hora e toda a equipe precisa receber o novo.
 - **A aba Vistoria no balcão guarda só o link** (botão **Copiar link**) e as quatro
   filas do dia: *pago aguardando liberação*, *na rua*, *chegada registrada* e
   *vistoriadas hoje*. O QR e o botão de WhatsApp saíram daqui e continuam em
@@ -320,7 +327,9 @@ npm run verificar   # 57 verificações contra o site publicado
   Histórico e Configurações), a seção
   *Relatórios do mês* do painel visível só para o administrador, a validação do
   formulário de usuário (e-mail único, senha mínima) e o quadro do documento com
-  câmera + upload.
+  câmera + upload. O campo de e-mail usa o mesmo estilo dos demais campos
+  (fundo e texto do tema) e o preenchimento automático do navegador continua
+  legível nos dois temas.
 - **G. Fechamento e sincronização** — o fechamento lista e soma as entradas por forma
   de pagamento (soma calculada num dia de exemplo), o impresso traz o mesmo detalhe, e a
   nuvem: carga no acesso, sondagem de 5 s, confirmação ao voltar para a aba, conflito de
@@ -346,7 +355,9 @@ npm run verificar   # 57 verificações contra o site publicado
   escaneado da etiqueta** (400 sem código, 409 se for outro patinete), **não fala de
   lacre em nenhum ponto**, exige foto conforme a configuração e
   grava com lock otimista; e a página `vistoria.html` lê o token do link, abre o visor
-  da câmera (ZXing) para escanear a etiqueta e fala só com a API.
+  da câmera (ZXing) para escanear a etiqueta e fala só com a API; e o botão
+  **Testar link** confere o token no servidor, com o carimbo do banco (`bancoId`,
+  sem usuário nem senha) para comparar o banco do balcão com o do celular.
 - **L. QR Codes** — a seção existe dentro de Configurações (recolhida por padrão, expande
   com um clique e redesenha ao abrir), o PDF sai pelo jsPDF em A4
   3 × 6, a matriz do QR é lida do gerador (linha nítida no SVG), a folha de impressão
@@ -403,7 +414,7 @@ npm run verificar   # 57 verificações contra o site publicado
 
 | Rota | Método | Sessão | Função |
 |---|---|---|---|
-| `/api/status` | GET | — | Situação do banco e das credenciais. |
+| `/api/status` | GET | — | Situação do banco e das credenciais, mais o carimbo do banco (`bancoId`, sem usuário nem senha). |
 | `/api/login` | POST | — | Abre a sessão (e-mail + senha): conta da loja ou usuário cadastrado. |
 | `/api/sessao` | GET | ✓ | Confirma se o token do aparelho ainda vale. |
 | `/api/estado` | GET/POST | ✓ | Carrega / grava o documento com controle de versão. |

@@ -241,6 +241,11 @@ function testarPapelEDocumento(){
   ok((html.match(/class="loginmarca"/g) || []).length === 1,
      'existe uma única tela de acesso (não mais loja + PIN)');
   ok(/id="loEmail"/.test(html) && /id="loSenha"/.test(html), 'o login pede e-mail e senha');
+  ok(/input\[type=text\],input\[type=email\]/.test(html),
+     'o campo de e-mail usa o mesmo estilo dos demais campos (some a caixa branca)');
+  ok(/color-scheme:dark/.test(html) && /color-scheme:light/.test(html) &&
+     html.indexOf(':-webkit-autofill') >= 0,
+     'o preenchimento automático do navegador continua legível nos dois temas');
   ok(!/pinpad|pindots|lgPin|usPin|puPin|telaPrimeiroUsuario|telaLoja/.test(html),
      'o PIN de 4 dígitos e a tela de escolher usuário saíram do sistema');
   ok(corpo('telaLogin').indexOf('Nuvem.entrar(') >= 0,
@@ -743,6 +748,26 @@ function testarVistoria(){
   ok(corpo('aplicarMigracoes').indexOf('vistoriaToken') >= 0, 'a migração gera o token do link');
   ok(html.indexOf("'/vistoria/'") >= 0, 'linkVistoria aponta para /vistoria/{token}');
   ok(html.indexOf('function tokenPublico(') >= 0, 'o token é gerado no próprio aparelho');
+
+  /* --- o balcão testa o link e mostra o carimbo do banco --- */
+  ok(html.indexOf('id="btnTestarVist"') >= 0 && html.indexOf('function testarLinkVistoria(') >= 0 &&
+     html.indexOf("$('#btnTestarVist')") >= 0,
+     'Configurações tem o botão Testar link contra o próprio servidor');
+  ok(corpo('testarLinkVistoria').indexOf('/vistoria?token=') >= 0 &&
+     corpo('testarLinkVistoria').indexOf('bancoId') >= 0,
+     'o teste pergunta a fila com o token atual e mostra o banco da página');
+  ok(corpo('gerarNovoLinkVistoria').indexOf('O antigo parou de funcionar') >= 0,
+     'ao gerar um link novo o aviso diz que o antigo morreu e precisa ser repassado');
+  const stMod = require(path.join(__dirname, '..', 'api', 'status.js'));
+  ok(typeof stMod.idDoBanco === 'function', '/api/status exporta o carimbo do banco para teste');
+  const urlAntes = process.env.POSTGRES_URL;
+  process.env.POSTGRES_URL = 'postgres://usuario:SEGREDO123@ep-teste-1.us-east-2.aws.neon.tech/loja?sslmode=require';
+  const carimbo = stMod.idDoBanco();
+  ok(carimbo === 'ep-teste-1.us-east-2.aws.neon.tech/loja', 'o carimbo é hospedagem + nome', carimbo);
+  ok(carimbo.indexOf('SEGREDO') < 0 && carimbo.indexOf('usuario') < 0,
+     'o carimbo não leva usuário nem senha');
+  if(urlAntes === undefined) delete process.env.POSTGRES_URL;
+  else process.env.POSTGRES_URL = urlAntes;
 
   /* --- o dinheiro continua no dia em que entrou --- */
   ['entradasDoDia','entradasDoMes','relatorioDoMes'].forEach(f=>
