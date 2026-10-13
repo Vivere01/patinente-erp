@@ -738,6 +738,66 @@ function testarVistoria(){
      'a trava é a locação pendente do veículo');
   ok(html.indexOf('pill pendente') >= 0 && html.indexOf('aguardando vistoria') >= 0,
      'a Frota mostra o veículo travado como aguardando vistoria');
+
+  /* --- passo 1: tipo + quantidade, com atribuição automática --- */
+  ok(corpo('passoVeiculo').indexOf('wTiposQtd') >= 0 && html.indexOf('window.mudarQtd = function') >= 0,
+     'o passo 1 escolhe tipo e quantidade, com mais e menos por tipo');
+  ok(html.indexOf('function livresDoTipo(') >= 0 && html.indexOf('function qtdDoTipo(') >= 0 &&
+     html.indexOf('function naRuaDoTipo(') >= 0,
+     'o passo 1 mostra os livres na loja e os na rua por tipo');
+  ok(html.indexOf('W.veiculos.push(livres[i].id)') >= 0,
+     'o mais separa as primeiras livres por código, sem escolher uma por uma');
+  ok(corpo('concluirLocacao').indexOf('saiu da disponibilidade') >= 0,
+     'antes de gravar, o sistema reconfere se as unidades continuam livres');
+  const appPasso = fs.readFileSync(path.join(__dirname, '..', 'app.html'), 'utf8');
+  ok(appPasso.indexOf('window.mudarQtd = function') >= 0 && appPasso.indexOf('function livresDoTipo(') >= 0,
+     'o app offline tem o mesmo passo 1 por tipo e quantidade');
+  const ctxW = vm.createContext({ console });
+  vm.runInContext([
+    extrairFuncao(html, 'livresDoTipo'),
+    extrairFuncao(html, 'qtdDoTipo'),
+    'globalThis.DB = { veiculos: [',
+    ' {id:1, codigo:"PAT-002", tipoId:"p", status:"loja"},',
+    ' {id:2, codigo:"PAT-001", tipoId:"p", status:"loja"},',
+    ' {id:3, codigo:"PAT-003", tipoId:"p", status:"rua"},',
+    ' {id:4, codigo:"PAT-004", tipoId:"p", status:"loja"},',
+    ' {id:5, codigo:"PAT-005", tipoId:"p", status:"loja"} ] };',
+    'globalThis.W = { veiculos:[2] };',
+    'globalThis.veiculoTravado = id => String(id) === "4";',
+    'globalThis.getVeiculo = id => DB.veiculos.find(v=>String(v.id)===String(id));',
+    'globalThis.T = { livresDoTipo, qtdDoTipo };'
+  ].join('\n'), ctxW);
+  ok(ctxW.T.livresDoTipo('p').map(v=>v.id).join() === '1,5',
+     'livre é loja, sem trava, fora do carrinho e em ordem de código');
+  ok(ctxW.T.qtdDoTipo('p') === 1, 'a quantidade do tipo conta o que já está no carrinho');
+
+  /* --- uma comanda por cliente no celular --- */
+  ok(pagina.indexOf('function grupoDe(') >= 0 &&
+     pagina.indexOf('function cardComandaLiberar(') >= 0 &&
+     pagina.indexOf('function cardComandaChegada(') >= 0,
+     'a fila e a rua agrupam por cliente: 1 cartão por comanda');
+  ok(pagina.indexOf('data-liberar-grupo') >= 0 && pagina.indexOf('data-chegada-grupo') >= 0 &&
+     pagina.indexOf('function enviarGrupo(') >= 0 &&
+     pagina.indexOf('function enviar(') < 0,
+     'cada comanda tem 1 botão que envia os veículos em sequência pela mesma ação');
+  ok(pagina.indexOf('ja_liberada') >= 0 && pagina.indexOf('ja_devolvida') >= 0,
+     'se outro celular liberou no meio do caminho, conta como feito');
+  const pubRua = api.slice(api.indexOf('const naRua'), api.indexOf('const chegadas'));
+  ok(pubRua.indexOf('grupoId: l.grupoId') >= 0,
+     'a fila da rua leva o grupo para o celular agrupar a comanda');
+  const ctxV = vm.createContext({ console });
+  vm.runInContext(extrairFuncao(pagina, 'grupoDe') + '; globalThis.G = { grupoDe };', ctxV);
+  const gs = ctxV.G.grupoDe([
+    { locacaoId:1, grupoId:7 }, { locacaoId:2, grupoId:7 },
+    { locacaoId:3, grupoId:9 }, { locacaoId:4 }
+  ]);
+  ok(gs.length === 3 && gs[0].locs.length === 2 && gs[1].locs.length === 1 &&
+     gs[2].locs.length === 1 && gs[0].chave !== gs[1].chave,
+     'grupoDe junta por cliente e deixa locação sem grupo sozinha');
+
+  /* --- só o celular libera: regressão do balcão --- */
+  ok(html.indexOf("status = 'ativa'") < 0,
+     'nenhum status ativa nasce no balcão — só a API do link libera');
   ok(/kpi\('Locações hoje'/.test(html) && /filaVistoria/.test(html),
      'o Painel avisa que tem veículo pago esperando liberação');
 

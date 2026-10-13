@@ -93,6 +93,10 @@
   .scanbox{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-top:6px;border:1px solid var(--line);
     border-radius:12px;padding:10px;background:#fbfcfe}
   .scanbox .btn.sec{flex:1;min-width:170px}
+  /* comanda: 1 cartão por cliente, com 1 seção por veículo dentro */
+  .vsec{border:1px solid var(--line);border-radius:12px;padding:11px;margin-top:11px;background:#fbfcfe}
+  .vcab{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;margin-bottom:2px}
+  .vcab b{font-size:15px}
   .scanst{font-size:12.5px;font-weight:700;color:var(--muted)}
   .scanst.ok{color:var(--ok)} .scanst.erro{color:var(--danger)}
   .visor{position:fixed;inset:0;background:#0b0b0b;z-index:70;display:flex;flex-direction:column}
@@ -467,41 +471,37 @@
       '</span></div>';
   }
 
-  function cardLiberar(l){
+  /* ---------------- comandas: 1 cartão por cliente ----------------
+     O estado de cada veículo (fotos, leitura, obs) continua por locação —
+     só a apresentação agrupa. A chave volta em data-* para o envio. */
+  let gruposNaTela = {};
+  function grupoDe(lista){
+    const ordem = [], grupos = {};
+    (lista||[]).forEach(l=>{
+      const chave = (l.grupoId == null || l.grupoId === '')
+        ? ('solta-' + l.locacaoId) : ('g-' + l.grupoId);
+      if(!grupos[chave]){ grupos[chave] = []; ordem.push(chave); }
+      grupos[chave].push(l);
+    });
+    return ordem.map(chave=>({ chave, locs:grupos[chave] }));
+  }
+
+  function secaoLiberar(l, mostraCab){
     const c = campos[l.locacaoId] || (campos[l.locacaoId] = { veiculo:'', obs:'' });
-    const exigirFoto = dados.exigirFoto !== false;
-    const atraso = Date.now() - (l.pagoEm||0);
-    return '<div class="card" data-card="'+esc(l.locacaoId)+'">'+
-      '<div class="cab"><div><div class="cod">'+esc(l.codigo)+'</div>'+
-        '<div class="tipo">'+esc(l.tipoNome)+'</div></div>'+
-        '<div style="text-align:right"><span class="chip azul">pago '+esc(ha(l.pagoEm))+'</span></div></div>'+
-      '<div class="linhas">'+
-        '<div class="l"><span>Cliente</span><b>'+esc(l.clienteNome)+'</b></div>'+
-        '<div class="l"><span>Pacote</span><b>'+esc(l.tarifaLabel)+' ('+(l.duracaoMin||0)+' min) · '+brl(l.valorBase||0)+' via '+esc(l.pagamento||'—')+'</b></div>'+
-        (l.obsSaida ? '<div class="l"><span>Obs. da saída</span><b>'+esc(l.obsSaida)+'</b></div>' : '')+
-      '</div>'+
+    return '<div class="vsec" data-card="'+esc(l.locacaoId)+'">'+
+      (mostraCab ? '<div class="vcab"><b>'+esc(l.codigo)+'</b>'+
+        '<span class="tipo">'+esc(l.tipoNome)+' · '+esc(l.tarifaLabel||'')+'</span></div>' : '')+
       grade(l.locacaoId)+
       blocoScan(l.locacaoId, l.codigo)+
       '<label class="campo">Observações da vistoria'+campo(l.locacaoId, 'obs', 'ex: risco no paralama, bateria 100%', c.obs)+'</label>'+
-      '<div class="acoes"><button class="btn" data-liberar="'+esc(l.locacaoId)+'">Vistoriado e liberar</button></div>'+
-      (exigirFoto ? '<div class="tipo" style="margin-top:8px">Ao menos uma foto é obrigatória.</div>' : '')+
     '</div>';
   }
 
-  function cardChegada(l){
+  function secaoChegada(l, mostraCab){
     const c = campos[l.locacaoId] || (campos[l.locacaoId] = { veiculo:'', estado:'loja', obs:'' });
-    const exigirFoto = dados.exigirFoto !== false;
-    return '<div class="card" data-card="'+esc(l.locacaoId)+'">'+
-      '<div class="cab"><div><div class="cod">'+esc(l.codigo)+'</div>'+
-        '<div class="tipo">'+esc(l.tipoNome)+'</div></div>'+
-        '<div style="text-align:right">'+
-          (l.atrasado ? '<span class="chip">atrasado</span>' : '<span class="chip verde">no prazo</span>')+
-        '</div></div>'+
-      '<div class="linhas">'+
-        '<div class="l"><span>Cliente</span><b>'+esc(l.clienteNome)+'</b></div>'+
-        '<div class="l"><span>Devolução prevista</span><b>'+(l.fimPrevisto?hhmm(l.fimPrevisto):'—')+'</b></div>'+
-        '<div class="l"><span>Saiu</span><b>'+(l.inicio?hhmm(l.inicio):'—')+' · '+esc(l.tarifaLabel||'')+'</b></div>'+
-      '</div>'+
+    return '<div class="vsec" data-card="'+esc(l.locacaoId)+'">'+
+      (mostraCab ? '<div class="vcab"><b>'+esc(l.codigo)+'</b>'+
+        '<span class="tipo">'+esc(l.tipoNome)+'</span></div>' : '')+
       grade(l.locacaoId)+
       blocoScan(l.locacaoId, l.codigo)+
       '<label class="campo">Estado do veículo'+
@@ -510,8 +510,59 @@
           '<option value="manutencao"'+(c.estado==='manutencao'?' selected':'')+'>Com avaria — manutenção</option>'+
         '</select></label>'+
       '<label class="campo">Observações'+campo(l.locacaoId, 'obs', 'ex: bateria em 20%, paralama trincado', c.obs)+'</label>'+
-      '<div class="acoes"><button class="btn" data-chegada="'+esc(l.locacaoId)+'">Registrar chegada</button></div>'+
-      (exigirFoto ? '<div class="tipo" style="margin-top:8px">Ao menos uma foto é obrigatória.</div>' : '')+
+    '</div>';
+  }
+
+  function cardComandaLiberar(g){
+    const ls = g.locs, l0 = ls[0], unicas = ls.length === 1;
+    const exigirFoto = dados.exigirFoto !== false;
+    const total = ls.reduce((s,l)=>s+(Number(l.valorBase)||0),0);
+    gruposNaTela[g.chave] = ls.map(l=>l.locacaoId);
+    return '<div class="card">'+
+      '<div class="cab"><div>'+
+        (unicas
+          ? '<div class="cod">'+esc(l0.codigo)+'</div><div class="tipo">'+esc(l0.tipoNome)+'</div>'
+          : '<div class="cod">'+esc(l0.clienteNome)+'</div>'+
+            '<div class="tipo">comanda · '+ls.length+' veículos · '+brl(total)+'</div>')+
+      '</div>'+
+      '<div style="text-align:right"><span class="chip azul">pago '+esc(ha(l0.pagoEm))+'</span></div></div>'+
+      '<div class="linhas">'+
+        '<div class="l"><span>Cliente</span><b>'+esc(l0.clienteNome)+'</b></div>'+
+        (unicas
+          ? '<div class="l"><span>Pacote</span><b>'+esc(l0.tarifaLabel)+' ('+(l0.duracaoMin||0)+' min) · '+brl(l0.valorBase||0)+' via '+esc(l0.pagamento||'—')+'</b></div>'+
+            (l0.obsSaida ? '<div class="l"><span>Obs. da saída</span><b>'+esc(l0.obsSaida)+'</b></div>' : '')
+          : '<div class="l"><span>Pacotes</span><b>'+esc(ls.map(l=>l.tarifaLabel).filter((v,i,a)=>a.indexOf(v)===i).join(' + '))+' · '+brl(total)+'</b></div>')+
+      '</div>'+
+      ls.map(l=>secaoLiberar(l, !unicas)).join('')+
+      '<div class="acoes"><button class="btn" data-liberar-grupo="'+esc(g.chave)+'">Vistoriado e liberar'+(unicas?'':' ('+ls.length+' veículos)')+'</button></div>'+
+      (exigirFoto ? '<div class="tipo" style="margin-top:8px">Ao menos uma foto por veículo é obrigatória.</div>' : '')+
+    '</div>';
+  }
+
+  function cardComandaChegada(g){
+    const ls = g.locs, l0 = ls[0], unicas = ls.length === 1;
+    const exigirFoto = dados.exigirFoto !== false;
+    gruposNaTela[g.chave] = ls.map(l=>l.locacaoId);
+    return '<div class="card">'+
+      '<div class="cab"><div>'+
+        (unicas
+          ? '<div class="cod">'+esc(l0.codigo)+'</div><div class="tipo">'+esc(l0.tipoNome)+'</div>'
+          : '<div class="cod">'+esc(l0.clienteNome)+'</div>'+
+            '<div class="tipo">comanda · '+ls.length+' veículos</div>')+
+      '</div>'+
+      '<div style="text-align:right">'+
+        (ls.some(l=>l.atrasado) ? '<span class="chip">atrasado</span>' : '<span class="chip verde">no prazo</span>')+
+      '</div></div>'+
+      '<div class="linhas">'+
+        '<div class="l"><span>Cliente</span><b>'+esc(l0.clienteNome)+'</b></div>'+
+        (unicas
+          ? '<div class="l"><span>Devolução prevista</span><b>'+(l0.fimPrevisto?hhmm(l0.fimPrevisto):'—')+'</b></div>'+
+            '<div class="l"><span>Saiu</span><b>'+(l0.inicio?hhmm(l0.inicio):'—')+' · '+esc(l0.tarifaLabel||'')+'</b></div>'
+          : '')+
+      '</div>'+
+      ls.map(l=>secaoChegada(l, !unicas)).join('')+
+      '<div class="acoes"><button class="btn" data-chegada-grupo="'+esc(g.chave)+'">Registrar chegada'+(unicas?'':' ('+ls.length+' veículos)')+'</button></div>'+
+      (exigirFoto ? '<div class="tipo" style="margin-top:8px">Ao menos uma foto por veículo é obrigatória.</div>' : '')+
     '</div>';
   }
 
@@ -520,15 +571,18 @@
     $('#empresa').textContent = dados.empresa && dados.empresa.nome ? dados.empresa.nome : 'VeeLo Way';
 
     const pend = dados.pendentes || [];
+    const gruposPend = grupoDe(pend);
     $('#qtdPend').textContent = pend.length;
-    $('#fila').innerHTML = pend.length
-      ? pend.map(cardLiberar).join('')
+    gruposNaTela = {};
+    $('#fila').innerHTML = gruposPend.length
+      ? gruposPend.map(cardComandaLiberar).join('')
       : '<div class="vazio">Nada na fila. Toda locação paga já foi liberada.</div>';
 
     const rua = dados.naRua || [];
+    const gruposRua = grupoDe(rua);
     $('#qtdRua').textContent = rua.length;
-    $('#rua').innerHTML = rua.length
-      ? rua.map(cardChegada).join('')
+    $('#rua').innerHTML = gruposRua.length
+      ? gruposRua.map(cardComandaChegada).join('')
       : '<div class="vazio">Nenhum veículo na rua.</div>';
 
     /* Entregues existe só com o caixa do dia aberto: fechou, o sistema
@@ -581,34 +635,57 @@
     }
   }
 
-  async function enviar(acao, locId, corpo){
+  /* Uma comanda, um botão: valida todos os veículos e envia em sequência
+     pela mesma ação de sempre (sem mudar a API). Conta 409 "já liberada" ou
+     "já devolvida" como feita — é outro celular na mesma comanda. */
+  async function enviarGrupo(acao, locIds){
     if(postando) return;
+    locIds = (locIds||[]).map(String).filter(Boolean);
+    if(!locIds.length) return;
+    for(const locId of locIds){
+      const fs = (fotos[locId]||[]).filter(Boolean);
+      if(!validar(acao, locId, fs)) return;
+    }
     postando = true; travar();
+    let ok = 0; const falhas = [];
     try{
-      const r = await fetch('/api/vistoria', {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        cache:'no-store',
-        body: JSON.stringify(Object.assign({ token, acao, locacaoId: String(locId) }, corpo))
-      });
-      const j = await r.json().catch(()=>({}));
-      if(!r.ok){
-        aviso(esc(j.mensagem || 'Não consegui gravar. Tente de novo.'), 'erro');
-        toast(j.mensagem || 'Não consegui gravar.');
-        return;
+      for(const locId of locIds){
+        const fs = (fotos[locId]||[]).filter(Boolean);
+        const c = campos[locId] || {};
+        const corpo = acao === 'liberar'
+          ? { fotos: fs, veiculo: c.veiculo||'', obs: c.obs||'' }
+          : { fotos: fs, veiculo: c.veiculo||'', estado: c.estado||'loja', obs: c.obs||'' };
+        const r = await fetch('/api/vistoria', {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          cache:'no-store',
+          body: JSON.stringify(Object.assign({ token, acao, locacaoId: String(locId) }, corpo))
+        });
+        const j = await r.json().catch(()=>({}));
+        if(r.ok || (r.status === 409 && (j.erro === 'ja_liberada' || j.erro === 'ja_devolvida'))){
+          ok++;
+          delete fotos[locId]; delete campos[locId];
+        } else {
+          falhas.push(j.mensagem || 'não gravou');
+        }
       }
-      delete fotos[locId]; delete campos[locId];
-      sujo = false;
-      dados = j;
-      aviso('<b>' + (acao==='liberar' ? 'Liberado!' : 'Chegada registrada!') + '</b> ' +
-        (acao==='liberar' ? 'O relógio da locação começou agora.' : 'A cobrança é fechada no balcão.'), 'bom');
-      toast(acao==='liberar' ? 'Veículo liberado — relógio rodando.' : 'Chegada registrada.');
-      render();
-      $('#situacao').textContent = 'Atualizado às ' + hhmm(Date.now());
     }catch(e){
-      aviso('Falha de conexão — a foto continua aqui na tela, envie de novo.', 'erro');
-      toast('Sem conexão.');
+      falhas.push('sem conexão');
     }finally{
       postando = false; travar();
+    }
+    sujo = false;
+    await buscar();
+    const total = locIds.length;
+    if(ok === total){
+      const msg = acao === 'liberar'
+        ? 'Comanda liberada ('+ok+' veículo'+(ok>1?'s':'')+') — relógio rodando.'
+        : 'Chegada registrada ('+ok+' veículo'+(ok>1?'s':'')+').';
+      aviso('<b>' + esc(msg) + '</b> ' +
+        (acao === 'liberar' ? 'O relógio começou agora.' : 'A cobrança é fechada no balcão.'), 'bom');
+      toast(msg);
+    } else {
+      aviso('<b>'+ok+' de '+total+' gravados.</b> '+esc(falhas[0]||'Confira o restante e envie de novo.'), 'erro');
+      toast(ok+' de '+total+' gravados.');
     }
   }
 
@@ -629,27 +706,18 @@
 
   document.addEventListener('click', e=>{
     const bs = e.target.closest && e.target.closest('[data-escanear]');
-    const bl = e.target.closest && e.target.closest('[data-liberar]');
-    const bc = e.target.closest && e.target.closest('[data-chegada]');
+    const bl = e.target.closest && e.target.closest('[data-liberar-grupo]');
+    const bc = e.target.closest && e.target.closest('[data-chegada-grupo]');
     if(bs){
       if(postando) return;
       const id = bs.dataset.escanear;
       abrirVisor({ tipo:'cartao', loc:id, codigo:codigoDaLoc(id) });
     }
     if(bl){
-      const id = bl.dataset.liberar;
-      const fs = (fotos[id]||[]).filter(Boolean);
-      if(!validar('liberar', id, fs)) return;
-      const c = campos[id] || {};
-      enviar('liberar', id, { fotos: fs, veiculo: c.veiculo||'', obs: c.obs||'' });
+      enviarGrupo('liberar', gruposNaTela[bl.dataset.liberarGrupo]);
     }
     if(bc){
-      const id = bc.dataset.chegada;
-      const fs = (fotos[id]||[]).filter(Boolean);
-      if(!validar('chegada', id, fs)) return;
-      const c = campos[id] || {};
-      enviar('chegada', id, { fotos: fs, veiculo: c.veiculo||'',
-                              estado: c.estado||'loja', obs: c.obs||'' });
+      enviarGrupo('chegada', gruposNaTela[bc.dataset.chegadaGrupo]);
     }
   });
 

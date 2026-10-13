@@ -319,6 +319,14 @@ diferença pelo tempo.
   do banco** (`bancoId` de `/api/status`, só hospedagem e nome, sem usuário nem
   senha) — abra `/api/status` no celular e confira se o código é o mesmo.
 
+- **Passo 1: tipo + quantidade.** A atendente não escolhe unidade por unidade: por
+  tipo, aperta `+`/`−` (`mudarQtd`) e o sistema separa sozinho as primeiras unidades
+  livres por código (`livresDoTipo`: `loja`, sem trava, fora do carrinho). A tela
+  mostra os livres na loja e os na rua por tipo (`qtdDoTipo`, `naRuaDoTipo`); o × do
+  selo remove e o código exato adiciona uma unidade específica. `W.veiculos`
+  continua sendo a lista de ids — passos 2–3, pagamento, contrato e vistoria não
+  mudam. Antes de gravar, `concluirLocacao` reconfere se as unidades continuam
+  livres (dois balcões não vendem a mesma) e volta ao passo 1 se alguma saiu.
 - **Pagamento — uma forma só ou uma por veículo.** No passo 3 o atendente escolhe entre
   **"Uma forma para toda a locação"** (padrão, o comportamento de sempre) e **"Forma por
   veículo"**: aparece a tabela com um select por patinete/moto do grupo, a soma de cada
@@ -363,6 +371,18 @@ diferença pelo tempo.
   naquela hora (o relógio para) e o veículo volta para `loja`. **A cobrança de
   excedente e de avaria continua sendo fechada no balcão**, na tela de entrada, que já
   lê `fotosEntrada`, `obsVistoria` e a hora registrada no celular.
+- **Comanda por cliente no celular.** A fila e a rua agrupam por `grupoId`
+  (`grupoDe`, puro e testado; sem grupo, fica sozinha): 1 cartão por comanda, com
+  1 seção por veículo (leitura da etiqueta e fotos próprias — a prova de avaria
+  continua por unidade) e 1 botão (`enviarGrupo`) que valida tudo e envia em
+  sequência pelas ações `liberar`/`chegada` de sempre, **sem mudar a API**. 409
+  `ja_liberada`/`ja_devolvida` conta como feito (outro celular na mesma comanda);
+  o resto que falhar fica na tela para reenviar. A fila da rua leva `grupoId` no
+  payload para agrupar; balcão (Excluir por veículo), histórico, contrato,
+  dinheiro e API não mudam.
+- **Só o celular libera.** `status='ativa'` nasce num ponto só (`api/vistoria.js`,
+  ação `liberar`); o balcão não tem — e nunca teve — botão de liberação (o
+  "Fechar no balcão" é da devolução). Teste de regressão trava isso.
 - **Remover a multa de atraso.** Na tela de entrada — individual (`abrirDevolucao`)
   ou do grupo (`devolverGrupo`) —, quando `calcExcedente` dá valor, aparece a opção
   **Remover a multa de atraso**: fecha pelo valor original, sem cobrar os minutos.
@@ -588,7 +608,7 @@ Duas vias: **celular do cliente** (fluxo principal) e **balcão** (fallback). O 
 | **Frota** | Lista com filtro (busca, **tipo** e status), status, nº de locações e faturamento por veículo; cadastro individual e em lote — os dois com **`+ Novo tipo (marca e modelo)`**, que cria o tipo com preço próprio na hora (seção 4.1); botão de conferência da frota; **botão *Etiqueta* por linha** (PNG da etiqueta QR daquele patinete). Veículo com locação pendente aparece travado, com pill *aguardando vistoria* e atalho para a fila. |
 | **QR Codes** | Seção recolhível no topo de **Configurações** (a navegação não tem mais essa aba): etiquetas da frota, grade de pré-visualização com busca e filtro por tipo, contagem de etiquetas e de folhas A4, e quatro saídas da mesma folha (3 × 6): **Baixar PDF**, **PNG**, **SVG** e **Imprimir folha**. Clicar em *Ver toda a frota* limpa o filtro do atalho do lote. |
 | **Manutenção** | Duas tabelas: **Em manutenção** (peças marcadas na tabela do tipo, mais a linha livre *Outra*, fotos, observação, e os botões **Peças e foto** e **Concluir**) e **Concluídas** (quem abriu, quem concluiu e as duas datas). Abre sozinha ao escolher *Manutenção* no cadastro do veículo (seção 4.13). Exclusiva do administrador. |
-| **Vistoria** | Cabeçalho com **Copiar link** e o link público (**sem QR e sem WhatsApp** — os dois ficam em Configurações); quatro blocos: pago aguardando liberação (com **Excluir**, que estorna a pendência e devolve o veículo), na rua (com fechamento no balcão, que pode **remover a multa de atraso** com motivo), chegada registrada (**só com o caixa do dia aberto**) e vistoriadas hoje (**com as fotos da saída clicáveis**). No celular, cada cartão tem **Escanear código do patinete** e há **Escanear patinete** no topo; a página é um quadro de três colunas (seção 4.8). |
+| **Vistoria** | Cabeçalho com **Copiar link** e o link público (**sem QR e sem WhatsApp** — os dois ficam em Configurações); quatro blocos: pago aguardando liberação (com **Excluir**, que estorna a pendência e devolve o veículo), na rua (com fechamento no balcão, que pode **remover a multa de atraso** com motivo), chegada registrada (**só com o caixa do dia aberto**) e vistoriadas hoje (**com as fotos da saída clicáveis**). No celular, a fila e a rua agrupam por **comanda** (1 cartão por cliente, com 1 botão que libera/registra tudo); cada seção tem **Escanear código do patinete** e há **Escanear patinete** no topo; a página é um quadro de três colunas (seção 4.8). |
 | **Clientes** | Busca por nome, CPF ou telefone; histórico e total gasto; *Editar* e *Excluir* o cadastro — a exclusão é recusada com devolução em aberto, avisa que o histórico mantém nome e CPF, e vai para a auditoria. |
 | **Histórico** | Locações com filtro por período; base, excedente, avaria e total; acesso às fotos de saída e entrada, ao contrato e ao estorno. |
 | **Financeiro** | Demonstrativo de fluxo do mês (entradas por origem, saídas por categoria, resultado, margem); custos fixos recorrentes; movimento dia a dia com destaque do melhor dia; faturamento por veículo, tipo, pacote e forma de pagamento; exportação CSV. Exclusiva do administrador. |
@@ -596,7 +616,8 @@ Duas vias: **celular do cliente** (fluxo principal) e **balcão** (fallback). O 
 | **Usuários** | Lista da loja (nome, e-mail, papel, último acesso); cadastro e edição de conta — e-mail, senha (mínimo 6, única), nível Atendente ou Administrador e situação ativo/bloqueado — mais a explicação de cada nível. Aba exclusiva do administrador. |
 | **Configurações** | Seção **QR Codes** recolhida no topo; empresa; tolerância; tabela de preços; tabela de peças; template do contrato; conferência da frota e histórico; divergências; **link da vistoria (QR, copiar, WhatsApp, gerar novo)**; trilha de auditoria; backup e restauração; sair da conta. |
 
-Wizard de locação em **3 passos**: veículos (seleção múltipla) → cliente → pagamento,
+Wizard de locação em **3 passos**: tipo + quantidade (o sistema separa as unidades
+livres sozinho, com reconferência antes de gravar) → cliente → pagamento,
 contrato e assinatura. No passo 3 a forma de pagamento pode ser **uma só para toda a
 locação ou uma por veículo** (seção 4.8). O botão final **"Pagar e enviar para vistoria"**
 grava o pagamento, deixa a locação pendente, trava o veículo e entrega o link público da

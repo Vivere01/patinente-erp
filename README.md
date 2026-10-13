@@ -178,6 +178,12 @@ dia e os Relatórios contam pelo dia do pagamento), a locação fica **pendente*
 continua na loja mas **travado** para nova locação, e a tela final entrega o **link
 público da vistoria** com QR Code para passar adiante.
 
+- **Passo 1 por tipo e quantidade** — a atendente escolhe o tipo e a quantidade
+  (`+`/`−`); o sistema separa sozinho as primeiras unidades livres por código e
+  mostra quantas há **livres na loja e na rua** por tipo. Para trocar uma unidade,
+  o × do selo + o código exato. Antes de gravar, o sistema reconfere se as
+  unidades continuam livres (dois balcões não vendem a mesma).
+
 - **Forma de pagamento: uma só ou uma por veículo** — no passo 3 dá para escolher **uma
   forma para a locação toda** (como sempre) ou **uma forma por veículo**: os 3 patinetes
   no Pix, uma moto no dinheiro e a outra no crédito. A forma fica em **cada locação**, e
@@ -218,6 +224,10 @@ público da vistoria** com QR Code para passar adiante.
   *scroll-snap* (uma por vez), e em telas a partir de 900 px as três abrem lado a
   lado. A coluna *entregues* só recebe as chegadas enquanto o caixa está aberto;
   fechou, ela limpa sozinha e as entregas vão para o histórico.
+- **Comanda por cliente no celular** — a fila e a rua agrupam por cliente: 1 cartão
+  por comanda, com 1 seção por veículo (leitura da etiqueta e fotos próprias) e
+  **1 botão que libera/registra tudo em sequência** pela mesma API, sem mudança no
+  servidor. Se outro celular liberou no meio do caminho, conta como feito.
 - Cada cartão tem um botão **Escanear código do patinete** (e há outro **Escanear
   patinete** no topo): a câmera lê o QR ou a tarja da etiqueta — ZXing carregado sob
   demanda — e, sem câmera, dá para **digitar o código**. O código lido é conferido no
@@ -225,7 +235,8 @@ público da vistoria** com QR Code para passar adiante.
 - **Liberar** = fotos + etiqueta escaneada + observações → **“Vistoriado e liberar”**: a
   locação vira ativa com a hora real de saída, o veículo sai para a rua e o relógio
   **começa a contar** — quem escaneou a etiqueta identificou o veículo, sem nenhum
-  número digitado.
+  número digitado. **Só o celular libera**: o balcão não tem botão de liberação
+  (o "Fechar no balcão" é da *devolução*, não da saída).
 - **Chegada** = fotos do retorno + etiqueta escaneada + estado do veículo → fica
   **“chegada registrada”** (o relógio parou naquela hora). A cobrança de excedente e de
   avaria é fechada **no balcão**, na tela de entrada, que já mostra as fotos e a hora do
@@ -375,7 +386,9 @@ npm run verificar   # 57 verificações contra o site publicado
   grava com lock otimista; e a página `vistoria.html` lê o token do link, abre o visor
   da câmera (ZXing) para escanear a etiqueta e fala só com a API; e o botão
   **Testar link** confere o token no servidor, com o carimbo do banco (`bancoId`,
-  sem usuário nem senha) para comparar o banco do balcão com o do celular.
+  sem usuário nem senha) para comparar o banco do balcão com o do celular; o passo 1
+  é por tipo e quantidade (com reconferência antes de gravar) e o celular agrupa por
+  comanda com envio sequencial — e nenhum `status='ativa'` nasce no balcão.
 - **L. QR Codes** — a seção existe dentro de Configurações (recolhida por padrão, expande
   com um clique e redesenha ao abrir), o PDF sai pelo jsPDF em A4
   3 × 6, a matriz do QR é lida do gerador (linha nítida no SVG), a folha de impressão

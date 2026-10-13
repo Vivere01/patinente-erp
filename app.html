@@ -1370,33 +1370,59 @@ function resumoSelecao(){
 }
 function passoVeiculo(){
   return '<h4 style="margin-bottom:4px">1. O que o cliente está levando?</h4>'+
-    '<p class="muted" style="font-size:12.5px;margin:0 0 12px">Pode selecionar vários. Todos entram no mesmo contrato e o cliente responde por todos eles.</p>'+
-    '<div style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap">'+
-      '<input type="text" id="wBusca" placeholder="Digite o código e tecle Enter (ex: PAT-001)" style="flex:1;min-width:220px" autofocus>'+
-      '<select id="wTipoFiltro" style="max-width:200px"><option value="">Todos os tipos</option>'+
-        DB.tipos.map(t=>'<option value="'+t.id+'">'+esc(t.nome)+'</option>').join('')+'</select>'+
-    '</div>'+
-    '<div class="carrinho" id="wCarrinho"></div>'+
-    '<div class="card"><div class="tablewrap" style="max-height:300px"><table id="wTabVeic"></table></div></div>';
+    '<p class="muted" style="font-size:12.5px;margin:0 0 12px">Escolha o tipo e a quantidade — o sistema separa as unidades livres sozinho. Todas entram no mesmo contrato.</p>'+
+    '<div id="wTiposQtd" style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px"></div>'+
+    '<div class="carrinho" id="wCarrinho"></div>';
 }
+/* livres de um tipo: na loja e ainda não separados neste carrinho */
+function livresDoTipo(tipoId){
+  const sel = {};
+  W.veiculos.forEach(id=>{ sel[String(id)] = true; });
+  return DB.veiculos
+    .filter(v=>v.status==='loja')
+    .filter(v=>String(v.tipoId)===String(tipoId) && !sel[String(v.id)])
+    .sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo),'pt-BR',{numeric:true}));
+}
+function qtdDoTipo(tipoId){
+  return W.veiculos.filter(id=>{ const v=getVeiculo(id); return v && String(v.tipoId)===String(tipoId); }).length;
+}
+function naRuaDoTipo(tipoId){
+  return DB.veiculos.filter(v=>String(v.tipoId)===String(tipoId) && v.status==='rua').length;
+}
+/* + separa as primeiras livres por código; − devolve a última separada */
+window.mudarQtd = function(tipoId, delta){
+  delta = Number(delta)||0;
+  if(delta>0){
+    const livres = livresDoTipo(tipoId);
+    for(let i=0;i<delta && i<livres.length;i++) W.veiculos.push(livres[i].id);
+  } else if(delta<0){
+    for(let n=0;n<-delta;n++){
+      const doTipo = W.veiculos
+        .map(getVeiculo).filter(v=>v && String(v.tipoId)===String(tipoId))
+        .sort((a,b)=>String(b.codigo).localeCompare(String(a.codigo),'pt-BR',{numeric:true}));
+      if(!doTipo.length) break;
+      const i = W.veiculos.indexOf(doTipo[0].id);
+      if(i>=0) W.veiculos.splice(i,1);
+    }
+  }
+  if(W._repintaP1) W._repintaP1();
+};
 function ligaPassoVeiculo(){
   const pinta = ()=>{
-    const q = ($('#wBusca').value||'').trim().toLowerCase();
-    const tf = $('#wTipoFiltro').value;
-    let lista = DB.veiculos.filter(v=>v.status==='loja');
-    if(tf) lista = lista.filter(v=>v.tipoId===tf);
-    if(q) lista = lista.filter(v=> (v.codigo+' '+(v.placa||'')).toLowerCase().includes(q));
-    lista = lista.slice(0,300);
-    $('#wTabVeic').innerHTML =
-      '<thead><tr><th>Código</th><th>Tipo</th><th>Identificação</th><th></th></tr></thead><tbody>'+
-      (lista.length ? lista.map(v=>{
-        const on = W.veiculos.includes(v.id);
-        return '<tr'+(on?' style="background:var(--brand-bg)"':'')+'>'+
-        '<td><b>'+esc(v.codigo)+'</b></td><td>'+esc(getTipo(v.tipoId).nome)+'</td><td>'+esc(v.placa||'—')+'</td>'+
-        '<td class="right"><button class="btn sm '+(on?'':'sec')+'" onclick="alternarVeiculo('+v.id+')">'+
-        (on?'✓ Selecionado':'Selecionar')+'</button></td></tr>';
-      }).join('')
-        : '<tr><td colspan="4" class="empty">Nenhum veículo disponível com esse filtro.</td></tr>')+'</tbody>';
+    const box = $('#wTiposQtd');
+    box.innerHTML = DB.tipos.map(t=>{
+      const livres = livresDoTipo(t.id).length;
+      const qtd = qtdDoTipo(t.id);
+      const rua = naRuaDoTipo(t.id);
+      return '<div style="display:flex;gap:10px;align-items:center;padding:10px 12px;border:1px solid var(--line);border-radius:10px">'+
+        '<div style="flex:1;min-width:0"><b>'+esc(t.nome)+'</b>'+
+          '<div class="muted" style="font-size:12px">'+livres+' livre'+(livres===1?'':'s')+' na loja'+(rua?' · '+rua+' na rua':'')+'</div></div>'+
+        '<button class="btn sm sec" data-t="'+esc(String(t.id))+'" data-d="-1"'+(qtd?'':' disabled style="opacity:.35"')+'>−</button>'+
+        '<b style="min-width:26px;text-align:center;font-size:15px">'+qtd+'</b>'+
+        '<button class="btn sm sec" data-t="'+esc(String(t.id))+'" data-d="1"'+(livres?'':' disabled style="opacity:.35"')+'>+</button>'+
+      '</div>';
+    }).join('');
+    box.querySelectorAll('[data-t]').forEach(b=>{ b.onclick = ()=>mudarQtd(b.dataset.t, +b.dataset.d); });
     pintaCarrinho();
   };
   const pintaCarrinho = ()=>{
@@ -1406,16 +1432,20 @@ function ligaPassoVeiculo(){
       (W.veiculos.length ? '<div class="chips">'+W.veiculos.map(id=>{
         const v=getVeiculo(id);
         return '<span class="chip">'+esc(v.codigo)+'<button onclick="alternarVeiculo('+id+')">×</button></span>';
-      }).join('')+'</div>' : '');
-  };
-  $('#wBusca').oninput = pinta;
-  $('#wTipoFiltro').onchange = pinta;
-  $('#wBusca').onkeydown = e=>{
-    if(e.key==='Enter'){
-      const q=($('#wBusca').value||'').trim().toLowerCase();
-      const achou = DB.veiculos.filter(v=>v.status==='loja' && v.codigo.toLowerCase()===q);
-      if(achou.length===1){ alternarVeiculo(achou[0].id); $('#wBusca').value=''; pinta(); }
-    }
+      }).join('')+'</div>'+
+      '<p class="muted" style="font-size:12px;margin:6px 0 0">Unidades separadas sozinhas, pelas primeiras por código. Para trocar uma específica, use o × e digite o código abaixo.</p>'+
+      '<div style="display:flex;gap:10px;margin-top:8px">'+
+        '<input type="text" id="wBusca" placeholder="Trocar por código exato (ex: PAT-001) + Enter" style="flex:1;min-width:0">'+
+      '</div>' : '');
+    const bc = $('#wBusca');
+    if(bc) bc.onkeydown = e=>{
+      if(e.key==='Enter'){
+        const q=(bc.value||'').trim().toLowerCase();
+        const achou = DB.veiculos.filter(v=>v.status==='loja' && v.codigo.toLowerCase()===q);
+        if(achou.length===1 && W.veiculos.indexOf(achou[0].id)<0){ W.veiculos.push(achou[0].id); bc.value=''; pinta(); }
+        else if(!achou.length) toast('Código não encontrado entre os livres.');
+      }
+    };
   };
   W._repintaP1 = pinta;
   pinta();
@@ -1762,6 +1792,13 @@ function avancarWizard(){
 }
 
 function concluirLocacao(){
+  /* reconfere antes de gravar: uma unidade pode ter saído da loja no caminho */
+  const perdidos = W.veiculos.filter(id=>{ const v=getVeiculo(id); return !v || v.status!=='loja'; });
+  if(perdidos.length){
+    W.veiculos = W.veiculos.filter(id=>perdidos.indexOf(id)<0);
+    W.passo = 1; pintaWizard();
+    return toast('Uma unidade saiu da disponibilidade — confira o passo 1.');
+  }
   if(W.novoCliente){
     const c = Object.assign({ id:uid('cliente'), criadoEm:Date.now() }, W.novoCliente);
     DB.clientes.push(c); W.clienteId = c.id; W.novoCliente = null;

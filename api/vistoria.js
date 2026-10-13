@@ -102,7 +102,7 @@ function payload(db, agora){
   }));
 
   const naRua = locs.filter(l => l.status === 'ativa').map(l => ({
-    locacaoId: l.id,     codigo: codigoDoVeiculo(db, l), clienteNome: l.clienteNome,
+    locacaoId: l.id, grupoId: l.grupoId, codigo: codigoDoVeiculo(db, l), clienteNome: l.clienteNome,
     inicio: l.inicio, fimPrevisto: l.fimPrevisto, tarifaLabel: l.tarifaLabel,
     atrasado: agora > (l.fimPrevisto || agora),
     fotosSaida: (l.fotosSaida || []).length
