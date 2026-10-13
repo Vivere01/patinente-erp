@@ -427,6 +427,12 @@ function testarFechamentoESync(){
      'a sondagem de 5 s usa a mesma rotina que confere a nuvem');
   ok(/visibilitychange/.test(html) && /document\.hidden\) this\.sondar\(\)/.test(html),
      'voltar para a aba confere a nuvem na hora, sem esperar os 5 s');
+  const chamar = html.slice(html.indexOf('async chamar(rota, opcoes){'), html.indexOf('async status(){'));
+  ok(/for\(let tent = 0; ; tent\+\+\)/.test(chamar) && chamar.indexOf("rota === '/estado' || rota === '/login'") >= 0,
+     'leitura e gravação com lock repetem 1 vez após 1,5 s quando o banco está acordando');
+  ok(chamar.indexOf('r.status === 500 || r.status === 502 || r.status === 503 || r.status === 504') >= 0 &&
+     chamar.indexOf('409') < 0,
+     'a repetição vale para 500/502/503/504 — o 409 do conflito nunca repete');
   const repintar = corpo('repintarTela');
   ['renderFrota','renderClientes','renderHistorico','renderFinanceiro','renderUsuarios','renderConfig']
     .forEach(fn=> ok(repintar.indexOf(fn) >= 0, 'repintarTela atualiza a aba de ' + fn));

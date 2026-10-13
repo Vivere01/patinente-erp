@@ -822,22 +822,42 @@ const Nuvem = {
     try{ t ? localStorage.setItem(TOKEN_CHAVE, t) : localStorage.removeItem(TOKEN_CHAVE); }catch(e){}
   },
 
-  /* chamada genérica: adiciona a sessão e traduz erro de rede em código */
+  /* chamada genérica: adiciona a sessão e traduz erro de rede em código.
+     Leituras e os POST de /estado e /login tentam 1 vez a mais, após 1,5 s:
+     é o que apaga o "bug" de quando o banco gratuito estava dormindo e a
+     primeira chamada falhava (503) — a segunda já pega ele acordado. O 409 do
+     lock otimista nunca repete: continua caindo no caminho de conflito. */
   async chamar(rota, opcoes){
     const o = Object.assign({ method:'GET' }, opcoes||{});
     const h = Object.assign({ 'Accept':'application/json' }, o.headers||{});
     const t = this.token();
     if(t) h['Authorization'] = 'Bearer ' + t;
     if(o.body && typeof o.body !== 'string'){ o.body = JSON.stringify(o.body); h['Content-Type'] = 'application/json'; }
-    const r = await fetch(API_BASE + rota, Object.assign({}, o, { headers:h }));
-    let d = null;
-    try{ d = await r.json(); }catch(e){ d = null; }
-    if(!r.ok){
-      const e = new Error((d && (d.mensagem || d.erro)) || ('HTTP ' + r.status));
-      e.codigo = r.status; e.det = d;
-      throw e;
+    const repete = o.method === 'GET' || (o.method === 'POST' && (rota === '/estado' || rota === '/login'));
+    for(let tent = 0; ; tent++){
+      try{
+        const r = await fetch(API_BASE + rota, Object.assign({}, o, { headers:h }));
+        let d = null;
+        try{ d = await r.json(); }catch(e){ d = null; }
+        if(!r.ok){
+          const e = new Error((d && (d.mensagem || d.erro)) || ('HTTP ' + r.status));
+          e.codigo = r.status; e.det = d;
+          if(repete && tent === 0 && (r.status === 500 || r.status === 502 || r.status === 503 || r.status === 504)){
+            await new Promise(res=>setTimeout(res, 1500));
+            continue;
+          }
+          throw e;
+        }
+        return d;
+      }catch(e){
+        if(e && e.codigo) throw e;   /* erro HTTP já tratado acima */
+        if(repete && tent === 0){
+          await new Promise(res=>setTimeout(res, 1500));
+          continue;
+        }
+        throw e;
+      }
     }
-    return d;
   },
 
   /* a aplicação só liga depois de saber que o banco está de pé */

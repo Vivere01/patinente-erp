@@ -350,7 +350,9 @@ npm run verificar   # 57 verificações contra o site publicado
   de pagamento (soma calculada num dia de exemplo), o impresso traz o mesmo detalhe, e a
   nuvem: carga no acesso, sondagem de 5 s, confirmação ao voltar para a aba, conflito de
   versão recarregando o estado do servidor e repintura do painel (com o caixa do dia e os
-  relatórios redesenhados junto).
+  relatórios redesenhados junto). Leituras e gravações com lock repetem 1 vez após
+  1,5 s diante de 500/502/503/504 (o banco gratuito adormecido acorda no caminho) —
+  o 409 nunca repete.
 - **H. Identidade visual** — o logo está no repositório e é um JPEG válido; aparece no
   favicon, no topo, na tela de acesso, na assinatura e na vistoria (nestas duas em
   caminho absoluto, já que abrem em `/assinar/{token}` e `/vistoria/{token}`); amarelo e
