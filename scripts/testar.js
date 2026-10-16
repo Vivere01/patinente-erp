@@ -903,6 +903,13 @@ function testarVistoria(){
      'a saída não tem campo de lacre: manda o código escaneado');
   ok((pagina.match(/blocoScan\(l\.locacaoId, l\.codigo/g)||[]).length === 2,
      'os dois cartões (saída e chegada) identificam o patinete pelo QR');
+  ok(pagina.indexOf('semCodigo.length === 1') >= 0,
+     'o botão do topo preenche sozinho quando há uma única reserva por modelo');
+  ok(pagina.indexOf('Falta a <b>foto da vistoria</b>') >= 0 &&
+     pagina.indexOf('Falta <b>escanear a etiqueta</b>') >= 0,
+     'a validação diz qual veículo está sem foto ou sem etiqueta');
+  ok(pagina.indexOf('foi escaneado em dois veículos da comanda') >= 0,
+     'a mesma etiqueta em dois cartões da comanda é recusada antes de enviar');
   ok(vercel.rewrites.some(r => r.source === '/vistoria/:token'), 'o link /vistoria/{token} chega na página');
 }
 

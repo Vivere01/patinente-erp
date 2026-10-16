@@ -394,9 +394,23 @@
   function achouPorCodigo(lido){
     const a = acharPorCodigo(lido);
     if(!a){
+      /* reserva por modelo (sem cartão fixo): o botão do topo preenche
+         sozinho quando há uma única pendência — com várias, o vistoriador
+         escaneia dentro do cartão do modelo */
       const semCodigo = (dados.pendentes||[]).filter(l=>!l.codigo);
-      if(semCodigo.length){
-        aviso('O código <b>' + esc(lido) + '</b> não tem cartão fixo. Toque no cartão do modelo e use <b>Escanear código do patinete</b> dentro dele.', 'erro');
+      if(semCodigo.length === 1){
+        const l = semCodigo[0];
+        const c = campos[l.locacaoId] || (campos[l.locacaoId] = { veiculo:'', obs:'' });
+        c.veiculo = lido; c.scanErro = '';
+        aviso('');
+        render();
+        acender(l.locacaoId);
+        toast(lido + ' identificado ✓ (' + (l.tipoNome||'modelo') + ')');
+        if(navigator.vibrate){ try{ navigator.vibrate(45); }catch(e){} }
+        return;
+      }
+      if(semCodigo.length > 1){
+        aviso('Há <b>'+semCodigo.length+' reservas por modelo</b> na fila. Toque no cartão de <b>um modelo</b> e use <b>Escanear código do patinete</b> dentro dele.', 'erro');
       } else {
         aviso('O código <b>' + esc(lido) + '</b> não está na fila de hoje.', 'erro');
       }
@@ -661,6 +675,20 @@
     if(postando) return;
     locIds = (locIds||[]).map(String).filter(Boolean);
     if(!locIds.length) return;
+    /* a mesma etiqueta escaneada em dois cartões da comanda: o servidor
+       recusaria o segundo — avisa antes, nomeando o código */
+    const vistos = {};
+    for(const locId of locIds){
+      const v = ((campos[locId]||{}).veiculo||'').toUpperCase();
+      if(!v) continue;
+      if(vistos[v]){
+        aviso('O código <b>' + esc(v) + '</b> foi escaneado em dois veículos da comanda. Cada veículo precisa da <b>própria etiqueta</b>.', 'erro');
+        toast('Etiqueta repetida: ' + v);
+        acender(locId);
+        return;
+      }
+      vistos[v] = locId;
+    }
     for(const locId of locIds){
       const fs = (fotos[locId]||[]).filter(Boolean);
       if(!validar(acao, locId, fs)) return;
@@ -708,9 +736,19 @@
     }
   }
 
+  function rotuloDaLoc(locId){
+    const achar = arr => (arr||[]).find(x => String(x.locacaoId) === String(locId));
+    const l = achar(dados && dados.pendentes) || achar(dados && dados.naRua);
+    if(!l) return 'o veículo';
+    return l.codigo ? l.codigo : ((l.tipoNome || 'o modelo') + ' (a definir)');
+  }
+
   function validar(acao, locId, fotosEnviadas){
+    const rotulo = rotuloDaLoc(locId);
     if(dados.exigirFoto !== false && !fotosEnviadas.length){
-      aviso('Tire ao menos uma foto da vistoria.', 'erro');
+      aviso('Falta a <b>foto da vistoria</b> de <b>' + esc(rotulo) + '</b>. Toque nos quadros de foto do cartão dele.', 'erro');
+      toast('Falta a foto de ' + rotulo + '.');
+      acender(locId);
       return false;
     }
     const c = campos[locId] || {};
@@ -718,8 +756,9 @@
     /* sem código amarrado, basta ter escaneado — o servidor vincula e confere */
     if(!esperado){
       if(!c.veiculo){
-        aviso('Escaneie a etiqueta do patinete antes de continuar.', 'erro');
-        toast('Escaneie o código do patinete.');
+        aviso('Falta <b>escanear a etiqueta</b> de <b>' + esc(rotulo) + '</b>. Use <b>Escanear código do patinete</b> no cartão dele (ou o botão do topo).', 'erro');
+        toast('Escaneie o patinete de ' + rotulo + '.');
+        acender(locId);
         return false;
       }
       return true;
