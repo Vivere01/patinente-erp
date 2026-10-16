@@ -5,18 +5,35 @@
                          DESCARTADA ao final — não deixa dado para trás
    { acao: 'limpar' }    apaga só artefatos de verificação
                          (fotos em instalacao/ e assinaturas TESTE%)
+   { acao: 'uso' }       devolve o tamanho de cada tabela (para o ADM ver
+                         onde o plano Neon está gastando armazenamento)
+   { acao: 'retencao', dias, alvos, confirmar: true }
+                         expurgo do histórico antigo para economizar
+                         armazenamento no Neon:
+                           - eventos com mais de `dias` (via limpar_eventos;
+                             mínimo 30 dias; UPDATE/DELETE avulso continua
+                             bloqueado pelo gatilho)
+                           - snapshots com mais de `dias`
+                           - fotos com mais de `dias`
+                           - assinaturas pendentes vencidas há +7 dias
+                         `alvos` é { eventos, snapshots, fotos, assinaturas }
+                         (o que faltar é tratado como true).
+                         Exige confirmar:true e sessão de ADMINISTRADOR.
 
    Exige sessão válida: o token é assinado com AUTH_SECRET, que existe
    apenas do lado do servidor. Nenhum texto da requisição entra na
-   consulta — o SQL é constante, vinda de lib/schema-sql.js.
+   consulta — o SQL é constante, vindo de lib/schema-sql.js, e os
+   parâmetros numéricos são validados antes de chamar as functions.
    ===================================================================== */
 const { json, erro, metodoInvalido, corpo } = require('../../lib/http');
 const { temBanco, sql, transacao } = require('../../lib/banco');
 const { exigirSessao } = require('../../lib/guardar');
+const { usuarioNoDoc, papelSeguro, emailNormalizado } = require('../../lib/auth');
 const { seguro } = require('../../lib/tratar');
 const SCHEMA = require('../../lib/schema-sql');
 
-const CONHECIDAS = ['aplicar', 'conferir', 'limpar'];
+const CONHECIDAS = ['aplicar', 'conferir', 'limpar', 'uso', 'retencao'];
+const DIAS_PERMITIDOS = [30, 60, 90, 180, 365, 540, 730];
 
 /* Executa um passo isolado: se ele falhar, o banco volta ao savepoint
    e o resto do teste continua. O Postgres aborta a transação inteira
@@ -88,7 +105,7 @@ async function conferir(){
 
       const del = await passo(c, 'del_evento', () => c.query(
         'delete from public.eventos where id = $1', [ev.ok ? ev.r.rows[0].id : -1]));
-      marcar('DELETE em eventos é recusado pelo banco', !del.ok, del.ok ? 'passou' : '');
+      marcar('DELETE avulso em eventos é recusado pelo banco', !del.ok, del.ok ? 'passou' : '');
 
       /* fotos */
       const caminho = 'instalacao/conferencia-' + Date.now() + '.jpg';
@@ -135,23 +152,139 @@ async function limpar(){
   return { ok: true, acao: 'limpar', fotos: fotos.rowCount, assinaturas: assin.rowCount };
 }
 
+/* Quanto cada tabela ocupa — o ADM vê onde o plano Neon está gastando. */
+async function uso(){
+  const r = await sql(
+    "select 'estado' as tabela, pg_total_relation_size('public.estado')::bigint as bytes," +
+    "       (select count(*)::bigint from public.estado) as linhas," +
+    "       (select max(atualizado_em) from public.estado) as mais_recente " +
+    "union all " +
+    "select 'eventos', pg_total_relation_size('public.eventos')::bigint," +
+    "       (select count(*)::bigint from public.eventos)," +
+    "       (select min(ts) from public.eventos) " +
+    "union all " +
+    "select 'snapshots', pg_total_relation_size('public.snapshots')::bigint," +
+    "       (select count(*)::bigint from public.snapshots)," +
+    "       (select min(criado_em) from public.snapshots) " +
+    "union all " +
+    "select 'fotos', pg_total_relation_size('public.fotos')::bigint," +
+    "       (select count(*)::bigint from public.fotos)," +
+    "       (select min(criado_em) from public.fotos) " +
+    "union all " +
+    "select 'assinaturas', pg_total_relation_size('public.assinaturas')::bigint," +
+    "       (select count(*)::bigint from public.assinaturas)," +
+    "       (select min(criado_em) from public.assinaturas)");
+  const db = await sql("select pg_database_size(current_database())::bigint as bytes");
+  return {
+    ok: true, acao: 'uso',
+    banco_bytes: Number((db.rows[0] || {}).bytes || 0),
+    tabelas: r.rows.map((l) => ({
+      tabela: l.tabela, bytes: Number(l.bytes || 0),
+      linhas: Number(l.linhas || 0), mais_antigo: l.mais_recente || null
+    }))
+  };
+}
+
+/* Só administrador pode apagar histórico: o token carrega só o e-mail,
+   então o papel é relido do documento (igual ao login). A conta da loja
+   (LOJA_EMAIL) continua valendo como administradora mesmo sem registro
+   na aba Usuários. */
+async function exigirAdministrador(sessao){
+  const email = emailNormalizado(sessao && sessao.e);
+  if(!email) return null;
+  if(process.env.LOJA_EMAIL && emailNormalizado(process.env.LOJA_EMAIL) === email){
+    try{
+      const r = await sql('select doc from public.estado where id = 1');
+      const u = usuarioNoDoc((r.rows[0] || {}).doc, email);
+      if(!u) return { email: email, papel: 'administrador' };
+      if(u.ativo === false) return null;
+      return papelSeguro(u.papel) === 'administrador' ? { email: email, papel: 'administrador' } : null;
+    }catch(e){ return { email: email, papel: 'administrador' }; }
+  }
+  const r = await sql('select doc from public.estado where id = 1');
+  const u = usuarioNoDoc((r.rows[0] || {}).doc, email);
+  if(!u || u.ativo === false) return null;
+  return papelSeguro(u.papel) === 'administrador' ? { email: email, papel: 'administrador' } : null;
+}
+
+/* Expurgo do histórico antigo. dias >= 30, confirmar:true obrigatório. */
+async function retencao(parametros, quem){
+  const dias = Number(parametros.dias);
+  if(!isFinite(dias) || dias < 30 || dias > 1825){
+    const e = new Error('Escolha a retenção entre 30 e 1825 dias.');
+    e.codigo = 'dias_invalidos';
+    throw e;
+  }
+  if(parametros.confirmar !== true){
+    const e = new Error('Confirme a exclusão com confirmar:true (ação irreversível).');
+    e.codigo = 'confirmacao_obrigatoria';
+    throw e;
+  }
+  const alvos = parametros.alvos || {};
+  const quer = (nome) => alvos[nome] !== false;
+  const removidos = { eventos: 0, snapshots: 0, fotos: 0, assinaturas: 0 };
+
+  if(quer('eventos')){
+    const r = await sql('select public.limpar_eventos($1) as n', [Math.floor(dias)]);
+    removidos.eventos = Number((r.rows[0] || {}).n || 0);
+  }
+  if(quer('snapshots')){
+    const r = await sql('select public.limpar_snapshots($1) as n', [Math.floor(dias)]);
+    removidos.snapshots = Number((r.rows[0] || {}).n || 0);
+  }
+  if(quer('fotos')){
+    const r = await sql('select public.limpar_fotos($1) as n', [Math.floor(dias)]);
+    removidos.fotos = Number((r.rows[0] || {}).n || 0);
+  }
+  if(quer('assinaturas')){
+    const r = await sql('select public.limpar_assinaturas_vencidas() as n');
+    removidos.assinaturas = Number((r.rows[0] || {}).n || 0);
+  }
+
+  try{
+    await sql(
+      'insert into public.eventos (usuario, acao, detalhe, payload) values ($1,$2,$3,$4)',
+      [String((quem && quem.email) || 'administrador').slice(0, 120), 'retencao_historico',
+       ('Excluiu histórico com mais de ' + Math.floor(dias) + ' dias: ' +
+        removidos.eventos + ' eventos, ' + removidos.snapshots + ' snapshots, ' +
+        removidos.fotos + ' fotos, ' + removidos.assinaturas + ' assinaturas.').slice(0, 2000),
+       JSON.stringify({ dias: Math.floor(dias), removidos: removidos })]);
+  }catch(e){ /* a trilha é melhor esforço: o expurgo já valeu */ }
+
+  const depois = await uso();
+  return { ok: true, acao: 'retencao', dias: Math.floor(dias), removidos: removidos, uso: depois };
+}
+
 module.exports = async (req, res) => {
   if(req.method !== 'POST') return metodoInvalido(res, ['POST']);
   if(!temBanco()){
     return erro(res, 503, 'banco_nao_configurado',
       'POSTGRES_URL não definida. Conecte o Postgres no painel da Vercel.');
   }
-  if(!exigirSessao(req, res)) return;
+  const sessao = exigirSessao(req, res);
+  if(!sessao) return;
 
-  const acao = String((corpo(req) || {}).acao || '');
+  const corpoReq = corpo(req) || {};
+  const acao = String(corpoReq.acao || '');
   if(CONHECIDAS.indexOf(acao) < 0){
     return erro(res, 400, 'acao_invalida', 'Use uma das ações: ' + CONHECIDAS.join(', '));
   }
 
   return seguro(res, async () => {
-    const r = acao === 'aplicar' ? await aplicar()
-            : acao === 'conferir' ? await conferir()
-            : await limpar();
-    return json(res, 200, r);
+    if(acao === 'aplicar') return json(res, 200, await aplicar());
+    if(acao === 'conferir') return json(res, 200, await conferir());
+    if(acao === 'limpar') return json(res, 200, await limpar());
+
+    /* uso e retencao: só administrador (economia no Neon não pode
+       virar apagão por conta de atendente). */
+    const admin = await exigirAdministrador(sessao);
+    if(!admin){
+      return erro(res, 403, 'somente_administrador',
+        'Só o administrador pode ver o uso e excluir o histórico.');
+    }
+    if(acao === 'uso') return json(res, 200, await uso());
+    return json(res, 200, await retencao(corpoReq, admin));
   });
 };
+
+module.exports.DIAS_PERMITIDOS = DIAS_PERMITIDOS;

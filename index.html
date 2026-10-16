@@ -763,6 +763,35 @@ tr.estornada td:last-child{opacity:1;text-decoration:none}
             Registro de quem fez o quê. Não pode ser apagado pela interface.
           </div>
         </div>
+        <div class="card pad" style="margin-bottom:14px">
+          <h3 style="font-size:15px;margin-bottom:6px">Armazenamento Neon — retenção do histórico</h3>
+          <p class="muted" style="font-size:12px;margin:0 0 10px">O plano da Neon cobra pelo espaço em disco. O que mais pesa aqui é foto de vistoria, snapshot diário e o histórico de eventos. Apague os dados antigos de tempos em tempos para economizar.</p>
+          <div style="display:flex;gap:9px;flex-wrap:wrap;align-items:center">
+            <button class="btn sm sec" id="btnVerUso">Ver uso do banco</button>
+            <label class="f" style="min-width:170px;max-width:220px;margin:0"><span>Apagar dados com mais de</span>
+              <select id="retDias">
+                <option value="30">30 dias</option>
+                <option value="60">60 dias</option>
+                <option value="90" selected>90 dias</option>
+                <option value="180">180 dias</option>
+                <option value="365">1 ano</option>
+                <option value="730">2 anos</option>
+              </select></label>
+          </div>
+          <div style="display:flex;gap:12px;flex-wrap:wrap;margin:10px 0;font-size:13px">
+            <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="retEventos" checked style="width:auto;margin:0"> Eventos</label>
+            <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="retSnapshots" checked style="width:auto;margin:0"> Snapshots</label>
+            <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="retFotos" checked style="width:auto;margin:0"> Fotos</label>
+            <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="retAssinaturas" checked style="width:auto;margin:0"> Assinaturas vencidas</label>
+            <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="retDoc" checked style="width:auto;margin:0"> Locações finalizadas antigas (neste documento)</label>
+          </div>
+          <div style="display:flex;gap:9px;flex-wrap:wrap">
+            <button class="btn sm danger" id="btnRetencao">Excluir dados antigos</button>
+          </div>
+          <div id="usoBanco" class="muted" style="font-size:12.5px;margin-top:10px"></div>
+          <div id="retResultado" class="muted" style="font-size:12.5px;margin-top:6px"></div>
+          <p class="muted" style="font-size:12px;margin:8px 0 0">Irreversível: faça backup antes. O expurgo entra na trilha como <span class="mono">retencao_historico</span>.</p>
+        </div>
         <div class="card pad">
           <h3 style="font-size:15px;margin-bottom:10px">Dados do sistema</h3>
           <p class="muted" style="font-size:12px">Os dados ficam salvos neste navegador. Faça backup regularmente e leve o arquivo para o servidor quando for publicar.</p>
@@ -4860,6 +4889,94 @@ $('#btnZerar').onclick = ()=>{
   DB = dbPadrao(); SESSAO = null;
   persist(); aplicarMarca(); telaLogin(); toast('Sistema zerado.');
 };
+
+/* ===================== retenção do histórico (economia Neon) =====================
+   O plano da Neon cobra por armazenamento: fotos, snapshots diários e eventos
+   crescem sem parar. O ADM vê o uso e apaga o que passou da retenção.
+   Só administrador enxerga (a aba Config já é só dele). */
+function fmtBytes(n){
+  n = Number(n||0);
+  if(n < 1024) return n + ' B';
+  if(n < 1048576) return (n/1024).toFixed(1) + ' KB';
+  if(n < 1073741824) return (n/1048576).toFixed(1) + ' MB';
+  return (n/1073741824).toFixed(2) + ' GB';
+}
+function pintarUso(d){
+  const box = $('#usoBanco'); if(!box) return;
+  if(!d || !d.ok){ box.textContent = 'Não consegui ler o uso do banco.'; return; }
+  const linhas = (d.tabelas||[]).map(t=>
+    '<tr><td class="mono">'+esc(t.tabela)+'</td><td class="right mono">'+fmtBytes(t.bytes)+
+    '</td><td class="right mono">'+t.linhas+'</td><td class="mono">'+esc(t.mais_antigo ? dtFmt(Date.parse(t.mais_antigo)) : '—')+'</td></tr>').join('');
+  box.innerHTML = 'Banco total: <b>'+fmtBytes(d.banco_bytes)+'</b>'+
+    '<div class="tablewrap" style="max-height:220px;margin-top:8px"><table>'+
+    '<thead><tr><th>Tabela</th><th class="right">Tamanho</th><th class="right">Linhas</th><th>Data ref.</th></tr></thead><tbody>'+
+    linhas+'</tbody></table></div>';
+}
+$('#btnVerUso') && ($('#btnVerUso').onclick = async ()=>{
+  if(!exigirAdministrador('ver o uso do banco')) return;
+  const box = $('#usoBanco'); box.textContent = 'Lendo uso do banco…';
+  try{
+    const d = await Nuvem.chamar('/admin/banco', { method:'POST', body:{ acao:'uso' } });
+    pintarUso(d);
+  }catch(e){
+    box.textContent = (e && (e.det && (e.det.mensagem || e.det.erro))) || e.message || 'Falha ao ler o uso.';
+  }
+});
+$('#btnRetencao') && ($('#btnRetencao').onclick = async ()=>{
+  if(!exigirAdministrador('excluir o histórico')) return;
+  const dias = Number($('#retDias').value || 90);
+  const alvos = {
+    eventos: $('#retEventos').checked, snapshots: $('#retSnapshots').checked,
+    fotos: $('#retFotos').checked, assinaturas: $('#retAssinaturas').checked
+  };
+  const limparDoc = $('#retDoc').checked;
+  if(!alvos.eventos && !alvos.snapshots && !alvos.fotos && !alvos.assinaturas && !limparDoc){
+    toast('Marque ao menos um tipo de dado.'); return;
+  }
+  if(!confirm('Apagar do banco tudo com mais de '+dias+' dias? Faça backup antes.')) return;
+  if(!confirm('Tem certeza? Isso é irreversível e libera espaço no plano Neon.')) return;
+  const out = $('#retResultado'); out.textContent = 'Excluindo…';
+  try{
+    let removidos = null, usoDepois = null;
+    if(alvos.eventos || alvos.snapshots || alvos.fotos || alvos.assinaturas){
+      const r = await Nuvem.chamar('/admin/banco', { method:'POST',
+        body:{ acao:'retencao', dias:dias, alvos:alvos, confirmar:true } });
+      removidos = r.removidos; usoDepois = r.uso;
+      if(usoDepois) pintarUso(usoDepois);
+    }
+    let docN = 0;
+    if(limparDoc){
+      const corte = Date.now() - dias*86400000;
+      const antes = (DB.locacoes||[]).length;
+      DB.locacoes = (DB.locacoes||[]).filter(l=>{
+        const fim = l.fimReal || l.inicio || 0;
+        const fechada = (l.status==='finalizada' || l.status==='estornada');
+        return !(fechada && fim && fim < corte);
+      });
+      docN = antes - (DB.locacoes||[]).length;
+      if(Array.isArray(DB.auditoria) && DB.auditoria.length > 2000){
+        DB.auditoria = DB.auditoria.filter(a=> (a.ts||0) >= corte).slice(-2000);
+      }
+      if(Array.isArray(DB.inventarios)){
+        DB.inventarios = DB.inventarios.filter(i=> (i.ts||0) >= corte);
+      }
+      log('retencao_historico', 'doc: '+docN+' locações finalizadas com +'+dias+' dias removidas deste documento');
+      persist();
+    } else {
+      log('retencao_historico', 'banco: '+JSON.stringify(removidos)+' com +'+dias+' dias');
+      persist();
+    }
+    const partes = [];
+    if(removidos) partes.push(removidos.eventos+' eventos, '+removidos.snapshots+' snapshots, '+removidos.fotos+' fotos, '+removidos.assinaturas+' assinaturas');
+    if(limparDoc) partes.push(docN+' locações antigas do documento');
+    out.innerHTML = '<span class="pill loja">Excluído</span> <span class="muted">'+esc(partes.join(' · ')||'nada a excluir')+'. Espaço liberado no Neon.</span>';
+    renderHistorico(); renderConfig();
+    toast('Histórico antigo excluído.');
+  }catch(e){
+    const m = (e && e.det && (e.det.mensagem || e.det.erro)) || (e && e.message) || 'Falha ao excluir.';
+    out.textContent = m; toast(m);
+  }
+});
 
 /* =====================================================================
    LOGIN

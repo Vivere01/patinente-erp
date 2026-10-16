@@ -108,12 +108,19 @@ create index if not exists assinaturas_status_idx  on public.assinaturas (status
 -- 6. IMUTABILIDADE — gatilho que recusa UPDATE/DELETE.
 --    Sem gatilho, a regra só existiria na aplicação; aqui vale para
 --    qualquer cliente conectado, inclusive o próprio script.
+--    Exceção: o expurgo de retenção do administrador (função
+--    limpar_eventos abaixo) libera o DELETE por transação, via o ajuste
+--    local app.expurgar_eventos = '1'. DELETE avulso continua recusado.
 -- ---------------------------------------------------------------------
 create or replace function public.bloquear_escrita()
 returns trigger
 language plpgsql
 as $$
 begin
+  if TG_OP = 'DELETE' and TG_TABLE_NAME = 'eventos'
+     and current_setting('app.expurgar_eventos', true) = '1' then
+    return null; -- expurgo de retenção autorizado: deixa passar
+  end if;
   raise exception 'Tabela % é imutável: % não é permitido', TG_TABLE_NAME, TG_OP;
 end;
 $$;
@@ -211,6 +218,28 @@ begin
   delete from public.assinaturas
    where status = 'pendente' and expira_em < now() - interval '7 days';
   get diagnostics n = row_count;
+  return n;
+end;
+$$;
+
+-- Expurgo do histórico de eventos para economizar armazenamento no Neon.
+-- Chamado apenas pela rota de administração (/api/admin/banco, ação
+-- retencao), que exige sessão de administrador. O gatilho de
+-- imutabilidade continua recusando UPDATE e DELETE avulso: só esta
+-- função, na própria transação, libera o DELETE antigo.
+create or replace function public.limpar_eventos(p_dias int)
+returns int
+language plpgsql
+as $$
+declare n int;
+begin
+  if p_dias is null or p_dias < 30 then
+    raise exception 'Retenção mínima de eventos é 30 dias (pedido: %)', p_dias;
+  end if;
+  perform set_config('app.expurgar_eventos', '1', true);
+  delete from public.eventos where ts < now() - (p_dias || ' days')::interval;
+  get diagnostics n = row_count;
+  perform set_config('app.expurgar_eventos', '', true);
   return n;
 end;
 $$;
