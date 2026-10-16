@@ -1444,10 +1444,25 @@ function locAtivas(){ return DB.locacoes.filter(l=>l.status==='ativa'); }
 function locPendentes(){ return DB.locacoes.filter(l=>l.status==='pendente'); }
 function locDevolvidas(){ return DB.locacoes.filter(l=>l.status==='devolvida'); }
 function estornada(l){ return l.status==='estornada'; }
-function locDoVeiculo(vid){ return DB.locacoes.find(l=>l.status==='ativa' && l.veiculoId===vid); }
-function locPendenteDoVeiculo(vid){ return DB.locacoes.find(l=>l.status==='pendente' && l.veiculoId===vid); }
-/* veículo travado: já pago, esperando a vistoria de liberação */
+function locDoVeiculo(vid){ return DB.locacoes.find(l=>l.status==='ativa' && l.veiculoId!=null && String(l.veiculoId)===String(vid)); }
+function locPendenteDoVeiculo(vid){ return DB.locacoes.find(l=>l.status==='pendente' && l.veiculoId!=null && String(l.veiculoId)===String(vid)); }
+/* veículo travado: já pago, esperando a vistoria de liberação (modelo antigo,
+   com unidade amarrada no balcão — as reservas novas são por tipo+qtd) */
 function veiculoTravado(vid){ return !!locPendenteDoVeiculo(vid); }
+/* ---- reserva por modelo: o balcão reserva tipo+qtd; a unidade exata só é
+   vinculada na vistoria de liberação, pelo celular (vínculo tardio). ---- */
+function codigoLoc(l){
+  if(!l) return '?';
+  if(l.veiculoCodigo) return l.veiculoCodigo;
+  return (l.tipoNome ? l.tipoNome + ' (a definir)' : 'a definir');
+}
+function veiculoDaLoc(l){ return (l && l.veiculoId != null) ? getVeiculo(l.veiculoId) : null; }
+function fisicosDoTipo(tipoId){
+  return DB.veiculos.filter(v=>String(v.tipoId)===String(tipoId) && v.status==='loja');
+}
+function reservadosDoTipo(tipoId){
+  return DB.locacoes.filter(l=>l.status==='pendente' && String(l.tipoId)===String(tipoId)).length;
+}
 
 /* Link público da vistoria — um só, estável, escrito em Configurações e
    mostrado também no fim do pagamento. */
@@ -1611,7 +1626,7 @@ function renderPainel(){
           '<div style="flex:1;min-width:250px">'+
             '<b>'+pend.length+' veículo(s) pago(s), aguardando a vistoria de liberação</b>'+
             '<div class="muted" style="font-size:12.5px;margin-top:3px">'+
-              pend.map(l=>esc(l.veiculoCodigo)).join(', ')+
+              pend.map(codigoLoc).map(esc).join(', ')+
               ' — o relógio começa quando o celular confirmar a saída.</div>'+
           '</div>'+
           '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
@@ -1649,11 +1664,11 @@ function renderPainel(){
   const ordenados = Object.entries(grupos)
     .sort((a,b)=> Math.min(...a[1].map(l=>l.fimPrevisto)) - Math.min(...b[1].map(l=>l.fimPrevisto)));
 
-  box.innerHTML = ordenados.map(([gid, locs])=>{
-    const g = getGrupo(+gid);
-    const nome = locs[0].clienteNome;
-    const cabec = (locs.length>1 || g)
-      ? '<div class="grupohead">'+
+    box.innerHTML = ordenados.map(([gid, locs])=>{
+      const g = getGrupo(+gid);
+      const nome = locs[0].clienteNome;
+      const cabec = (locs.length>1 || g)
+        ? '<div class="grupohead">'+
           '<div><b>'+esc(nome)+'</b>'+
           (g?' <span class="muted" style="font-size:12px">· contrato nº '+String(g.id).padStart(6,'0')+'</span>':'')+
           '<div class="muted" style="font-size:12px">'+locs.length+' veículo(s) na rua · devolver até '+hhmm(locs[0].fimPrevisto)+'</div></div>'+
@@ -1661,10 +1676,10 @@ function renderPainel(){
           (g ? '<button class="btn sec sm" onclick="imprimirContrato('+g.id+')">Contrato</button>' : '')+
         '</div>' : '';
     return '<div class="grupo">'+cabec+'<div class="rentgrid">'+ locs.map(l=>{
-      const v = getVeiculo(l.veiculoId)||{codigo:'?'};
+      const v = veiculoDaLoc(l);
       return '<div class="rent" data-loc="'+l.id+'" id="rent-'+l.id+'">'+
         '<span class="selo" data-selo="'+l.id+'">em uso</span>'+
-        '<div class="cod">'+esc(v.codigo)+'</div>'+
+        '<div class="cod">'+esc(v ? v.codigo : codigoLoc(l))+'</div>'+
         '<div class="cli">'+esc(l.tipoNome)+(cabec?'':' · '+esc(l.clienteNome))+'</div>'+
         '<div class="timer" data-timer="'+l.id+'">--:--</div>'+
         '<div class="sub">'+hhmm(l.inicio)+' → '+hhmm(l.fimPrevisto)+' · '+esc(l.tarifaLabel)+'</div>'+
@@ -1706,10 +1721,10 @@ function tickTimers(){
       if(!pior || l.fimPrevisto < pior.fimPrevisto) pior = l;
       if(!jaAlertou[l.id]){
         jaAlertou[l.id] = true;
-        const v = getVeiculo(l.veiculoId)||{codigo:'?'};
+        const v = veiculoDaLoc(l);
         beep();
-        notificar('Tempo esgotado — '+v.codigo, (getCliente(l.clienteId)||{}).nome||'');
-        toast('Tempo esgotado: '+v.codigo);
+        notificar('Tempo esgotado — '+(v ? v.codigo : codigoLoc(l)), (getCliente(l.clienteId)||{}).nome||'');
+        toast('Tempo esgotado: '+(v ? v.codigo : codigoLoc(l)));
       }
     } else {
       document.querySelector('[data-extra="'+l.id+'"]').textContent='';
@@ -1728,7 +1743,7 @@ function pintaAlertaAtraso(loc, agora){
   const atraso = Math.ceil((agora - loc.fimPrevisto)/60000);
   const total = locAtivas().filter(l=> agora > l.fimPrevisto).length;
   box.innerHTML = '<div class="alertatopo"><div class="ic">!</div>'+
-    '<div class="txt"><b>'+esc(loc.veiculoCodigo)+' estourou o tempo há '+atraso+' min'+
+    '<div class="txt"><b>'+esc(codigoLoc(loc))+' estourou o tempo há '+atraso+' min'+
       (total>1 ? ' <span style="opacity:.8">(+'+(total-1)+' atrasado'+(total>2?'s':'')+')</span>' : '')+'</b>'+
     '<span>'+esc(loc.clienteNome)+' · devolução era '+hhmm(loc.fimPrevisto)+
       (ex.valor>0 ? ' · excedente de '+brl(ex.valor) : ' · dentro da tolerância')+'</span></div>'+
@@ -1815,7 +1830,7 @@ const LEGENDAS_ENTRADA = ['Frente','Lateral','Traseira','Avaria (se houver)'];
 window.verFotos = async function(locId, quais){
   const loc = DB.locacoes.find(l=>l.id===locId); if(!loc) return;
   const lista = (quais==='saida'? loc.fotosSaida : loc.fotosEntrada)||[];
-  const ov = abrirModal('<header><h3>Vistoria — '+esc(loc.veiculoCodigo)+' · '+
+  const ov = abrirModal('<header><h3>Vistoria — '+esc(codigoLoc(loc))+' · '+
     (quais==='saida'?'saída':'entrada')+'</h3><button class="x">&times;</button></header>'+
     '<div class="body"><div id="vfBox" class="empty">carregando…</div></div>', {wide:true});
   const partes = [];
@@ -1884,7 +1899,14 @@ $('#btnNovaLocacao').onclick = ()=> exigirCaixa('liberar um veículo', ()=> abri
 function abrirWizard(veiculoId){
   if(!caixaAberto()) return exigirCaixa('liberar um veículo', ()=> abrirWizard(veiculoId));
   pararEsperaAssinatura();
-  W = { passo:1, veiculos: veiculoId?[veiculoId]:[], clienteId:null, novoCliente:null,
+  /* atalho da Frota ("Locar" na linha do veículo): reserva 1 unidade do
+     modelo — a unidade exata continua sendo definida na vistoria */
+  let iniciais = [];
+  if(veiculoId != null){
+    const v = getVeiculo(veiculoId);
+    if(v) iniciais = [String(v.tipoId)];
+  }
+  W = { passo:1, veiculos: iniciais, clienteId:null, novoCliente:null,
         duracao:null, pagamento:PAGAMENTOS[0], pgModo:'unica', pagamentos:{},
         assinatura:null, obs:'', _pad:null,
         docFoto:null, _docFotoCliente:null,
@@ -1927,48 +1949,49 @@ function pintaWizard(){
    vistoria no celular e o relógio começa ali. */
 const LEG_VIST = ['Frente','Lateral','Detalhe / avaria'];
 
-/* ---- passo 1: veículos (seleção múltipla) ---- */
+/* ---- passo 1: tipo + quantidade (reserva por modelo) ----
+   O balcão reserva só modelo e quantidade — nenhuma unidade específica é
+   separada aqui. A unidade exata (PAT-001…) é escolhida pelo vistoriador
+   no celular, na hora da liberação. Assim um veículo em recarga nunca é
+   amarrado por engano: quem está fisicamente pronto é quem sai. */
 function resumoSelecao(){
   if(!W.veiculos.length) return '<span class="muted">Nenhum veículo selecionado</span>';
   const porTipo = {};
-  W.veiculos.forEach(id=>{ const t=getTipo(getVeiculo(id).tipoId); porTipo[t.nome]=(porTipo[t.nome]||0)+1; });
+  W.veiculos.forEach(tid=>{ const t=getTipo(tid); porTipo[t.nome]=(porTipo[t.nome]||0)+1; });
   return Object.entries(porTipo).map(([n,q])=>'<b>'+q+'</b> '+esc(n)+(q>1?'s':'')).join(' &nbsp;+&nbsp; ');
 }
 function passoVeiculo(){
   return '<h4 style="margin-bottom:4px">1. O que o cliente está levando?</h4>'+
-    '<p class="muted" style="font-size:12.5px;margin:0 0 12px">Escolha o tipo e a quantidade — o sistema separa as unidades livres sozinho. Todas entram no mesmo contrato.</p>'+
+    '<p class="muted" style="font-size:12.5px;margin:0 0 12px">Escolha o modelo e a quantidade. A unidade exata é definida pelo vistoriador no celular, na hora da liberação — o contrato sai por modelo, sem número de identificação.</p>'+
     '<div id="wTiposQtd" style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px"></div>'+
     '<div class="carrinho" id="wCarrinho"></div>';
 }
-/* livres de um tipo: na loja, sem trava e ainda não separados neste carrinho */
+/* disponíveis de um tipo: físicos na loja menos os já reservados
+   (pendentes de outros grupos) menos os deste carrinho */
 function livresDoTipo(tipoId){
-  const sel = {};
-  W.veiculos.forEach(id=>{ sel[String(id)] = true; });
-  return DB.veiculos
-    .filter(v=>v.status==='loja' && !veiculoTravado(v.id))
-    .filter(v=>String(v.tipoId)===String(tipoId) && !sel[String(v.id)])
-    .sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo),'pt-BR',{numeric:true}));
+  const f = fisicosDoTipo(tipoId);
+  const n = f.length - reservadosDoTipo(tipoId) - qtdDoTipo(tipoId);
+  return f.slice(0, Math.max(0, n));
 }
 function qtdDoTipo(tipoId){
-  return W.veiculos.filter(id=>{ const v=getVeiculo(id); return v && String(v.tipoId)===String(tipoId); }).length;
+  return W.veiculos.filter(t=>String(t)===String(tipoId)).length;
 }
 function naRuaDoTipo(tipoId){
   return DB.veiculos.filter(v=>String(v.tipoId)===String(tipoId) && v.status==='rua').length;
 }
-/* + separa as primeiras livres por código; − devolve a última separada */
+/* + reserva uma unidade do modelo; − devolve a última reservada */
 window.mudarQtd = function(tipoId, delta){
   delta = Number(delta)||0;
   if(delta>0){
-    const livres = livresDoTipo(tipoId);
-    for(let i=0;i<delta && i<livres.length;i++) W.veiculos.push(livres[i].id);
+    for(let i=0;i<delta;i++){
+      if(!livresDoTipo(tipoId).length){ toast('Sem unidades livres desse modelo.'); break; }
+      W.veiculos.push(String(tipoId));
+    }
   } else if(delta<0){
     for(let n=0;n<-delta;n++){
-      const doTipo = W.veiculos
-        .map(getVeiculo).filter(v=>v && String(v.tipoId)===String(tipoId))
-        .sort((a,b)=>String(b.codigo).localeCompare(String(a.codigo),'pt-BR',{numeric:true}));
-      if(!doTipo.length) break;
-      const i = W.veiculos.indexOf(doTipo[0].id);
-      if(i>=0) W.veiculos.splice(i,1);
+      const i = W.veiculos.map(String).lastIndexOf(String(tipoId));
+      if(i<0) break;
+      W.veiculos.splice(i,1);
     }
   }
   if(W._repintaP1) W._repintaP1();
@@ -1995,39 +2018,25 @@ function ligaPassoVeiculo(){
     $('#wCarrinho').innerHTML =
       '<div class="cabec"><span>'+resumoSelecao()+'</span>'+
       (W.veiculos.length?'<button class="btn sm sec" onclick="limparSelecao()">limpar</button>':'')+'</div>'+
-      (W.veiculos.length ? '<div class="chips">'+W.veiculos.map(id=>{
-        const v=getVeiculo(id);
-        return '<span class="chip">'+esc(v.codigo)+'<button onclick="alternarVeiculo('+id+')">×</button></span>';
-      }).join('')+'</div>'+
-      '<p class="muted" style="font-size:12px;margin:6px 0 0">Unidades separadas sozinhas, pelas primeiras por código. Para trocar uma específica, use o × e digite o código abaixo.</p>'+
-      '<div style="display:flex;gap:10px;margin-top:8px">'+
-        '<input type="text" id="wBusca" placeholder="Trocar por código exato (ex: PAT-001) + Enter" style="flex:1;min-width:0">'+
-      '</div>' : '');
-    const bc = $('#wBusca');
-    if(bc) bc.onkeydown = e=>{
-      if(e.key==='Enter'){
-        const q=(bc.value||'').trim().toLowerCase();
-        const achou = DB.veiculos.filter(v=>v.status==='loja' && !veiculoTravado(v.id) && v.codigo.toLowerCase()===q);
-        if(achou.length===1 && W.veiculos.indexOf(achou[0].id)<0){ W.veiculos.push(achou[0].id); bc.value=''; pinta(); }
-        else if(!achou.length) toast('Código não encontrado entre os livres.');
-      }
-    };
+      (W.veiculos.length
+        ? '<p class="muted" style="font-size:12px;margin:6px 0 0">Reserva por modelo e quantidade. A unidade exata é escolhida pelo vistoriador no celular, entre as que estão prontas na loja.</p>'
+        : '');
   };
   W._repintaP1 = pinta;
   pinta();
 }
-window.alternarVeiculo = function(id){
-  const i = W.veiculos.indexOf(id);
-  if(i>=0) W.veiculos.splice(i,1); else W.veiculos.push(id);
+/* compat: remove uma unidade do modelo (o carrinho não lista códigos) */
+window.alternarVeiculo = function(tipoId){
+  const i = W.veiculos.map(String).indexOf(String(tipoId));
+  if(i>=0) W.veiculos.splice(i,1);
   if(W._repintaP1) W._repintaP1();
 };
 window.limparSelecao = function(){ W.veiculos=[]; if(W._repintaP1) W._repintaP1(); };
 
 /* ---- passo 2: cliente ---- */
 function passoCliente(){
-  return '<div class="resumo" style="margin-bottom:14px">'+
-      '<div class="l"><span>Levando</span><b>'+resumoSelecao()+'</b></div>'+
-      '<div class="l"><span>Veículos</span><b>'+W.veiculos.map(id=>esc(getVeiculo(id).codigo)).join(', ')+'</b></div></div>'+
+  return     '<div class="resumo" style="margin-bottom:14px">'+
+      '<div class="l"><span>Levando</span><b>'+resumoSelecao()+'</b></div></div>'+
     '<h4 style="margin-bottom:4px">2. Quem é o cliente?</h4>'+
     '<p class="muted" style="font-size:12.5px;margin:0 0 12px">Esta pessoa assina e responde por todos os veículos acima.</p>'+
     '<label class="f"><span>CPF (busca automática)</span><input type="text" id="wCpf" placeholder="000.000.000-00" autofocus></label>'+
@@ -2159,7 +2168,7 @@ function adotarDocFoto(c){
 
 /* ---- passo 3: duração e pagamento ---- */
 function tiposSelecionados(){
-  return [...new Set(W.veiculos.map(id=>getVeiculo(id).tipoId))].map(getTipo);
+  return [...new Set(W.veiculos.map(String))].map(getTipo);
 }
 function tarifaPorMin(tipo, min){ return tipo.tarifas.find(t=>t.min===min); }
 function duracoesDisponiveis(){
@@ -2169,11 +2178,11 @@ function duracoesDisponiveis(){
   return mins.filter(m=> tps.every(t=> tarifaPorMin(t,m)));
 }
 function itensDaLocacao(min){
-  return W.veiculos.map(id=>{
-    const v = getVeiculo(id), tipo = getTipo(v.tipoId), t = tarifaPorMin(tipo, min);
-    return { veiculoId:id, codigo:v.codigo, tipoId:tipo.id, tipoNome:tipo.nome,
+  return W.veiculos.map((tid, idx)=>{
+    const tipo = getTipo(String(tid)), t = tarifaPorMin(tipo, min);
+    return { indice: idx, veiculoId: null, codigo: null, tipoId:tipo.id, tipoNome:tipo.nome,
              tarifaId:t.id, tarifaLabel:t.label, minutos:t.min, valor:t.valor,
-             pagamento: pagamentoDe(id) };
+             pagamento: pagamentoDe(idx) };
   });
 }
 function totalDaDuracao(min){ return itensDaLocacao(min).reduce((s,i)=>s+i.valor,0); }
@@ -2181,14 +2190,19 @@ function totalDaDuracao(min){ return itensDaLocacao(min).reduce((s,i)=>s+i.valor
 /* --- formas de pagamento: uma para a locação toda, ou uma por veículo.
        O caixa, o financeiro e o CSV já somam por locação, então gravar a
        forma em cada `loc` é o que faz a divisão aparecer na apuração. --- */
-function pagamentoDe(veiculoId){
-  return W.pagamentos[veiculoId] || W.pagamento || PAGAMENTOS[0];
+function pagamentoDe(indice){
+  if(W.pagamentos[indice] != null) return W.pagamentos[indice];
+  return W.pagamento || PAGAMENTOS[0];
+}
+function rotuloItem(i){
+  if(i.codigo || i.veiculoCodigo) return (i.codigo || i.veiculoCodigo);
+  return (i.tipoNome || 'Veículo') + ' ' + ((i.indice != null ? i.indice : 0) + 1);
 }
 function pagamentosAgrupados(lista){
   const g = {};
-  (lista||[]).forEach(l=>{
+  (lista||[]).forEach((l, k)=>{
     const forma = l.pagamento || W.pagamento || PAGAMENTOS[0];
-    const cod = l.codigo || l.veiculoCodigo || '';
+    const cod = l.codigo || l.veiculoCodigo || rotuloItem(Object.assign({ indice: (l.indice != null ? l.indice : k) }, l));
     const val = Number(l.valor != null ? l.valor : (l.valorBase||0)) || 0;
     g[forma] = g[forma] || { forma:forma, total:0, codigos:[] };
     g[forma].total += val;
@@ -2265,10 +2279,10 @@ function ligaPassoTarifa(){
       ? '<div class="card" style="margin:2px 0 10px"><div class="tablewrap"><table>'+
         '<thead><tr><th>Veículo</th><th>Tipo</th><th class="right">Valor</th>'+
         '<th>Forma de pagamento</th></tr></thead><tbody>'+
-        itens.map(i=>'<tr><td><b>'+esc(i.codigo)+'</b></td><td>'+esc(i.tipoNome)+'</td>'+
+        itens.map(i=>'<tr><td><b>'+esc(rotuloItem(i))+'</b></td><td>'+esc(i.tipoNome)+'</td>'+
           '<td class="right mono">'+brl(i.valor)+'</td>'+
-          '<td><select data-pg="'+i.veiculoId+'">'+PAGAMENTOS.map(p=>
-            '<option'+(pagamentoDe(i.veiculoId)===p?' selected':'')+'>'+p+'</option>').join('')+
+          '<td><select data-pg="'+i.indice+'">'+PAGAMENTOS.map(p=>
+            '<option'+(pagamentoDe(i.indice)===p?' selected':'')+'>'+p+'</option>').join('')+
             '</select></td></tr>').join('')+
         '</tbody></table></div></div>'+
         '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">'+
@@ -2284,7 +2298,7 @@ function ligaPassoTarifa(){
     const bt = $('#wPgTodos');
     if(bt) bt.onclick = ()=>{
       const forma = $('#wPgto').value;
-      itens.forEach(i=>{ W.pagamentos[i.veiculoId] = forma; });
+      itens.forEach(i=>{ W.pagamentos[i.indice] = forma; });
       $$('#wPgTabela [data-pg]').forEach(sel=> sel.value = forma);
       pintaSoma();
       toast('Todas as formas passaram a ser ' + forma + '.');
@@ -2329,17 +2343,18 @@ function dadosContrato(){
            label: itens[0] ? itens[0].tarifaLabel : '' };
 }
 function montarContrato(d){
-  /* dividido, cada equipamento entra com a forma com que foi pago — o
-     contrato já diz "conforme a discriminação por equipamento acima" */
+  /* reserva por modelo: o contrato lista modelo + quantidade, sem código de
+     identificação do veículo (a unidade exata é definida na vistoria).
+     O código real aparece depois no Histórico/Financeiro. */
   const dividido = pagamentosAgrupados(d.itens).length > 1;
-  const lista = d.itens.map((i,n)=>
-    '  ' + String(n+1) + ') ' + i.codigo + ' — ' + i.tipoNome +
-    (getVeiculo(i.veiculoId).placa ? ' — série ' + getVeiculo(i.veiculoId).placa : '') +
-    ' — ' + i.tarifaLabel + ' — ' + brl(i.valor) +
-    (dividido ? ' — pago em ' + (i.pagamento || W.pagamento || PAGAMENTOS[0]) : '')).join('\n');
   const porTipo = {};
-  d.itens.forEach(i=>{ porTipo[i.tipoNome]=(porTipo[i.tipoNome]||0)+1; });
-  const qtd = Object.entries(porTipo).map(([n,q])=>q+' '+n+(q>1?'s':'')).join(' + ');
+  d.itens.forEach(i=>{ porTipo[i.tipoNome]=porTipo[i.tipoNome]||{n:0,v:0}; porTipo[i.tipoNome].n++; porTipo[i.tipoNome].v+=i.valor; });
+  const lista = Object.entries(porTipo).map(([n,o],k)=>
+    '  ' + String(k+1) + ') ' + o.n + ' × ' + n +
+    ' — ' + d.itens.filter(i=>i.tipoNome===n).map(i=>i.tarifaLabel).filter((v,i,a)=>a.indexOf(v)===i).join(' + ') +
+    ' — ' + brl(o.v) +
+    (dividido ? ' — pago em ' + pagamentosAgrupados(d.itens.filter(i=>i.tipoNome===n)).map(g=>g.forma).join(', ') : '')).join('\n');
+  const qtd = Object.entries(porTipo).map(([n,o])=>o.n+' '+n+(o.n>1?'s':'')).join(' + ');
   const map = {
     numero: String(DB.seq.grupo).padStart(6,'0'),
     cliente:d.cli.nome, cpf:d.cli.cpf, telefone:d.cli.telefone||'—',
@@ -2347,9 +2362,8 @@ function montarContrato(d){
     documento:(d.cli.doc||'CNH')+(d.cli.docNum?' nº '+d.cli.docNum:'')+
               (d.cli.docFoto ? ' — foto do documento anexada à locação' : ''),
     lista_veiculos: lista, quantidade: qtd,
-    veiculo:d.itens.map(i=>i.codigo).join(', '), tipo:Object.keys(porTipo).join(' e '),
-    placa:d.itens.map(i=>getVeiculo(i.veiculoId).placa||i.codigo).join(', '),
-    tarifa:d.label, inicio:dtFmt(d.ini), fim:dtFmt(d.fim),
+    veiculo: qtd, tipo:Object.keys(porTipo).join(' e '),
+    placa:'—', tarifa:d.label, inicio:dtFmt(d.ini), fim:dtFmt(d.fim),
     valor:brl(d.total), pagamento:textoPagamento(d.itens, true),
     tolerancia:String(DB.config.toleranciaMin||0),
     excedente:d.tps.map(t=>t.nome+' '+brl(t.excedenteMin)+'/min').join('; '),
@@ -2386,7 +2400,6 @@ function passoContrato(){
     '<div class="resumo">'+
       '<div class="l"><span>Cliente</span><b>'+esc(d.cli.nome)+'</b></div>'+
       '<div class="l"><span>Levando</span><b>'+resumoSelecao()+'</b></div>'+
-      '<div class="l"><span>Veículos</span><b>'+d.itens.map(i=>esc(i.codigo)).join(', ')+'</b></div>'+
       '<div class="l"><span>Período (estimativa)</span><b>'+esc(d.label)+' — até '+hhmm(d.fim)+'</b></div>'+
       linhasPagamento(d.itens)+
     '</div>'+
@@ -2644,13 +2657,16 @@ async function avancarWizard(){
 
 function concluirLocacao(){
   pararEsperaAssinatura();
-  /* outro balcão pode ter separado a mesma unidade no meio do caminho:
-     reconfere antes de gravar, sem travar ninguém */
-  const perdidos = W.veiculos.filter(id=>{ const v=getVeiculo(id); return !v || v.status!=='loja' || veiculoTravado(id); });
-  if(perdidos.length){
-    W.veiculos = W.veiculos.filter(id=>perdidos.indexOf(id)<0);
+  /* outra pessoa pode ter reservado as mesmas unidades no meio do caminho:
+     reconfere a disponibilidade por modelo antes de gravar */
+  const falta = tiposSelecionados().filter(t=>{
+    const preciso = qtdDoTipo(t.id);
+    const tenho = fisicosDoTipo(t.id).length - reservadosDoTipo(t.id);
+    return preciso > tenho;
+  });
+  if(falta.length){
     W.passo = 1; pintaWizard();
-    return toast('Uma unidade saiu da disponibilidade — confira o passo 1.');
+    return toast('Faltou disponibilidade em '+falta.map(t=>t.nome).join(', ')+' — confira o passo 1.');
   }
   if(W.novoCliente){
     const c = Object.assign({ id:uid('cliente'), criadoEm:Date.now() }, W.novoCliente);
@@ -2676,7 +2692,9 @@ function concluirLocacao(){
   d.itens.forEach(i=>{
     const loc = {
       id: uid('locacao'), grupoId: grupo.id,
-      veiculoId: i.veiculoId, veiculoCodigo: i.codigo,
+      /* vínculo tardio: a unidade exata é definida na vistoria de
+         liberação. Até lá, vale a reserva do modelo (tipoId/tipoNome). */
+      veiculoId: null, veiculoCodigo: '',
       clienteId: W.clienteId, clienteNome: d.cli.nome, clienteCpf: d.cli.cpf,
       tipoId: i.tipoId, tipoNome: i.tipoNome,
       tarifaId: i.tarifaId, tarifaLabel: i.tarifaLabel, minutos: i.minutos,
@@ -2697,19 +2715,21 @@ function concluirLocacao(){
        a foto é feita na hora da liberação */
   });
   DB.grupos.push(grupo);
-  log('locacao', d.itens.map(i=>i.codigo).join(', ')+' — '+d.cli.nome+' — '+brl(d.total), grupo.id);
+  const resumoTipos = Object.entries(d.itens.reduce((s,i)=>{ s[i.tipoNome]=(s[i.tipoNome]||0)+1; return s; }, {}))
+    .map(([n,q])=>q+' × '+n).join(' + ');
+  log('locacao', resumoTipos+' — '+d.cli.nome+' — '+brl(d.total), grupo.id);
   persist();
   fecharModal(W.ov);
   renderPainel();
   if(typeof renderVistoria==='function') renderVistoria();
-  toast(d.itens.length>1 ? d.itens.length+' veículos enviados para a vistoria' : 'Enviado para a vistoria — '+d.itens[0].codigo);
+  toast(d.itens.length>1 ? d.itens.length+' veículos enviados para a vistoria' : 'Enviado para a vistoria — '+d.itens[0].tipoNome);
   mostrarLinkVistoria(grupo);
 }
 
 /* O balcão terminou aqui: mostra o link (e o QR) que a pessoa do celular
    vai usar para fotografar, escanear a etiqueta e liberar o veículo. */
 function mostrarLinkVistoria(grupo){
-  const cods = locsDoGrupo(grupo.id).map(l=>l.veiculoCodigo).join(', ');
+  const cods = locsDoGrupo(grupo.id).map(codigoLoc).join(', ');
   const link = linkVistoria();
   const ov = abrirModal(
     '<header><h3>Pago — enviado para a vistoria</h3><button class="x">&times;</button></header>'+
@@ -2808,7 +2828,7 @@ window.estornarLocacao = function(locId, opcoes){
   if(!fila && !exigirAdministrador('estornar uma locação')) return;
   const valor = totalLoc(loc);
   const ov = abrirModal(
-    '<header><h3>'+(fila?'Excluir da fila — ':'Estornar locação — ')+esc(loc.veiculoCodigo)+'</h3><button class="x">&times;</button></header>'+
+    '<header><h3>'+(fila?'Excluir da fila — ':'Estornar locação — ')+esc(codigoLoc(loc))+'</h3><button class="x">&times;</button></header>'+
     '<div class="body">'+
       '<div class="fnota">'+(fila
         ? 'A locação sai da fila da vistoria e o veículo volta para a loja. O valor pago é estornado: sai do faturamento e das entradas do caixa do dia. Nada é apagado — o registro segue no histórico marcado como estornado, com o seu nome e o motivo.'
@@ -2838,11 +2858,11 @@ window.estornarLocacao = function(locId, opcoes){
     loc.status = 'estornada';
     loc.estorno = { ts:Date.now(), usuario:usuarioAtual(), usuarioId:SESSAO?SESSAO.id:null,
                     motivo:ov.querySelector('#esMotivo').value, detalhe:obs, valor, fila };
-    if(eraAtiva){ const v = getVeiculo(loc.veiculoId); if(v) v.status='loja'; delete jaAlertou[loc.id]; }
+    if(eraAtiva){ const v = loc.veiculoId != null ? getVeiculo(loc.veiculoId) : null; if(v) v.status='loja'; delete jaAlertou[loc.id]; }
     /* o grupo só fecha quando não sobra nem pendente nem na rua */
     if(loc.grupoId && !locsDoGrupo(loc.grupoId).some(x=>x.status==='pendente'||x.status==='ativa'))
       fecharGrupoSeCompleto(loc.grupoId);
-    log(fila?'fila_excluida':'estorno', loc.veiculoCodigo+' — '+brl(valor)+' — '+
+    log(fila?'fila_excluida':'estorno', codigoLoc(loc)+' — '+brl(valor)+' — '+
         ov.querySelector('#esMotivo').value+': '+obs, loc.id);
     persist(); fecharModal(ov); renderPainel();
     if($('#page-historico').classList.contains('active')) renderHistorico();
@@ -2887,7 +2907,7 @@ window.devolverGrupo = function(gid){
       '<div class="card" style="margin-bottom:14px"><table>'+
         '<thead><tr><th>Veículo</th><th>Tipo</th><th class="right">Atraso</th><th class="right">Excedente</th>'+
         '</tr></thead><tbody>'+
-        linhas.map(x=>'<tr><td><b>'+esc(x.l.veiculoCodigo)+'</b></td><td>'+esc(x.l.tipoNome)+'</td>'+
+        linhas.map(x=>'<tr><td><b>'+esc(codigoLoc(x.l))+'</b></td><td>'+esc(x.l.tipoNome)+'</td>'+
           '<td class="right mono">'+(x.ex.minutos?x.ex.minutos+' min':'—')+'</td>'+
           '<td class="right mono"'+(x.ex.valor?' style="color:var(--danger)"':'')+'>'+brl(x.ex.valor)+'</td>'+
           '</tr>').join('')+
@@ -2930,7 +2950,7 @@ window.devolverGrupo = function(gid){
         l.valorExcedente = 0;
         l.excedenteRemovido = { minutos:ex.minutos, valor:ex.valor, motivo:motivoG,
           usuario:usuarioAtual(), ts:Date.now() };
-        log('excedente_removido', l.veiculoCodigo+' — '+ex.minutos+' min ('+brl(ex.valor)+'): '+motivoG, l.id);
+        log('excedente_removido', codigoLoc(l)+' — '+ex.minutos+' min ('+brl(ex.valor)+'): '+motivoG, l.id);
       } else {
         l.valorExcedente = ex.valor; delete l.excedenteRemovido;
       }
@@ -2965,7 +2985,7 @@ window.abrirDevolucao = function(locId){
   const usoMin = Math.max(0, Math.round((fim-(loc.inicio||fim))/60000));
   const tipo = getTipo(loc.tipoId);
   const ov = abrirModal(
-    '<header><h3>'+(chegada?'Fechar entrada — ':'Entrada — ')+esc(loc.veiculoCodigo)+'</h3><button class="x">&times;</button></header>'+
+    '<header><h3>'+(chegada?'Fechar entrada — ':'Entrada — ')+esc(codigoLoc(loc))+'</h3><button class="x">&times;</button></header>'+
     '<div class="body">'+
       (chegada ? '<div class="fnota">A chegada já foi registrada na vistoria às <b>'+hhmm(loc.fimReal)+'</b>'+
         (loc.atendenteEntrada?' por '+esc(loc.atendenteEntrada):'')+
@@ -3112,8 +3132,8 @@ window.abrirDevolucao = function(locId){
     const feitas = fotosEnt.filter(Boolean).map(f=>({id:f.id, caminho:f.caminho, legenda:f.legenda, ts:f.ts}));
     if(feitas.length) loc.fotosEntrada = feitas;   /* mantém as da vistoria */
     loc.status = 'finalizada';
-    if(remEx) log('excedente_removido', loc.veiculoCodigo+' — '+ex2.minutos+' min ('+brl(ex2.valor)+'): '+motivoRem, loc.id);
-    log('devolucao', loc.veiculoCodigo+(aCobrar>0?' — cobrado '+brl(aCobrar):' — sem cobrança')+(remEx?' (multa removida)':''), loc.id);
+    if(remEx) log('excedente_removido', codigoLoc(loc)+' — '+ex2.minutos+' min ('+brl(ex2.valor)+'): '+motivoRem, loc.id);
+    log('devolucao', codigoLoc(loc)+(aCobrar>0?' — cobrado '+brl(aCobrar):' — sem cobrança')+(remEx?' (multa removida)':''), loc.id);
     const v = getVeiculo(loc.veiculoId);
     if(v) v.status = ov.querySelector('#dEstado').value;
     delete jaAlertou[loc.id];
@@ -3711,9 +3731,8 @@ function renderVistoria(){
       const l = ls[0];
       const mins = Math.max(0, Math.round((agora - (l.pagoEm||agora))/60000));
       return ls.map(x=>{
-        const v = getVeiculo(x.veiculoId)||{codigo:'?'};
         return '<tr>'+
-          '<td><b>'+esc(v.codigo)+'</b></td>'+
+          '<td><b>'+esc(codigoLoc(x))+'</b></td>'+
           '<td>'+esc(x.tipoNome)+'</td>'+
           '<td>'+esc(x.clienteNome)+
             (ls.length>1 ? ' <span class="muted" style="font-size:11.5px">+'+(ls.length-1)+' veículo(s)</span>' : '')+'</td>'+
@@ -3733,7 +3752,7 @@ function renderVistoria(){
     (rua.length ? rua.sort((a,b)=>(a.fimPrevisto||0)-(b.fimPrevisto||0)).map(l=>{
       const atraso = agora > (l.fimPrevisto||0);
       return '<tr>'+
-        '<td><b>'+esc(l.veiculoCodigo)+'</b></td>'+
+        '<td><b>'+esc(codigoLoc(l))+'</b></td>'+
         '<td>'+esc(l.clienteNome)+'</td>'+
         '<td class="mono">'+(l.inicio?hhmm(l.inicio):'—')+'</td>'+
         '<td class="mono">'+(l.fimPrevisto?hhmm(l.fimPrevisto):'—')+
@@ -3755,7 +3774,7 @@ function renderVistoria(){
     (fecha.length ? fecha.map(l=>{
       const ok = (l.fotosEntrada||[]).filter(Boolean).length;
       return '<tr>'+
-        '<td><b>'+esc(l.veiculoCodigo)+'</b></td>'+
+        '<td><b>'+esc(codigoLoc(l))+'</b></td>'+
         '<td>'+esc(l.clienteNome)+'</td>'+
         '<td class="mono">'+(l.fimReal?hhmm(l.fimReal):'—')+'</td>'+
         '<td>'+(ok ? '<span class="pill loja">'+ok+' foto(s)</span>' : '<span class="pill manut">sem foto</span>')+'</td>'+
@@ -3781,7 +3800,7 @@ function renderVistoria(){
             '<b>'+fs.length+'</b></button>'
         : '<span class="muted">—</span>';
       return '<tr>'+
-        '<td><b>'+esc(l.veiculoCodigo)+'</b></td>'+
+        '<td><b>'+esc(codigoLoc(l))+'</b></td>'+
         '<td>'+esc(l.clienteNome)+'</td>'+
         '<td class="mono">'+hhmm(l.vistoriadaEm)+'</td>'+
         '<td>'+esc(l.vistoriadoPor||'link público')+'</td>'+
@@ -4047,7 +4066,7 @@ function histFiltrado(){
   let lista = DB.locacoes.slice();
 if(de)  lista = lista.filter(l=> diaKey(tsCobranca(l)) >= de);
 if(ate) lista = lista.filter(l=> diaKey(tsCobranca(l)) <= ate);
-  if(q)   lista = lista.filter(l=> (l.veiculoCodigo+' '+l.clienteNome+' '+l.clienteCpf).toLowerCase().includes(q));
+  if(q)   lista = lista.filter(l=> (codigoLoc(l)+' '+l.clienteNome+' '+l.clienteCpf).toLowerCase().includes(q));
   return lista.sort((a,b)=>(tsCobranca(b)||0)-(tsCobranca(a)||0));
 }
 function renderHistorico(){
@@ -4060,7 +4079,7 @@ function renderHistorico(){
       const est = estornada(l);
       const pill = est ? '<span class="pill est" title="'+esc(l.estorno.motivo+': '+l.estorno.detalhe+' — '+l.estorno.usuario)+'">Estornada</span>'
         : l.status==='ativa' ? '<span class="pill rua">Em curso</span>' : '<span class="pill loja">Finalizada</span>';
-      return '<tr'+(est?' class="estornada"':'')+'><td class="mono">'+l.id+'</td><td><b>'+esc(l.veiculoCodigo)+'</b></td><td>'+esc(l.clienteNome)+'</td>'+
+      return '<tr'+(est?' class="estornada"':'')+'><td class="mono">'+l.id+'</td><td><b>'+esc(codigoLoc(l))+'</b></td><td>'+esc(l.clienteNome)+'</td>'+
       '<td class="mono">'+dtFmt(l.inicio)+'</td><td class="mono">'+dtFmt(l.fimReal)+'</td><td>'+esc(l.tarifaLabel)+'</td>'+
       '<td class="right mono">'+brl(l.valorBase)+'</td>'+
       '<td class="right mono"'+(l.valorExcedente?' style="color:var(--danger)"':'')+'>'+brl(l.valorExcedente)+
@@ -4087,7 +4106,7 @@ function baixarCSV(nome, linhas){
 }
 $('#btnExpHist').onclick = ()=>{
   const l = [['ID','Veiculo','Tipo','Cliente','CPF','Saida','Entrada','Pacote','Min contratados','Min excedente','Valor base','Excedente','Danos','Pecas cobradas','Total','Pagamento','Status']];
-  histFiltrado().forEach(x=> l.push([x.id,x.veiculoCodigo,x.tipoNome,x.clienteNome,x.clienteCpf,dtFmt(x.inicio),dtFmt(x.fimReal),
+  histFiltrado().forEach(x=> l.push([x.id,codigoLoc(x),x.tipoNome,x.clienteNome,x.clienteCpf,dtFmt(x.inicio),dtFmt(x.fimReal),
     x.tarifaLabel,x.minutos,x.minutosExcedente||0,(x.valorBase||0).toFixed(2),(x.valorExcedente||0).toFixed(2),
     (x.valorDanos||0).toFixed(2),(x.danos||[]).map(d=>d.nome).join(' | '),
     totalLoc(x).toFixed(2),x.pagamento,x.status]));
@@ -4175,10 +4194,10 @@ function renderFinanceiro(){
       '<td class="right mono">'+brl(resultado)+'</td></tr>' : '')+
     '</tbody>';
 
-  // por veículo
+  // por veículo (unidades ainda sem vínculo aparecem pelo modelo)
   const porVeic = {};
   doMes.forEach(l=>{
-    const k = l.veiculoCodigo;
+    const k = codigoLoc(l);
     porVeic[k] = porVeic[k] || { cod:k, tipo:l.tipoNome, n:0, min:0, val:0 };
     porVeic[k].n++; porVeic[k].val += totalLoc(l);
     porVeic[k].min += (l.minutos||0) + (l.minutosExcedente||0);
@@ -4230,7 +4249,7 @@ $('#btnExpFin').onclick = ()=>{
     linhas.push([diaLegivel(d.dia),d.categoria,d.descricao,d.valor.toFixed(2),d.forma||'',d.pago?'pago':'a pagar']));
   linhas.push([],['FATURAMENTO POR VEICULO'],['Veiculo','Tipo','Locacoes','Total']);
   const m={};
-  doMes.forEach(l=>{ const k=l.veiculoCodigo; m[k]=m[k]||{tipo:l.tipoNome,n:0,v:0}; m[k].n++; m[k].v+=totalLoc(l); });
+  doMes.forEach(l=>{ const k=codigoLoc(l); m[k]=m[k]||{tipo:l.tipoNome,n:0,v:0}; m[k].n++; m[k].v+=totalLoc(l); });
   Object.entries(m).sort((a,b)=>b[1].v-a[1].v).forEach(([k,v])=>linhas.push([k,v.tipo,v.n,v.v.toFixed(2)]));
   baixarCSV('fluxo_'+mes+'.csv', linhas);
 };
@@ -4388,12 +4407,12 @@ function entradasDoDia(dia){
     if(estornada(l)) return;
     const pago = tsCobranca(l);
     if(pago && diaKey(pago)===dia && l.valorBase)
-      itens.push({ desc:'Locação '+l.veiculoCodigo+' — '+l.tarifaLabel, valor:l.valorBase,
+      itens.push({ desc:'Locação '+codigoLoc(l)+' — '+l.tarifaLabel, valor:l.valorBase,
                    forma:l.pagamento||'Dinheiro', tipo:'locacao', hora:pago });
     if(l.fimReal && diaKey(l.fimReal)===dia){
-      if(l.valorExcedente) itens.push({ desc:'Excedente '+l.veiculoCodigo+' — '+l.minutosExcedente+' min',
+      if(l.valorExcedente) itens.push({ desc:'Excedente '+codigoLoc(l)+' — '+l.minutosExcedente+' min',
         valor:l.valorExcedente, forma:l.pagamentoExcedente||'Dinheiro', tipo:'excedente', hora:l.fimReal });
-      if(l.valorDanos) itens.push({ desc:'Avarias '+l.veiculoCodigo, valor:l.valorDanos,
+      if(l.valorDanos) itens.push({ desc:'Avarias '+codigoLoc(l), valor:l.valorDanos,
         forma:l.pagamentoExcedente||'Dinheiro', tipo:'avaria', hora:l.fimReal });
     }
   });

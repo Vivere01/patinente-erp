@@ -13,7 +13,9 @@
    Liberação (acao='liberar'):
      { token, locacaoId, veiculo, fotos:[dataUrl,...], obs }
      → locação vira 'ativa' com inicio/fimPrevisto reais, o veículo sai para
-       'rua' e o grupo fica 'ativo'.
+       'rua' e o grupo fica 'ativo'. Se a locação ainda não tem unidade
+       vinculada (reserva por modelo), a unidade escaneada é amarrada aqui —
+       desde que seja do modelo reservado e esteja livre na loja.
 
    Chegada (acao='chegada'):
      { token, locacaoId, veiculo, fotos:[dataUrl,...], estado, obs }
@@ -73,13 +75,14 @@ async function guardarFoto(dataUrl, locId, indice){
 }
 
 /* lê, deixa mutar e grava com lock otimista: se o balcão salvou antes,
-   refaz a mutação no documento novo em vez de sobrescrever */
+   refaz a mutação no documento novo em vez de sobrescrever.
+   Se mutar devolver false, nada é gravado e o resultado é 'inviavel'. */
 async function comLock(mutar){
   for(let tentativa = 0; tentativa < 4; tentativa++){
     const r = await sql('select doc, versao from public.estado where id = 1');
     const linha = r.rows[0] || { doc: {}, versao: 0 };
     const doc = linha.doc || {};
-    mutar(doc);
+    if(mutar(doc) === false) return 'inviavel';
     const w = await sql('select ok, versao, doc from public.salvar_estado($1, $2, $3)',
       [JSON.stringify(doc), Number(linha.versao) || 0, 'vistoria (link)']);
     const out = w.rows[0] || {};
@@ -95,7 +98,11 @@ function payload(db, agora){
     String(hoje.getMonth()+1).padStart(2,'0') + '-' + String(hoje.getDate()).padStart(2,'0');
 
   const pendentes = locs.filter(l => l.status === 'pendente').map(l => ({
-    locacaoId: l.id, grupoId: l.grupoId, codigo: codigoDoVeiculo(db, l), tipoNome: l.tipoNome,
+    locacaoId: l.id, grupoId: l.grupoId,
+    /* vínculo tardio: sem unidade amarrada, o cartão mostra o modelo
+       aguardando a escolha do vistoriador */
+    codigo: codigoDoVeiculo(db, l) || '',
+    tipoId: l.tipoId || null, tipoNome: l.tipoNome,
     clienteNome: l.clienteNome, pagamento: l.pagamento, valorBase: l.valorBase,
     tarifaLabel: l.tarifaLabel, duracaoMin: l.duracaoMin, pagoEm: l.pagoEm || null,
     obsSaida: l.obsSaida || ''
@@ -163,8 +170,17 @@ function codigoLido(v){
 
 function codigoDoVeiculo(db, loc){
   if(loc && loc.veiculoCodigo) return String(loc.veiculoCodigo);
+  /* reserva por modelo ainda sem unidade: mostra o modelo a definir */
+  if(loc && !loc.veiculoCodigo && loc.tipoNome) return '';
   const v = ((db || {}).veiculos || []).find(x => String(x.id) === String(loc && loc.veiculoId));
   return v ? String(v.codigo) : '';
+}
+
+/* Acha o veículo físico pelo código escaneado na etiqueta. */
+function veiculoPorCodigo(db, codigo){
+  const alvo = String(codigo == null ? '' : codigo).trim().toUpperCase();
+  if(!alvo) return null;
+  return ((db || {}).veiculos || []).find(v => String(v.codigo || '').toUpperCase() === alvo) || null;
 }
 
 module.exports = async (req, res) => {
@@ -205,13 +221,36 @@ module.exports = async (req, res) => {
       return erro(res, 409, 'ja_devolvida', 'Essa locação não está na rua.');
 
     /* a etiqueta do patinete identifica o veículo físico: quem libera precisa
-       ter escaneado o código daquele cartão, e o servidor confere */
+       ter escaneado o código. Em reserva por modelo (sem código amarrado), o
+       servidor vincula a unidade escaneada — desde que seja do modelo
+       reservado e esteja livre na loja. Em locação antiga (com código), vale
+       a conferência exata de antes. */
     const lido = codigoLido(b.veiculo);
     const esperadoCodigo = codigoDoVeiculo(dbInicial, loc0);
     if(!lido) return erro(res, 400, 'veiculo_nao_escaneado', 'Escaneie o código do patinete antes de continuar.');
-    if(lido.toUpperCase() !== String(esperadoCodigo).toUpperCase())
+    const semVinculo = acao === 'liberar' && !loc0.veiculoCodigo && !esperadoCodigo;
+
+    if(!semVinculo && lido.toUpperCase() !== String(esperadoCodigo).toUpperCase())
       return erro(res, 409, 'veiculo_incorreto',
         'O código lido é ' + lido + ', mas este cartão é ' + (esperadoCodigo || 'outro patinete') + '.');
+
+    if(semVinculo){
+      const v = veiculoPorCodigo(dbInicial, lido);
+      if(!v) return erro(res, 404, 'veiculo_nao_encontrado',
+        'O código ' + lido + ' não é de nenhum veículo da frota.');
+      if(String(v.tipoId) !== String(loc0.tipoId))
+        return erro(res, 409, 'veiculo_incorreto',
+          'O código lido é ' + v.codigo + ' (' + (v.tipoId || '?') + '), mas esta reserva é de ' + (loc0.tipoNome || 'outro modelo') + '. Escaneie uma unidade do modelo reservado.');
+      if(v.status !== 'loja')
+        return erro(res, 409, 'veiculo_indisponivel',
+          'O ' + v.codigo + ' não está na loja (está ' + v.status + '). Escolha outra unidade pronta.');
+      const preso = (dbInicial.locacoes || []).some(l => l.id !== loc0.id &&
+        (l.status === 'ativa' || l.status === 'pendente') &&
+        l.veiculoId != null && String(l.veiculoId) === String(v.id));
+      if(preso)
+        return erro(res, 409, 'veiculo_indisponivel',
+          'O ' + v.codigo + ' já está vinculado a outra locação. Escolha outra unidade.');
+    }
 
     const exigirFoto = dbInicial.config ? dbInicial.config.exigirFoto !== false : true;
     const fotosBrutas = Array.isArray(b.fotos) ? b.fotos.filter(Boolean).slice(0, 6) : [];
@@ -229,10 +268,21 @@ module.exports = async (req, res) => {
 
     const ok = await comLock(db => {
       const loc = (db.locacoes || []).find(mesmaLoc);
-      if(!loc) return;
+      if(!loc) return false;
       const quem = 'vistoria (link)';
 
       if(acao === 'liberar'){
+        /* vínculo tardio: amarra agora a unidade escaneada, se ainda livre */
+        if(!loc.veiculoCodigo){
+          const v = veiculoPorCodigo(db, lido);
+          if(!v || String(v.tipoId) !== String(loc.tipoId) || v.status !== 'loja') return false;
+          const preso = (db.locacoes || []).some(l => l.id !== loc.id &&
+            (l.status === 'ativa' || l.status === 'pendente') &&
+            l.veiculoId != null && String(l.veiculoId) === String(v.id));
+          if(preso) return false;
+          loc.veiculoId = v.id;
+          loc.veiculoCodigo = String(v.codigo);
+        }
         const dur = Number(loc.duracaoMin) || 0;
         const inicio = Date.now();
         loc.inicio = inicio;
@@ -270,6 +320,9 @@ module.exports = async (req, res) => {
       }
     });
 
+    if(ok === 'inviavel')
+      return erro(res, 409, 'veiculo_indisponivel',
+        'A unidade escaneada deixou de estar livre. Escolha outra unidade pronta do modelo reservado.');
     if(!ok) return erro(res, 409, 'conflito', 'Outro aparelho salvou ao mesmo tempo. Atualize a tela e tente de novo.');
 
     const novo = await sql('select doc from public.estado where id = 1');

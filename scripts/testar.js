@@ -391,6 +391,7 @@ function testarFechamentoESync(){
   vm.runInContext([
     extrairFuncao(html, 'diaKey'),
     extrairFuncao(html, 'estornada'),
+    extrairFuncao(html, 'codigoLoc'),
     extrairFuncao(html, 'tsCobranca'),
     extrairFuncao(html, 'entradasDoDia'),
     'globalThis.DB = { locacoes: [] };',
@@ -730,45 +731,48 @@ function testarVistoria(){
   ok(ml.indexOf('window.QRCode') >= 0 && ml.indexOf('linkVistoria()') >= 0,
      'a tela final mostra o QR Code e o link para passar adiante');
 
-  /* --- travas --- */
-  ok(/filter\(v=>v\.status==='loja' && !veiculoTravado\(v\.id\)\)/.test(html),
-     'veículo pago não aparece na lista do passo 1');
+  /* --- travas: reserva por modelo, vínculo tardio na vistoria --- */
+  ok(corpo('fisicosDoTipo').indexOf("status==='loja'") >= 0 &&
+     corpo('reservadosDoTipo').indexOf("status==='pendente'") >= 0,
+     'o passo 1 conta os físicos na loja menos as reservas pendentes do modelo');
   ok(corpo('locPendenteDoVeiculo').indexOf("status==='pendente'") >= 0 &&
      corpo('veiculoTravado').indexOf('locPendenteDoVeiculo') >= 0,
-     'a trava é a locação pendente do veículo');
+     'a trava antiga por unidade segue valendo para locações de antes da mudança');
   ok(html.indexOf('pill pendente') >= 0 && html.indexOf('aguardando vistoria') >= 0,
      'a Frota mostra o veículo travado como aguardando vistoria');
 
-  /* --- passo 1: tipo + quantidade, com atribuição automática --- */
+  /* --- passo 1: tipo + quantidade, reserva por modelo (vínculo tardio) --- */
   ok(corpo('passoVeiculo').indexOf('wTiposQtd') >= 0 && html.indexOf('window.mudarQtd = function') >= 0,
      'o passo 1 escolhe tipo e quantidade, com mais e menos por tipo');
   ok(html.indexOf('function livresDoTipo(') >= 0 && html.indexOf('function qtdDoTipo(') >= 0 &&
      html.indexOf('function naRuaDoTipo(') >= 0,
      'o passo 1 mostra os livres na loja e os na rua por tipo');
-  ok(html.indexOf('W.veiculos.push(livres[i].id)') >= 0,
-     'o mais separa as primeiras livres por código, sem escolher uma por uma');
-  ok(corpo('concluirLocacao').indexOf('saiu da disponibilidade') >= 0,
-     'antes de gravar, o sistema reconfere se as unidades continuam livres');
+  ok(html.indexOf("W.veiculos.push(String(tipoId))") >= 0,
+     'o mais reserva uma unidade do modelo — a unidade exata fica para o vistoriador');
+  ok(html.indexOf('Unidades separadas sozinhas') < 0 && html.indexOf('wBusca') < 0,
+     'o balcão não amarra mais unidade por código (não há troca por código exato)');
+  ok(corpo('concluirLocacao').indexOf('Faltou disponibilidade') >= 0,
+     'antes de gravar, o sistema reconfere a disponibilidade por modelo');
   const appPasso = fs.readFileSync(path.join(__dirname, '..', 'app.html'), 'utf8');
   ok(appPasso.indexOf('window.mudarQtd = function') >= 0 && appPasso.indexOf('function livresDoTipo(') >= 0,
      'o app offline tem o mesmo passo 1 por tipo e quantidade');
   const ctxW = vm.createContext({ console });
   vm.runInContext([
+    extrairFuncao(html, 'fisicosDoTipo'),
+    extrairFuncao(html, 'reservadosDoTipo'),
     extrairFuncao(html, 'livresDoTipo'),
     extrairFuncao(html, 'qtdDoTipo'),
-    'globalThis.DB = { veiculos: [',
+    'globalThis.DB = { locacoes: [ { status:"pendente", tipoId:"p" } ], veiculos: [',
     ' {id:1, codigo:"PAT-002", tipoId:"p", status:"loja"},',
     ' {id:2, codigo:"PAT-001", tipoId:"p", status:"loja"},',
     ' {id:3, codigo:"PAT-003", tipoId:"p", status:"rua"},',
     ' {id:4, codigo:"PAT-004", tipoId:"p", status:"loja"},',
     ' {id:5, codigo:"PAT-005", tipoId:"p", status:"loja"} ] };',
-    'globalThis.W = { veiculos:[2] };',
-    'globalThis.veiculoTravado = id => String(id) === "4";',
-    'globalThis.getVeiculo = id => DB.veiculos.find(v=>String(v.id)===String(id));',
+    'globalThis.W = { veiculos:["p"] };',
     'globalThis.T = { livresDoTipo, qtdDoTipo };'
   ].join('\n'), ctxW);
-  ok(ctxW.T.livresDoTipo('p').map(v=>v.id).join() === '1,5',
-     'livre é loja, sem trava, fora do carrinho e em ordem de código');
+  ok(ctxW.T.livresDoTipo('p').length === 2,
+     'livre desconta a reserva pendente e a do carrinho: 4 na loja − 1 reservada − 1 no carrinho = 2');
   ok(ctxW.T.qtdDoTipo('p') === 1, 'a quantidade do tipo conta o que já está no carrinho');
 
   /* --- uma comanda por cliente no celular --- */
@@ -800,6 +804,18 @@ function testarVistoria(){
      'nenhum status ativa nasce no balcão — só a API do link libera');
   ok(/kpi\('Locações hoje'/.test(html) && /filaVistoria/.test(html),
      'o Painel avisa que tem veículo pago esperando liberação');
+
+  /* --- vínculo tardio: reserva por modelo, unidade na vistoria --- */
+  ok(corpo('codigoLoc').indexOf('a definir') >= 0,
+     'quem ainda não tem unidade mostra o modelo a definir');
+  ok(corpo('concluirLocacao').indexOf('veiculoId: null') >= 0,
+     'a locação nasce sem unidade amarrada (reserva por modelo)');
+  ok(api.indexOf('veiculo_indisponivel') >= 0 && api.indexOf('veiculoPorCodigo') >= 0,
+     'a API vincula a unidade escaneada e recusa modelo errado ou unidade ocupada');
+  ok(api.indexOf("tipoId: l.tipoId") >= 0 || api.indexOf('tipoId:l.tipoId') >= 0,
+     'a fila do celular leva o modelo reservado de cada cartão');
+  ok(pagina.indexOf('a definir') >= 0,
+     'o cartão do celular mostra o modelo a definir quando não há código');
 
   /* --- chegada e fechamento no balcão --- */
   ok(/loc\.status!=='ativa' && loc\.status!=='devolvida'/.test(html),
@@ -885,7 +901,7 @@ function testarVistoria(){
      'sem câmera dá para digitar o código da etiqueta');
   ok(pagina.indexOf('veiculo: c.veiculo') >= 0 && !/lacre/i.test(pagina),
      'a saída não tem campo de lacre: manda o código escaneado');
-  ok((pagina.match(/blocoScan\(l\.locacaoId, l\.codigo\)/g) || []).length === 2,
+  ok((pagina.match(/blocoScan\(l\.locacaoId, l\.codigo/g)||[]).length === 2,
      'os dois cartões (saída e chegada) identificam o patinete pelo QR');
   ok(vercel.rewrites.some(r => r.source === '/vistoria/:token'), 'o link /vistoria/{token} chega na página');
 }
@@ -964,6 +980,7 @@ function testarPagamentoPorVeiculo(){
     extrairLinha(html, 'brl'),
     'globalThis.esc = s => String(s==null?\'\':s);',
     extrairFuncao(html, 'pagamentoDe'),
+    extrairFuncao(html, 'rotuloItem'),
     extrairFuncao(html, 'pagamentosAgrupados'),
     extrairFuncao(html, 'textoPagamento'),
     extrairFuncao(html, 'linhasPagamento'),
@@ -995,27 +1012,27 @@ function testarPagamentoPorVeiculo(){
   ok(unica.indexOf('Pago via Pix') >= 0 && unica.indexOf('Pago em') < 0,
      'com uma forma só o resumo continua igual ao de antes');
 
-  /* --- itensDaLocacao: um select por veículo --- */
+  /* --- itensDaLocacao: um item por unidade reservada do modelo --- */
   vm.runInContext([
-    'globalThis.COD = { 1:"PAT-001", 2:"PAT-002", 3:"PAT-003", 4:"MOTO-01", 5:"MOTO-02" };',
-    'globalThis.getVeiculo = id => ({ id:id, codigo:COD[id], tipoId: id<=3 ? "patinete" : "moto" });',
-    'globalThis.getTipo = id => ({ id:id, nome:id, tarifas:[{ id:"t", label:"1 h", min:60, valor: id==="patinete" ? 80 : 100 }] });',
+    'globalThis.getTipo = id => ({ id:String(id), nome:String(id)==="patinete"?"patinete":String(id), tarifas:[{ id:"t", label:"1 h", min:60, valor:String(id)==="patinete" ? 80 : 100 }] });',
     'globalThis.tarifaPorMin = (tipo,min) => tipo.tarifas.find(t=>t.min===min);',
     extrairFuncao(html, 'itensDaLocacao')
   ].join('\n'), ctx);
-  ctx.W = { veiculos:[1,2,3,4,5], pagamento:'Pix', pagamentos:{ '4':'Dinheiro', '5':'Cartão de crédito' } };
+  ctx.W = { veiculos:['patinete','patinete','patinete','moto','moto'], pagamento:'Pix', pagamentos:{ '3':'Dinheiro', '4':'Cartão de crédito' } };
   vm.runInContext('globalThis.its = itensDaLocacao(60);', ctx);
   const its = ctx.its;
   igual(its.length, 5, 'o passo 3 monta um item por veículo do grupo');
   igual(its.filter(i=>i.pagamento==='Pix').length, 3, 'os três patinetes herdam a forma da locação');
-  ok(its.find(i=>i.codigo==='MOTO-01').pagamento === 'Dinheiro', 'a moto 1 é paga em dinheiro');
-  ok(its.find(i=>i.codigo==='MOTO-02').pagamento === 'Cartão de crédito', 'a moto 2 é paga no crédito');
+  ok(its.filter(i=>i.tipoNome==='moto' && i.indice===3)[0].pagamento === 'Dinheiro', 'a moto 1 é paga em dinheiro');
+  ok(its.filter(i=>i.tipoNome==='moto' && i.indice===4)[0].pagamento === 'Cartão de crédito', 'a moto 2 é paga no crédito');
+  ok(its.every(i=>i.veiculoId===null && !i.codigo), 'a unidade exata ainda não está amarrada no passo 3 (vínculo tardio)');
 
   /* --- o caixa do dia separa cada forma, que é o que a loja confere --- */
   const ctx2 = vm.createContext({ console });
   vm.runInContext([
     extrairFuncao(html, 'diaKey'),
     extrairFuncao(html, 'estornada'),
+    extrairFuncao(html, 'codigoLoc'),
     extrairFuncao(html, 'tsCobranca'),
     extrairFuncao(html, 'entradasDoDia'),
     'globalThis.DB = { locacoes: [] };',
@@ -1138,7 +1155,7 @@ function testarTiposDeVeiculo(){
     extrairFuncao(html, 'duracoesDisponiveis'),
     'globalThis.DB = { tipos: JSON.parse(JSON.stringify(TIPOS_PADRAO)),' +
       ' veiculos: [ {id:1, codigo:"PAT-001", tipoId:"patinete"}, {id:2, codigo:"NOVO-01", tipoId:"t1"} ] };',
-    'globalThis.W = { veiculos:[1,2] };',
+    'globalThis.W = { veiculos:["patinete","t1"] };',
     'globalThis.T = { duracoesDisponiveis, tarifaPorMin };'
   ].join('\n'), ctx2);
   ctx2.DB.tipos.push({ id:'t1', nome:'Niu NQi GT', excedenteMin:1.8, tarifas:[
@@ -1153,7 +1170,7 @@ function testarTiposDeVeiculo(){
     { id:'y1', label:'30 minutos', min:30, valor:60 },
     { id:'y2', label:'1 hora',     min:60, valor:110 } ] });
   ctx2.DB.veiculos.push({ id:3, codigo:'SCOOT-01', tipoId:'t2' });
-  ctx2.W.veiculos = [1,3];
+  ctx2.W.veiculos = ['patinete','t2'];
   ok(ctx2.T.duracoesDisponiveis().join() === '30,60',
      'tabela diferente: só as durações comuns entre os modelos seguem em frente');
   ok(corpo('passoTarifa').indexOf('durs.indexOf(W.duracao)') >= 0,

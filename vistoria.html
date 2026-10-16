@@ -361,7 +361,18 @@
     if(modo && modo.tipo === 'cartao'){
       const esperado = String(modo.codigo || '');
       const c = campos[modo.loc] || (campos[modo.loc] = { veiculo:'', obs:'' });
-      if(!esperado || lido.toUpperCase() !== esperado.toUpperCase()){
+      /* cartão sem código amarrado: aceita a unidade escaneada na hora —
+         o servidor confere se é do modelo e se está livre */
+      if(!esperado){
+        c.veiculo = lido; c.scanErro = '';
+        render();
+        aviso('');
+        toast(lido + ' identificado ✓');
+        if(navigator.vibrate){ try{ navigator.vibrate(45); }catch(e){} }
+        acender(modo.loc);
+        return;
+      }
+      if(lido.toUpperCase() !== esperado.toUpperCase()){
         c.veiculo = ''; c.scanErro = lido;
         render();
         aviso('O código lido é <b>' + esc(lido) + '</b>, mas este cartão é <b>' +
@@ -383,7 +394,12 @@
   function achouPorCodigo(lido){
     const a = acharPorCodigo(lido);
     if(!a){
-      aviso('O código <b>' + esc(lido) + '</b> não está na fila de hoje.', 'erro');
+      const semCodigo = (dados.pendentes||[]).filter(l=>!l.codigo);
+      if(semCodigo.length){
+        aviso('O código <b>' + esc(lido) + '</b> não tem cartão fixo. Toque no cartão do modelo e use <b>Escanear código do patinete</b> dentro dele.', 'erro');
+      } else {
+        aviso('O código <b>' + esc(lido) + '</b> não está na fila de hoje.', 'erro');
+      }
       toast('Patinete não está na fila.');
       return;
     }
@@ -459,15 +475,17 @@
     return '<input type="text" inputmode="text" data-loc="'+esc(locId)+'" data-campo="'+qual+'" '+
       'placeholder="'+esc(ph)+'" value="'+esc(val||'')+'">';
   }
-  function blocoScan(locId, codigo){
+  function blocoScan(locId, codigo, rotulo){
     const c = campos[locId] || (campos[locId] = { veiculo:'', obs:'' });
-    const ok = c.veiculo && String(c.veiculo).toUpperCase() === String(codigo).toUpperCase();
+    /* reserva por modelo (sem código amarrado): qualquer leitura vale no
+       aparelho — o servidor confere modelo e disponibilidade */
+    const ok = c.veiculo && (!codigo || String(c.veiculo).toUpperCase() === String(codigo).toUpperCase());
     return '<div class="scanbox">'+
       '<button type="button" class="btn sec" data-escanear="'+esc(locId)+'">Escanear código do patinete</button>'+
       '<span class="scanst '+(ok?'ok':(c.scanErro?'erro':''))+'">'+
-        (ok ? '✓ ' + esc(codigo) + ' identificado'
+        (ok ? '✓ ' + esc(c.veiculo) + ' identificado'
             : (c.scanErro ? '✗ lido ' + esc(c.scanErro) + ' — escaneie de novo'
-                          : 'aguardando a leitura da etiqueta'))+
+                          : 'aguardando a leitura da etiqueta' + (rotulo ? ' (' + esc(rotulo) + ')' : '')))+
       '</span></div>';
   }
 
@@ -488,11 +506,12 @@
 
   function secaoLiberar(l, mostraCab){
     const c = campos[l.locacaoId] || (campos[l.locacaoId] = { veiculo:'', obs:'' });
+    const rotulo = l.codigo || ((l.tipoNome || 'Modelo') + ' · a definir');
     return '<div class="vsec" data-card="'+esc(l.locacaoId)+'">'+
-      (mostraCab ? '<div class="vcab"><b>'+esc(l.codigo)+'</b>'+
+      (mostraCab ? '<div class="vcab"><b>'+esc(rotulo)+'</b>'+
         '<span class="tipo">'+esc(l.tipoNome)+' · '+esc(l.tarifaLabel||'')+'</span></div>' : '')+
       grade(l.locacaoId)+
-      blocoScan(l.locacaoId, l.codigo)+
+      blocoScan(l.locacaoId, l.codigo, l.tipoNome)+
       '<label class="campo">Observações da vistoria'+campo(l.locacaoId, 'obs', 'ex: risco no paralama, bateria 100%', c.obs)+'</label>'+
     '</div>';
   }
@@ -521,7 +540,7 @@
     return '<div class="card">'+
       '<div class="cab"><div>'+
         (unicas
-          ? '<div class="cod">'+esc(l0.codigo)+'</div><div class="tipo">'+esc(l0.tipoNome)+'</div>'
+          ? '<div class="cod">'+esc(l0.codigo || ((l0.tipoNome||'Modelo')+' · a definir'))+'</div><div class="tipo">'+esc(l0.tipoNome)+'</div>'
           : '<div class="cod">'+esc(l0.clienteNome)+'</div>'+
             '<div class="tipo">comanda · '+ls.length+' veículos · '+brl(total)+'</div>')+
       '</div>'+
@@ -696,6 +715,15 @@
     }
     const c = campos[locId] || {};
     const esperado = codigoDaLoc(locId);
+    /* sem código amarrado, basta ter escaneado — o servidor vincula e confere */
+    if(!esperado){
+      if(!c.veiculo){
+        aviso('Escaneie a etiqueta do patinete antes de continuar.', 'erro');
+        toast('Escaneie o código do patinete.');
+        return false;
+      }
+      return true;
+    }
     if(!c.veiculo || String(c.veiculo).toUpperCase() !== String(esperado).toUpperCase()){
       aviso('Escaneie a etiqueta do patinete (' + esc(esperado) + ') antes de continuar.', 'erro');
       toast('Escaneie o código do patinete.');
