@@ -2896,7 +2896,9 @@ function imprimirQuandoPronto(area){
    faturamento e das entradas do dia, e nada é apagado do documento. */
 window.estornarLocacao = function(locId, opcoes){
   const fila = !!(opcoes && opcoes.fila);
-  const loc = DB.locacoes.find(l=>l.id===locId); if(!loc || estornada(loc)) return;
+  /* o id pode chegar como texto (botão da fila) ou número (histórico):
+     a comparação sem tipo não deixa o clique virar um no-op silencioso */
+  const loc = DB.locacoes.find(l=>String(l.id)===String(locId)); if(!loc || estornada(loc)) return;
   if(fila && loc.status !== 'pendente') return;
   if(!fila && !exigirAdministrador('estornar uma locação')) return;
   const valor = totalLoc(loc);
@@ -3812,7 +3814,7 @@ function renderVistoria(){
           '<td class="mono">'+(mins<1?'agora':mins+' min')+'</td>'+
           '<td>'+esc(x.tarifaLabel)+'</td>'+
           '<td class="mono">'+(x.duracaoMin ? x.duracaoMin+' min' : '—')+'</td>'+
-          '<td class="right"><button class="btn sm sec" onclick="excluirDaFila('+x.id+')" '+
+          '<td class="right"><button class="btn sm sec" onclick="excluirDaFila(\''+x.id+'\')" '+
             'title="tira da fila, estorna o pagamento e devolve o veículo para a loja">Excluir</button></td>'+
         '</tr>';
       }).join('');

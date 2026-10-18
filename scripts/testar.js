@@ -1299,8 +1299,75 @@ function testarOperacaoEnxuta(){
   ok(html.indexOf("(fila?'Excluir da fila':'Confirmar estorno')") >= 0 &&
      html.indexOf("log(fila?'fila_excluida':'estorno'") >= 0,
      'o modal muda o texto e a auditoria registra a exclusão da fila');
-  ok(/onclick="excluirDaFila\(/.test(html) && /colspan="7"/.test(html),
+  ok(/onclick="excluirDaFila\\?\(\\?'?/.test(html) && /colspan="7"/.test(html),
      'a tabela da fila tem a coluna de ação com o botão Excluir');
+
+  /* --- o botão da fila em ação: o clique chega do HTML como texto ---
+     id numérico lado do sistema, string lado do botão, já estornada e
+     não-pendente: os quatro caminhos têm de se comportar de verdade */
+  const simFila = (locacoes, idClicado) => {
+    const r = { log:null, persistiu:0, abriu:false, confirmou:null };
+    const ctx = vm.createContext({
+      console,
+      DB: { locacoes: locacoes.map(l=>Object.assign({},l)) },
+      SESSAO: null,
+      esc: s => String(s==null?'':s),
+      codigoLoc: l => (l && l.veiculoCodigo) || 'Patinete elétrico (a definir)',
+      totalLoc: () => 100,
+      brl: v => 'R$ ' + v,
+      dtFmt: () => '18/10/2026 12:00',
+      usuarioAtual: () => 'Atendente',
+      toast: () => {},
+      log: a => { r.log = a; },
+      persist: () => { r.persistiu++; },
+      renderPainel: () => {},
+      renderHistorico: () => {},
+      renderVistoria: () => {},
+      exigirAdministrador: () => { r.recusado = true; return false; },
+      '$': () => ({ classList:{ contains: () => false } })
+    });
+    ctx.estornada = l => l.status==='estornada';
+    ctx.abrirModal = () => ({ querySelector: sel => {
+      if(sel === '#c') return { set onclick(f){ r.cancelou = f; } };
+      if(sel === '#s') return { set onclick(f){ r.confirmou = f; } };
+      if(sel === '#esMotivo') return { value: 'Veículo errado' };
+      return { value: 'motivo de teste' };
+    }, classList:{ contains: () => false } });
+    ctx.fecharModal = () => {};
+    vm.runInContext('this.window = this;\n' + deJanela('estornarLocacao') + '\n' +
+                    deJanela('excluirDaFila') + ';\nthis.chamar = excluirDaFila;', ctx);
+    const click = n => { r.abriu = false; ctx.chamar(n); };
+    r.click = click;
+    r.DB = ctx.DB;
+    return r;
+  };
+  const s1 = simFila([{ id:7, status:'pendente', veiculoId:null, veiculoCodigo:'',
+                        tipoId:1, tipoNome:'patinete elétrico', clienteId:null,
+                        clienteNome:'Ana', clienteCpf:'', grupoId:null,
+                        valorBase:100, valorExcedente:0, minutosExcedente:0,
+                        pagoEm:Date.now(), inicio:null }], '7');
+  s1.click('7'); if(s1.confirmou) s1.confirmou();
+  ok(s1.DB.locacoes[0].status === 'estornada' && s1.persistiu === 1 &&
+     s1.log === 'fila_excluida' && (s1.DB.locacoes[0].estorno||{}).fila === true,
+     'clicou Excluir: a pendência sai da fila estornada, com auditoria e persistência');
+  const s2 = simFila([{ id:8, status:'pendente', veiculoId:null, veiculoCodigo:'',
+                        tipoId:1, tipoNome:'patinete elétrico', clienteId:null,
+                        clienteNome:'Beto', clienteCpf:'', grupoId:null,
+                        valorBase:80, valorExcedente:0, minutosExcedente:0,
+                        pagoEm:Date.now(), inicio:null }], 8);
+  s2.click(8); if(s2.confirmou) s2.confirmou();
+  ok(s2.DB.locacoes[0].status === 'estornada',
+     'o id numérico do histórico também estorna');
+  const s3 = simFila([{ id:9, status:'estornada', clienteNome:'Cris', valorBase:50,
+                        pagoEm:Date.now() }], '9');
+  s3.click('9');
+  ok(!s3.confirmou && !s3.abriu && s3.persistiu === 0,
+     'registro já estornado: o clique não abre o modal de novo');
+  const s4 = simFila([{ id:10, status:'ativa', clienteNome:'Duda', valorBase:60,
+                        pagoEm:Date.now(), inicio:Date.now() }], '10');
+  s4.click('10');
+  ok(!s4.confirmou && !s4.abriu && s4.persistiu === 0,
+     'veículo na rua não é excluído pela fila: o estorno comum é que vale');
 
   /* --- a chegada só existe com o caixa aberto --- */
   const rv = corpo('renderVistoria');
