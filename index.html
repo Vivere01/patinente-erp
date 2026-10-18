@@ -1907,7 +1907,8 @@ function abrirWizard(veiculoId){
     if(v) iniciais = [String(v.tipoId)];
   }
   W = { passo:1, veiculos: iniciais, clienteId:null, novoCliente:null,
-        duracao:null, pagamento:PAGAMENTOS[0], pgModo:'unica', pagamentos:{},
+        duracao:null, durModo:'unica', duracoes:{},
+        pagamento:PAGAMENTOS[0], pgModo:'unica', pagamentos:{},
         assinatura:null, obs:'', _pad:null,
         docFoto:null, _docFotoCliente:null,
         exigirDocFoto: DB.config.exigirDocFoto===true };
@@ -2179,13 +2180,20 @@ function duracoesDisponiveis(){
 }
 function itensDaLocacao(min){
   return W.veiculos.map((tid, idx)=>{
-    const tipo = getTipo(String(tid)), t = tarifaPorMin(tipo, min);
+    const tipo = getTipo(String(tid));
+    const m = (W.durModo==='porVeiculo' && W.duracoes[idx] != null) ? W.duracoes[idx] : min;
+    const t = tarifaPorMin(tipo, m) || tarifaPorMin(tipo, min) || tipo.tarifas[0];
     return { indice: idx, veiculoId: null, codigo: null, tipoId:tipo.id, tipoNome:tipo.nome,
              tarifaId:t.id, tarifaLabel:t.label, minutos:t.min, valor:t.valor,
              pagamento: pagamentoDe(idx) };
   });
 }
 function totalDaDuracao(min){ return itensDaLocacao(min).reduce((s,i)=>s+i.valor,0); }
+function totalDaLocacao(){ return itensDaLocacao(W.duracao).reduce((s,i)=>s+i.valor,0); }
+function maiorDuracao(){
+  const itens = itensDaLocacao(W.duracao);
+  return itens.reduce((s,i)=>Math.max(s, i.minutos||0), 0);
+}
 
 /* --- formas de pagamento: uma para a locação toda, ou uma por veículo.
        O caixa, o financeiro e o CSV já somam por locação, então gravar a
@@ -2235,16 +2243,29 @@ function passoTarifa(){
   const durs = duracoesDisponiveis();
   if(W.duracao && durs.indexOf(W.duracao) < 0) W.duracao = null;   /* veículos mudaram: o período sai da lista */
   if(!W.duracao && durs.length) W.duracao = durs[0];   /* entra já marcado */
+  if(W.durModo==='porVeiculo'){
+    W.veiculos.forEach((tid, idx)=>{
+      const m = W.duracoes[idx];
+      if(m != null && !tarifaPorMin(getTipo(String(tid)), m)) delete W.duracoes[idx];
+    });
+  }
   const tps = tiposSelecionados();
   return '<h4 style="margin-bottom:4px">3. Pagamento</h4>'+
     '<p class="muted" style="font-size:12.5px;margin:0 0 12px">O cliente paga e assina aqui. O relógio começa quando a vistoria de liberação for confirmada no celular — o horário abaixo é a estimativa que vai para o contrato.</p>'+
+    '<div class="segmented" id="wDurModo">'+
+      '<button type="button" data-durmodo="unica"'+(W.durModo==='porVeiculo'?'':' class="on"')+
+        '>Uma duração para toda a locação</button>'+
+      '<button type="button" data-durmodo="porVeiculo"'+(W.durModo==='porVeiculo'?' class="on"':'')+
+        '>Duração por veículo</button>'+
+    '</div>'+
     '<div class="muted" style="font-size:12.5px;margin:0 0 6px">Por quanto tempo?</div>'+
-    '<div class="tarifas" id="wTarifas">'+ durs.map(m=>{
+    '<div class="tarifas" id="wTarifas"'+(W.durModo==='porVeiculo'?' style="display:none"':'')+'>'+ durs.map(m=>{
       const lbl = tarifaPorMin(tps[0], m).label;
-      return '<div class="tarifa'+(W.duracao===m?' sel':'')+'" data-min="'+m+'">'+
+      return '<div class="tarifa'+(W.duracao===m&&W.durModo!=='porVeiculo'?' sel':'')+'" data-min="'+m+'">'+
         '<div class="t">'+esc(lbl)+'</div><div class="v">'+brl(totalDaDuracao(m))+'</div>'+
         (W.veiculos.length>1?'<div class="muted" style="font-size:11px;margin-top:3px">'+W.veiculos.length+' veículos</div>':'')+
         '</div>'; }).join('')+'</div>'+
+    '<div id="wDurTabela"'+(W.durModo==='porVeiculo'?'':' style="display:none"')+'></div>'+
     '<p class="muted" style="font-size:12px;margin:10px 0 16px">Excedente por fração de minuto após '+(DB.config.toleranciaMin||0)+' min de tolerância: '+
       tps.map(t=>esc(t.nome)+' '+brl(t.excedenteMin)+'/min').join(' · ')+'. Contado por veículo.</p>'+
     '<div class="segmented" id="wPgModo">'+
@@ -2261,6 +2282,47 @@ function passoTarifa(){
     '<div id="wResumo"></div>';
 }
 function ligaPassoTarifa(){
+  const pintarDuracoes = ()=>{
+    const modo = W.durModo === 'porVeiculo';
+    const cards = $('#wTarifas'), tb = $('#wDurTabela');
+    if(cards) cards.style.display = modo ? 'none' : '';
+    if(!tb) return;
+    tb.style.display = modo ? '' : 'none';
+    if(!modo){ tb.innerHTML=''; return; }
+    const itens = itensDaLocacao(W.duracao);
+    tb.innerHTML = itens.length
+      ? '<div class="card" style="margin:2px 0 10px"><div class="tablewrap"><table>'+
+        '<thead><tr><th>Veículo</th><th>Tipo</th><th>Duração</th><th class="right">Valor</th></tr></thead><tbody>'+
+        itens.map(i=>{
+          const tipo = getTipo(String(i.tipoId));
+          const opts = tipo.tarifas.slice().sort((a,b)=>a.min-b.min).map(t=>
+            '<option value="'+t.min+'"'+(t.min===i.minutos?' selected':'')+'>'+esc(t.label)+'</option>').join('');
+          return '<tr><td><b>'+esc(rotuloItem(i))+'</b></td><td>'+esc(i.tipoNome)+'</td>'+
+            '<td><select data-dur="'+i.indice+'" data-tipo="'+esc(String(i.tipoId))+'">'+opts+'</select></td>'+
+            '<td class="right mono" data-vl="'+i.indice+'">'+brl(i.valor)+'</td></tr>';
+        }).join('')+
+        '</tbody></table></div></div>'+
+        '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">'+
+          '<button type="button" class="btn sec sm" id="wDurTodos">Aplicar a duração padrão a todas</button>'+
+        '</div>'
+      : '<div class="muted" style="font-size:12.5px;margin:4px 0 10px">'+
+          'Nenhum veículo selecionado.</div>';
+    $$('#wDurTabela [data-dur]').forEach(sel=> sel.onchange = ()=>{
+      W.duracoes[sel.dataset.dur] = +sel.value;
+      const tipo = getTipo(sel.dataset.tipo);
+      const t = tarifaPorMin(tipo, +sel.value);
+      const cell = sel.closest('tr').querySelector('td[data-vl="'+sel.dataset.dur+'"]');
+      if(cell && t) cell.textContent = brl(t.valor);
+      pinta();
+    });
+    const bt = $('#wDurTodos');
+    if(bt) bt.onclick = ()=>{
+      const padrao = tarifaPorMin(getTipo(String(itens[0].tipoId)), W.duracao);
+      itens.forEach(i=>{ W.duracoes[i.indice] = W.duracao; });
+      pinta();
+      toast(padrao ? 'Todas as durações passaram a ser ' + padrao.label + '.' : 'A mesma duração foi aplicada a todos os veículos.');
+    };
+  };
   const pintaSoma = ()=>{
     const s = $('#wPgSoma'); if(!s) return;
     const g = pagamentosAgrupados(W.duracao ? itensDaLocacao(W.duracao) : []);
@@ -2306,23 +2368,33 @@ function ligaPassoTarifa(){
     pintaSoma();
   };
   const pinta = ()=>{
+    pintarDuracoes();
     pintarFormas();
     if(!W.duracao){ $('#wResumo').innerHTML=''; return; }
     const itens = itensDaLocacao(W.duracao);
-    const fim = Date.now()+W.duracao*60000;
+    const fim = Date.now()+maiorDuracao()*60000;
     const porTipo = {};
-    itens.forEach(i=>{ porTipo[i.tipoNome] = porTipo[i.tipoNome]||{n:0,v:0};
-                       porTipo[i.tipoNome].n++; porTipo[i.tipoNome].v+=i.valor; });
+    itens.forEach(i=>{
+      const k = W.durModo==='porVeiculo' ? i.tipoNome+'|'+i.tarifaLabel : i.tipoNome;
+      porTipo[k] = porTipo[k]||{n:0,v:0,nome:i.tipoNome,lbl:i.tarifaLabel};
+      porTipo[k].n++; porTipo[k].v+=i.valor;
+    });
     $('#wResumo').innerHTML='<div class="resumo">'+
       '<div class="l"><span>Saída prevista</span><b>'+hhmm(Date.now())+'</b></div>'+
       '<div class="l"><span>Devolução prevista</span><b>'+hhmm(fim)+'</b></div>'+
-      Object.entries(porTipo).map(([n,o])=>
-        '<div class="l"><span>'+o.n+'× '+esc(n)+'</span><b>'+brl(o.v)+'</b></div>').join('')+
-      '<div class="l tot"><span>Total a receber agora</span><span>'+brl(totalDaDuracao(W.duracao))+'</span></div></div>';
+      Object.entries(porTipo).map(([,o])=>
+        '<div class="l"><span>'+o.n+'× '+esc(o.nome)+(W.durModo==='porVeiculo'?' <span class="muted">('+esc(o.lbl)+')</span>':'')+'</span><b>'+brl(o.v)+'</b></div>').join('')+
+      '<div class="l tot"><span>Total a receber agora</span><span>'+brl(totalDaLocacao())+'</span></div></div>';
   };
   $$('#wTarifas .tarifa').forEach(el=> el.onclick = ()=>{
     W.duracao = +el.dataset.min;
+    W.duracoes = {};
     $$('#wTarifas .tarifa').forEach(x=> x.classList.toggle('sel', x===el));
+    pinta();
+  });
+  $$('#wDurModo button').forEach(b=> b.onclick = ()=>{
+    W.durModo = b.dataset.durmodo;
+    $$('#wDurModo button').forEach(x=> x.classList.toggle('on', x===b));
     pinta();
   });
   $$('#wPgModo button').forEach(b=> b.onclick = ()=>{
@@ -2337,10 +2409,11 @@ function ligaPassoTarifa(){
 function dadosContrato(){
   const itens = itensDaLocacao(W.duracao);
   const cli = W.clienteId ? getCliente(W.clienteId) : W.novoCliente;
-  const ini = Date.now(), fim = ini + W.duracao*60000;
+  const ini = Date.now(), fim = ini + maiorDuracao()*60000;
   const tps = tiposSelecionados();
+  const labels = itens.map(i=>i.tarifaLabel).filter((v,i,a)=>a.indexOf(v)===i).join(' + ');
   return { itens, cli, ini, fim, tps, total: itens.reduce((s,i)=>s+i.valor,0),
-           label: itens[0] ? itens[0].tarifaLabel : '' };
+           label: labels };
 }
 function montarContrato(d){
   /* reserva por modelo: o contrato lista modelo + quantidade, sem código de
@@ -2698,7 +2771,7 @@ function concluirLocacao(){
       clienteId: W.clienteId, clienteNome: d.cli.nome, clienteCpf: d.cli.cpf,
       tipoId: i.tipoId, tipoNome: i.tipoNome,
       tarifaId: i.tarifaId, tarifaLabel: i.tarifaLabel, minutos: i.minutos,
-      duracaoMin: W.duracao,
+      duracaoMin: i.minutos,
       /* sai da loja quando a vistoria de liberação for confirmada */
       inicio: null, fimPrevisto: null, fimReal: null,
       pagoEm: pagoAgora, liberadaEm: null, vistoriadaEm: null, vistoriadoPor: null,
