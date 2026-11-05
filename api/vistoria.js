@@ -7,21 +7,34 @@
    e nada mais: o payload não leva CPF, senha, usuários nem o documento inteiro.
    O token é o mesmo de Configurações e só muda se o lojista pedir um novo.
 
-   Os dois casos exigem `veiculo`: o código lido na etiqueta colada no veículo,
-   conferido contra o código do cartão no servidor (409 se for outro patinete).
+   A PERFORMANCE: comanda grande (30 patinetes pagos de uma vez) não pode
+   virar 30 escritas do documento inteiro. O envio é em duas fases:
+     1) acao 'fotos': sobe os arquivos em lotes pequenos e paralelos para a
+        tabela fotos (staging em 'vistoria/lote/...'), sem tocar no documento;
+     2) acao 'liberar' / 'chegada' com itens:[...]: UM commit por comanda —
+        uma leitura + uma escrita do documento, com TODAS as locações do
+        lote partindo do mesmo horário (relógio não escorrega entre os
+        patinetes 1 e 30).
 
    Liberação (acao='liberar'):
-     { token, locacaoId, veiculo, fotos:[dataUrl,...], obs }
+     { token, acao, itens:[{ locacaoId, veiculo, fotos, obs }], loteHora }
      → locação vira 'ativa' com inicio/fimPrevisto reais, o veículo sai para
        'rua' e o grupo fica 'ativo'. Se a locação ainda não tem unidade
        vinculada (reserva por modelo), a unidade escaneada é amarrada aqui —
        desde que seja do modelo reservado e esteja livre na loja.
+       Sem itens, o corpo antigo de 1 veículo (locacaoId no topo) segue
+       valendo exatamente como antes.
 
    Chegada (acao='chegada'):
-     { token, locacaoId, veiculo, fotos:[dataUrl,...], estado, obs }
-     → locação vira 'devolvida' com fimReal da hora do celular; o balcão
-       fecha a cobrança depois, com as peças e o excedente. O veículo é
-       identificado pela etiqueta escaneada — nenhum número é digitado.
+     { token, acao, itens:[{ locacaoId, veiculo, fotos, estado, obs }] }
+     → locação vira 'devolvida'; o balcão fecha a cobrança depois, com as
+       peças e o excedente. O veículo é identificado pela etiqueta escaneada.
+
+   O 'fotos' em cada item aceita o formato antigo (dataUrl) — usado quando
+   o upload em lotes falhou — ou o caminho devolvido por acao:'fotos'
+   (validado contra o prefixo de staging do próprio lote).
+   loteHora é o horário do celular no instante do botão: o servidor aceita
+   só dentro de uma janela curta (relógio torto não derruba a corretude).
    ===================================================================== */
 const { json, erro, metodoInvalido, corpo } = require('../lib/http');
 const { temBanco, sql } = require('../lib/banco');
@@ -30,6 +43,12 @@ const { seguro } = require('../lib/tratar');
 
 const VALIDADE_MS = 6 * 3600000;
 const TAMANHO_MAX = 600 * 1024;
+const PREFIXO_LOTE = 'vistoria/lote/';
+const FOTOS_POR_POST = 12;      /* arquivos por POST de fotos */
+const FOTOS_POR_ITEM = 6;       /* arquivos por locação (como sempre) */
+const ITENS_POR_LOTE = 50;      /* locações por comanda */
+const BYTES_POR_POST = 4 * 1024 * 1024;
+const JANELA_LOTE_MS = 15 * 60000; /* loteHora válido até 15 min atrás */
 
 function exigirBanco(res){
   if(temBanco()) return true;
@@ -57,38 +76,72 @@ function decodificar(dataUrl){
 }
 
 /* grava a foto e devolve o caminho + URL assinada para a tela do celular */
-async function guardarFoto(dataUrl, locId, indice){
+async function guardarFoto(dataUrl, caminho){
   const bytes = decodificar(dataUrl);
   if(!bytes) return null;
   if(bytes.length > TAMANHO_MAX) throw Object.assign(new Error('Imagem acima de 600 KB.'), { codigo: 413, erro: 'imagem_grande_demais' });
-  const caminho = 'vistoria/' + String(locId).replace(/[^A-Za-z0-9_-]/g, '') + '/' + indice + '-' + Date.now() + '.jpg';
   const mime = /^data:([a-zA-Z0-9.+/-]+);base64,/.exec(String(dataUrl || ''));
   await sql(`insert into public.fotos (caminho, mime, bytes, tamanho)
              values ($1, $2, $3, $4)
              on conflict (caminho) do update set bytes = excluded.bytes,
-                                                 mime = excluded.mime,
-                                                 tamanho = excluded.tamanho`,
+                                                  mime = excluded.mime,
+                                                  tamanho = excluded.tamanho`,
     [caminho, (mime && mime[1]) || 'image/jpeg', bytes, bytes.length]);
   const { exp, sig } = assinarUrl(caminho, VALIDADE_MS);
-  return { id: 'f' + Date.now() + '' + indice, caminho, ts: Date.now(),
+  return { caminho, ts: Date.now(),
            url: '/api/fotos?caminho=' + encodeURIComponent(caminho) + '&exp=' + exp + '&sig=' + sig };
 }
 
-/* lê, deixa mutar e grava com lock otimista: se o balcão salvou antes,
-   refaz a mutação no documento novo em vez de sobrescrever.
-   Se mutar devolver false, nada é gravado e o resultado é 'inviavel'. */
-async function comLock(mutar){
-  for(let tentativa = 0; tentativa < 4; tentativa++){
-    const r = await sql('select doc, versao from public.estado where id = 1');
-    const linha = r.rows[0] || { doc: {}, versao: 0 };
-    const doc = linha.doc || {};
-    if(mutar(doc) === false) return 'inviavel';
-    const w = await sql('select ok, versao, doc from public.salvar_estado($1, $2, $3)',
-      [JSON.stringify(doc), Number(linha.versao) || 0, 'vistoria (link)']);
-    const out = w.rows[0] || {};
-    if(out.ok === true || Number(out.ok) === 1) return true;
+/* Fase 1: staging das fotos fora do documento. Só a tabela fotos muda —
+   zero leitura/escrita do estado, então pode rodar em paralelo sem
+   conflitar com o balcão. Os arquivos sobem por lote (um id por envio)
+   e só passam a valer quando o commit as cita pelo caminho. */
+async function salvarFotos(res, b, agora){
+  const lote = String(b.lote || '').replace(/[^A-Za-z0-9_-]/g, '');
+  if(lote.length < 6 || lote.length > 60)
+    return erro(res, 400, 'lote_invalido', 'Identificação do envio de fotos inválida. Atualize a tela.');
+  const brutas = Array.isArray(b.fotos) ? b.fotos.filter(Boolean).slice(0, FOTOS_POR_POST) : [];
+  if(!brutas.length) return erro(res, 400, 'foto_obrigatoria', 'Nada para guardar.');
+  let memoria = 0;
+  for(const f of brutas){
+    const s = String(f || '');
+    memoria += s.length - (s.indexOf('base64,') >= 0 ? s.indexOf('base64,') + 7 : 0);
   }
-  return false;
+  if(memoria > BYTES_POR_POST)
+    return erro(res, 413, 'lote_grande_demais', 'Lote de fotos acima do aceito. Atualize a tela e tente de novo.');
+
+  const caminhos = [], urls = [];
+  for(let i = 0; i < brutas.length; i++){
+    const destino = PREFIXO_LOTE + lote + '/' + i + '-' + agora + '-' + Date.now() + '.jpg';
+    const f = await guardarFoto(brutas[i], destino);
+    /* alinhado ao pedido pelo índice: quem falha devolve null */
+    caminhos.push(f ? destino : null); urls.push(f ? f.url : null);
+  }
+  return json(res, 200, { ok: true, lote: lote, caminhos: caminhos, urls: urls });
+}
+
+/* Fase 2: lê, deixa mutar e grava com lock otimista: se o balcão salvou
+   antes, refaz a mutação no documento novo em vez de sobrescrever.
+   A leitura inicial vem de fora (o mesmo snapshot da validação), então um
+   commit de comanda inteira custa no máximo leitura + escrita por tentativa.
+   Devolve o documento gravado — a resposta não relê nada. */
+async function comLock(doc, versao, mutar){
+  for(let tentativa = 0; tentativa < 4; tentativa++){
+    let linha = { doc: doc, versao: versao };
+    if(tentativa > 0){
+      const r = await sql('select doc, versao from public.estado where id = 1');
+      linha = r.rows[0] || { doc: {}, versao: 0 };
+    }
+    const atual = linha.doc || {};
+    const resultado = mutar(atual);
+    if(resultado === false) return { ok: false, inviavel: true };
+    const w = await sql('select ok, versao, doc from public.salvar_estado($1, $2, $3)',
+      [JSON.stringify(atual), Number(linha.versao) || 0, 'vistoria (link)']);
+    const out = w.rows[0] || {};
+    if(out.ok === true || Number(out.ok) === 1)
+      return { ok: true, doc: out.doc || atual, versao: Number(out.versao) || 0 };
+  }
+  return { ok: false, conflito: true };
 }
 
 function payload(db, agora){
@@ -183,6 +236,175 @@ function veiculoPorCodigo(db, codigo){
   return ((db || {}).veiculos || []).find(v => String(v.codigo || '').toUpperCase() === alvo) || null;
 }
 
+/* =====================================================================
+   VALIDAÇÃO DE UM ITEM (locId, veículo escaneado, fotos, estado).
+
+   O que é regra da locação na tela (409 por código errado ou ocupado)
+   é conferido contra o snapshot da leitura — e re-conferido DENTRO do
+   lock, porque entre leitura e gravação o balcão pode mudar tudo.
+   ===================================================================== */
+
+/* confere uma foto: caminho do staging do próprio lote ou dataUrl */
+function caminhoDoLote(v, lote){
+  const s = String(v || '');
+  if(s.indexOf('data:') === 0) return { dataUrl: s };
+  if(s.indexOf('/') === 0) return null; /* nunca um caminho de resposta */
+  if(PREFIXO_LOTE + lote + '/' !== s.slice(0, (PREFIXO_LOTE + lote + '/').length)) return null;
+  const resto = s.slice(PREFIXO_LOTE.length + lote.length + 1);
+  if(!resto || /[^A-Za-z0-9_.-]/.test(resto)) return null;
+  return { caminho: s };
+}
+
+/* As fotos de um item, preparadas antes do commit:
+   dataUrls viram arquivos já guardados; caminhos de lote são conferidos
+   no banco de uma vez (uma consulta para a comanda inteira). */
+async function prepararFotos(itens, agora){
+  const exigidas = new Map(); /* dataUrl -> índice para gravar */
+  const possiveis = [];       /* caminhos a conferir */
+  itens.forEach((it, i) => {
+    it.usoFotos = [];
+    for(const f of it.fotosBrutas){
+      const t = caminhoDoLote(f, it.lote);
+      if(!t) continue;
+      if(t.dataUrl){ it.usoFotos.push({ dataUrl: t.dataUrl }); }
+      else { it.usoFotos.push({ caminho: t.caminho }); possiveis.push(t.caminho); }
+    }
+    if(it.usoFotos.length > FOTOS_POR_ITEM) it.usoFotos = it.usoFotos.slice(0, FOTOS_POR_ITEM);
+  });
+  if(possiveis.length){
+    const r = await sql('select caminho from public.fotos where caminho = ANY($1)', [possiveis]);
+    const validos = new Set((r.rows || []).map(x => String(x.caminho)));
+    itens.forEach(it => { it.usoFotos = it.usoFotos.filter(f => !f.caminho || validos.has(f.caminho)); });
+  }
+  for(const it of itens){
+    for(const f of it.usoFotos){
+      if(!f.dataUrl) continue;
+      const destino = PREFIXO_LOTE + it.lote + '/c-' + agora + '-' + Date.now() + '-' +
+        Math.floor(Math.random() * 1e6) + '.jpg';
+      const g = await guardarFoto(f.dataUrl, destino);
+      if(g){ delete f.dataUrl; f.caminho = destino; }
+    }
+  }
+}
+
+/* Registro enxuto da foto dentro da locação (os bytes já estão na tabela). */
+function registroDaFoto(f, legenda, indice){
+  return { id: 'f' + Date.now() + '' + indice, caminho: f.caminho, ts: f.ts || Date.now(), legenda: legenda };
+}
+
+function msgDe(codigo){
+  const m = {
+    ja_liberada: 'Essa locação já foi liberada.',
+    ja_devolvida: 'Essa locação não está na rua.',
+    veiculo_nao_escaneado: 'Escaneie o código do patinete antes de continuar.',
+    veiculo_incorreto: 'O código lido não é o deste cartão.',
+    veiculo_nao_encontrado: 'O código não é de nenhum veículo da frota.',
+    veiculo_indisponivel: 'A unidade não está livre na loja.',
+    foto_obrigatoria: 'Ao menos uma foto é obrigatória para a vistoria.'
+  };
+  return m[codigo] || 'Não gravou. Atualize a tela e tente de novo.';
+}
+
+/* Confere 1 item contra o documento. Devolve { erro } ou { loc } —
+   sem tocar em nada: a mutação dentro do lock é outra função. */
+function conferirItem(db, it, acao, exigirFoto){
+  const locId = it.locId;
+  const mesmaLoc = l => !!l && String(l.id) === String(locId);
+  const loc = (db.locacoes || []).find(mesmaLoc);
+  if(!loc) return { erro: 'locacao_nao_encontrada' };
+  if(acao === 'liberar' && loc.status !== 'pendente') return { erro: 'ja_liberada' };
+  if(acao === 'chegada' && loc.status !== 'ativa') return { erro: 'ja_devolvida' };
+
+  const lido = codigoLido(it.veiculo);
+  const esperadoCodigo = codigoDoVeiculo(db, loc);
+  if(!lido) return { erro: 'veiculo_nao_escaneado' };
+  const semVinculo = acao === 'liberar' && !loc.veiculoCodigo && !esperadoCodigo;
+
+  if(!semVinculo && lido.toUpperCase() !== String(esperadoCodigo).toUpperCase())
+    return { erro: 'veiculo_incorreto', recebido: lido, esperado: String(esperadoCodigo || '') };
+
+  if(semVinculo){
+    const v = veiculoPorCodigo(db, lido);
+    if(!v) return { erro: 'veiculo_nao_encontrado' };
+    if(String(v.tipoId) !== String(loc.tipoId)) return { erro: 'veiculo_incorreto' };
+    if(v.status !== 'loja') return { erro: 'veiculo_indisponivel' };
+    const preso = (db.locacoes || []).some(l => l.id !== loc.id &&
+      (l.status === 'ativa' || l.status === 'pendente') &&
+      l.veiculoId != null && String(l.veiculoId) === String(v.id));
+    if(preso) return { erro: 'veiculo_indisponivel' };
+  }
+
+  if(exigirFoto && !(it.usoFotos || []).length) return { erro: 'foto_obrigatoria' };
+  return { loc: loc, lido: lido };
+}
+
+/* Aplica 1 item já conferido no documento dentro do lock.
+   Devolve null quando o estado mudou por baixo (o chamador registra). */
+function aplicarItem(db, it, conferido, acao, horaBase, quem){
+  const loc = (db.locacoes || []).find(l => l.id === conferido.loc.id);
+  if(!loc) return false;
+  if(acao === 'liberar' && loc.status !== 'pendente') return false;
+  if(acao === 'chegada' && loc.status !== 'ativa') return false;
+
+  const lido = codigoLido(it.veiculo);
+  const semVinculo = acao === 'liberar' && !loc.veiculoCodigo && !codigoDoVeiculo(db, loc);
+
+  if(semVinculo){
+    const v = veiculoPorCodigo(db, lido);
+    if(!v || String(v.tipoId) !== String(loc.tipoId) || v.status !== 'loja') return false;
+    const preso = (db.locacoes || []).some(l => l.id !== loc.id &&
+      (l.status === 'ativa' || l.status === 'pendente') &&
+      l.veiculoId != null && String(l.veiculoId) === String(v.id));
+    if(preso) return false;
+    loc.veiculoId = v.id;
+    loc.veiculoCodigo = String(v.codigo);
+  } else {
+    const esperadoCodigo = String(codigoDoVeiculo(db, loc)).toUpperCase();
+    if(lido.toUpperCase() !== esperadoCodigo) return false;
+  }
+
+  const fotos = (it.usoFotos || []).filter(f => f.caminho)
+    .map((f, i) => registroDaFoto(f, acao === 'liberar' ? ('Vistoria de saída ' + (i+1))
+                                                     : ('Vistoria de chegada ' + (i+1)), i + '-' + Date.now()));
+
+  if(acao === 'liberar'){
+    const dur = Number(loc.duracaoMin) || 0;
+    /* relógio único do lote: os 30 patinetes da comanda começam juntos */
+    loc.inicio = horaBase;
+    loc.fimPrevisto = horaBase + dur * 60000;
+    loc.liberadaEm = horaBase;
+    loc.vistoriadaEm = horaBase;
+    loc.vistoriadoPor = quem;
+    loc.fotosSaida = fotos;
+    loc.obsVistoria = String(it.obs || '').trim().slice(0, 300);
+    loc.status = 'ativa';
+
+    const veiculo = (db.veiculos || []).find(v => v.id === loc.veiculoId);
+    if(veiculo) veiculo.status = 'rua';
+
+    const g = (db.grupos || []).find(x => x.id === loc.grupoId);
+    if(g){
+      g.status = 'ativo';
+      const irmaos = (db.locacoes || []).filter(l => l.grupoId === g.id);
+      const inicios = irmaos.map(l => l.inicio).filter(Boolean);
+      const fins = irmaos.map(l => l.fimPrevisto).filter(Boolean);
+      if(inicios.length) g.inicio = Math.min.apply(null, inicios);
+      if(fins.length) g.fimPrevisto = Math.max.apply(null, fins);
+      g.liberadoEm = horaBase;
+    }
+  } else {
+    loc.fimReal = loc.fimReal || horaBase;
+    loc.chegadaEm = horaBase;
+    loc.status = 'devolvida';
+    if(fotos.length) loc.fotosEntrada = fotos;
+    if(it.obs) loc.obsEntrada = String(it.obs).trim().slice(0, 300);
+    if(!loc.atendenteEntrada) loc.atendenteEntrada = quem;
+    const veiculo = (db.veiculos || []).find(v => v.id === loc.veiculoId);
+    if(veiculo) veiculo.status = it.estado === 'manutencao' ? 'manutencao' : 'loja';
+  }
+  return true;
+}
+
 module.exports = async (req, res) => {
   if(req.method !== 'GET' && req.method !== 'POST') return metodoInvalido(res, ['GET', 'POST']);
   if(!exigirBanco(res)) return;
@@ -199,133 +421,107 @@ module.exports = async (req, res) => {
     }
 
     const b = corpo(req);
-    const r = await sql('select doc from public.estado where id = 1');
+    const acao = String(b.acao || '');
+    if(acao !== 'liberar' && acao !== 'chegada' && acao !== 'fotos')
+      return erro(res, 400, 'acao_invalida', 'Ação desconhecida.');
+
+    const r = await sql('select doc, versao from public.estado where id = 1');
     const dbInicial = (r.rows[0] || {}).doc || {};
+    const versaoInicial = Number(r.rows[0] || {}).versao || 0;
     if(!tokenValido(dbInicial, b.token)) return erro(res, 401, 'token_invalido', 'Link inválido. Peça um novo link da vistoria no balcão.');
 
-    const acao = String(b.acao || '');
-    /* o id chega como texto, vindo do atributo data-* do cartão: a procura
-       compara o valor por igual, servindo tanto para id numérico quanto para
-       id em texto (o id real sai do documento, nunca do pedido) */
-    const locId = b.locacaoId;
-    if(locId == null || String(locId).trim() === '')
+    if(acao === 'fotos') return await salvarFotos(res, b, agora);
+
+    /* os id chegam como texto, vindos do atributo data-* do cartão: a
+       procura compara por igual, servindo para id numérico quanto texto
+       (o id real sai do documento, nunca do pedido) */
+    const emLote = Array.isArray(b.itens);
+    const crudos = emLote ? b.itens : [b];
+    if(!emLote && (b.locacaoId == null || String(b.locacaoId).trim() === ''))
       return erro(res, 400, 'locacao_invalida', 'Informe a locação.');
-    const mesmaLoc = l => !!l && String(l.id) === String(locId);
-    if(acao !== 'liberar' && acao !== 'chegada') return erro(res, 400, 'acao_invalida', 'Ação desconhecida.');
+    if(emLote && !crudos.length) return erro(res, 400, 'lote_vazio', 'Nenhum veículo na comanda.');
 
-    const loc0 = (dbInicial.locacoes || []).find(mesmaLoc);
-    if(!loc0) return erro(res, 404, 'locacao_nao_encontrada', 'Locação não encontrada.');
-    if(acao === 'liberar' && loc0.status !== 'pendente')
-      return erro(res, 409, 'ja_liberada', 'Essa locação já foi liberada.');
-    if(acao === 'chegada' && loc0.status !== 'ativa')
-      return erro(res, 409, 'ja_devolvida', 'Essa locação não está na rua.');
-
-    /* a etiqueta do patinete identifica o veículo físico: quem libera precisa
-       ter escaneado o código. Em reserva por modelo (sem código amarrado), o
-       servidor vincula a unidade escaneada — desde que seja do modelo
-       reservado e esteja livre na loja. Em locação antiga (com código), vale
-       a conferência exata de antes. */
-    const lido = codigoLido(b.veiculo);
-    const esperadoCodigo = codigoDoVeiculo(dbInicial, loc0);
-    if(!lido) return erro(res, 400, 'veiculo_nao_escaneado', 'Escaneie o código do patinete antes de continuar.');
-    const semVinculo = acao === 'liberar' && !loc0.veiculoCodigo && !esperadoCodigo;
-
-    if(!semVinculo && lido.toUpperCase() !== String(esperadoCodigo).toUpperCase())
-      return erro(res, 409, 'veiculo_incorreto',
-        'O código lido é ' + lido + ', mas este cartão é ' + (esperadoCodigo || 'outro patinete') + '.');
-
-    if(semVinculo){
-      const v = veiculoPorCodigo(dbInicial, lido);
-      if(!v) return erro(res, 404, 'veiculo_nao_encontrado',
-        'O código ' + lido + ' não é de nenhum veículo da frota.');
-      if(String(v.tipoId) !== String(loc0.tipoId))
-        return erro(res, 409, 'veiculo_incorreto',
-          'O código lido é ' + v.codigo + ' (' + (v.tipoId || '?') + '), mas esta reserva é de ' + (loc0.tipoNome || 'outro modelo') + '. Escaneie uma unidade do modelo reservado.');
-      if(v.status !== 'loja')
-        return erro(res, 409, 'veiculo_indisponivel',
-          'O ' + v.codigo + ' não está na loja (está ' + v.status + '). Escolha outra unidade pronta.');
-      const preso = (dbInicial.locacoes || []).some(l => l.id !== loc0.id &&
-        (l.status === 'ativa' || l.status === 'pendente') &&
-        l.veiculoId != null && String(l.veiculoId) === String(v.id));
-      if(preso)
-        return erro(res, 409, 'veiculo_indisponivel',
-          'O ' + v.codigo + ' já está vinculado a outra locação. Escolha outra unidade.');
-    }
+    const loteId = String(b.lote || '').replace(/[^A-Za-z0-9_-]/g, '') ||
+      ('d' + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36));
+    const itens = crudos.slice(0, ITENS_POR_LOTE).map(c => ({
+      locId: c.locacaoId,
+      veiculo: c.veiculo,
+      fotosBrutas: Array.isArray(c.fotos) ? c.fotos.filter(Boolean).slice(0, FOTOS_POR_ITEM) : [],
+      obs: c.obs,
+      estado: acao === 'chegada' ? (c.estado === 'manutencao' ? 'manutencao' : 'loja') : null,
+      lote: loteId
+    }));
 
     const exigirFoto = dbInicial.config ? dbInicial.config.exigirFoto !== false : true;
-    const fotosBrutas = Array.isArray(b.fotos) ? b.fotos.filter(Boolean).slice(0, 6) : [];
-    if(exigirFoto && !fotosBrutas.length)
-      return erro(res, 400, 'foto_obrigatoria', 'Ao menos uma foto é obrigatória para a vistoria.');
-    const estado = acao === 'chegada' ? (b.estado === 'manutencao' ? 'manutencao' : 'loja') : null;
 
-    /* fotos primeiro: caminho novo por locação e por rodada */
-    const fotos = [];
-    for(let i = 0; i < fotosBrutas.length; i++){
-      const f = await guardarFoto(fotosBrutas[i], loc0.id, i + '-' + Date.now());
-      if(f) fotos.push({ id: f.id, caminho: f.caminho, ts: f.ts,
-                         legenda: acao === 'liberar' ? ('Vistoria de saída ' + (i+1)) : ('Vistoria de chegada ' + (i+1)) });
+    /* O relógio do lote vem do celular no instante do botão: reduz o
+       escorrego da cronometragem quando a comanda sobe em vários POSTs.
+       Só vale dentro da janela — relógio torto demais cai no horário do
+       servidor, como sempre. */
+    const pedida = Number(b.loteHora);
+    const horaBase = emLote && isFinite(pedida) && agora - pedida >= 0 && agora - pedida <= JANELA_LOTE_MS
+      ? pedida : agora;
+
+    /* fotos primeiro: staging fora do documento, sem lock */
+    await prepararFotos(itens, agora);
+
+    /* conferência contra o snapshot da leitura — cada falha vira
+       resultado por item em vez de derrubar a comanda inteira */
+    const resultados = [];
+    const aplicaveis = [];
+    for(const it of itens){
+      if(it.locId == null || String(it.locId).trim() === ''){
+        resultados.push({ locacaoId: String(it.locId == null ? '' : it.locId), ok: false,
+                          erro: 'locacao_invalida', mensagem: msgDe('locacao_nao_encontrada') });
+        continue;
+      }
+      const c = conferirItem(dbInicial, it, acao, exigirFoto);
+      if(c.erro){
+        resultados.push({ locacaoId: String(it.locId), ok: false, erro: c.erro, mensagem: msgDe(c.erro) });
+        continue;
+      }
+      it.loc = c.loc; it.lido = c.lido;
+      aplicaveis.push(it);
     }
 
-    const ok = await comLock(db => {
-      const loc = (db.locacoes || []).find(mesmaLoc);
-      if(!loc) return false;
-      const quem = 'vistoria (link)';
+    if(!aplicaveis.length)
+      return json(res, 200, { ok: false, resultados: resultados });
 
-      if(acao === 'liberar'){
-        /* vínculo tardio: amarra agora a unidade escaneada, se ainda livre */
-        if(!loc.veiculoCodigo){
-          const v = veiculoPorCodigo(db, lido);
-          if(!v || String(v.tipoId) !== String(loc.tipoId) || v.status !== 'loja') return false;
-          const preso = (db.locacoes || []).some(l => l.id !== loc.id &&
-            (l.status === 'ativa' || l.status === 'pendente') &&
-            l.veiculoId != null && String(l.veiculoId) === String(v.id));
-          if(preso) return false;
-          loc.veiculoId = v.id;
-          loc.veiculoCodigo = String(v.codigo);
-        }
-        const dur = Number(loc.duracaoMin) || 0;
-        const inicio = Date.now();
-        loc.inicio = inicio;
-        loc.fimPrevisto = inicio + dur * 60000;
-        loc.liberadaEm = inicio;
-        loc.vistoriadaEm = inicio;
-        loc.vistoriadoPor = quem;
-        loc.fotosSaida = fotos;
-        loc.obsVistoria = String(b.obs || '').trim().slice(0, 300);
-        loc.status = 'ativa';
-
-        const veiculo = (db.veiculos || []).find(v => v.id === loc.veiculoId);
-        if(veiculo) veiculo.status = 'rua';
-
-        const g = (db.grupos || []).find(x => x.id === loc.grupoId);
-        if(g){
-          g.status = 'ativo';
-          const irmaos = (db.locacoes || []).filter(l => l.grupoId === g.id);
-          const inicios = irmaos.map(l => l.inicio).filter(Boolean);
-          const fins = irmaos.map(l => l.fimPrevisto).filter(Boolean);
-          if(inicios.length) g.inicio = Math.min.apply(null, inicios);
-          if(fins.length) g.fimPrevisto = Math.max.apply(null, fins);
-          g.liberadoEm = Date.now();
-        }
-      } else {
-        const chegou = Date.now();
-        loc.fimReal = loc.fimReal || chegou;
-        loc.chegadaEm = chegou;
-        loc.status = 'devolvida';
-        if(fotos.length) loc.fotosEntrada = fotos;
-        if(b.obs) loc.obsEntrada = String(b.obs).trim().slice(0, 300);
-        if(!loc.atendenteEntrada) loc.atendenteEntrada = quem;
-        const veiculo = (db.veiculos || []).find(v => v.id === loc.veiculoId);
-        if(veiculo) veiculo.status = estado;
+    const quem = 'vistoria (link)';
+    const lock = await comLock(dbInicial, versaoInicial, db => {
+      let aplicados = 0;
+      for(const it of aplicaveis){ it.motivo = null; }
+      for(const it of aplicaveis){
+        const foi = aplicarItem(db, it, { loc: it.loc }, acao, horaBase, quem);
+        if(foi === false){
+          it.motivo = (acao === 'liberar' && it.loc.status === 'ativa') ? 'ja_liberada'
+            : (acao === 'chegada' && it.loc.status === 'devolvida') ? 'ja_devolvida' : 'veiculo_indisponivel';
+        } else { aplicados++; }
       }
+      /* nada valeu a gravação: nem versiona o documento */
+      if(!aplicados) return false;
     });
 
-    if(ok === 'inviavel')
-      return erro(res, 409, 'veiculo_indisponivel',
-        'A unidade escaneada deixou de estar livre. Escolha outra unidade pronta do modelo reservado.');
-    if(!ok) return erro(res, 409, 'conflito', 'Outro aparelho salvou ao mesmo tempo. Atualize a tela e tente de novo.');
+    for(const it of aplicaveis){
+      if(lock.ok && !it.motivo)
+        resultados.push({ locacaoId: String(it.locId), ok: true });
+      else {
+        const erroItem = it.motivo || 'conflito';
+        resultados.push({ locacaoId: String(it.locId), ok: false, erro: erroItem, mensagem: msgDe(erroItem) });
+      }
+    }
 
-    const novo = await sql('select doc from public.estado where id = 1');
-    return json(res, 200, payload((novo.rows[0] || {}).doc || {}, Date.now()));
+    if(!lock.ok){
+      if(lock.inviavel)
+        return json(res, 409, { ok: false, resultados: resultados,
+          erro: 'veiculo_indisponivel',
+          mensagem: 'A unidade escaneada deixou de estar livre. Escolha outra unidade pronta do modelo reservado.' });
+      return json(res, 409, { ok: false, resultados: resultados, erro: 'conflito',
+        mensagem: 'Outro aparelho salvou ao mesmo tempo. Atualize a tela e tente de novo.' });
+    }
+
+    /* resposta mínima: a fila o celular já busca à parte — não relê o
+       documento inteiro só para fechar a resposta */
+    return json(res, 200, { ok: true, lote: loteId, resultados: resultados });
   });
 };
