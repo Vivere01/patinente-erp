@@ -668,9 +668,89 @@
     }
   }
 
-  /* Uma comanda, um botão: valida todos os veículos e envia em sequência
-     pela mesma ação de sempre (sem mudar a API). Conta 409 "já liberada" ou
-     "já devolvida" como feita — é outro celular na mesma comanda. */
+  /* Parte as fotos em lotes pequenos que cabem no corpo do pedido —
+     e sobem em paralelo, porque o staging não mexe no documento. */
+  function dividirFotos(f, maxN, maxBytes){
+    const lotes = []; let atual = [], bytes = 0;
+    for(const ff of f){
+      const d = String(ff || '').length;
+      if(atual.length && (atual.length >= maxN || bytes + d > maxBytes)){
+        lotes.push(atual); atual = []; bytes = 0;
+      }
+      atual.push(ff); bytes += d;
+    }
+    if(atual.length) lotes.push(atual);
+    return lotes;
+  }
+
+  /* Fase 1 do envio: staging das fotos fora do estado. Cada lote que
+     falhar não trava o envio: a foto volta a viajar no formato antigo
+     (dataUrl) dentro do commit. Devolve dataUrl -> caminho. */
+  async function subirFotos(itens, lote, totalFotos){
+    const mapa = {};
+    const fila = [];
+    itens.forEach(it => it.fs.forEach(f => { if(f && !(f in mapa)) fila.push(f); }));
+    const lotes = dividirFotos(fila, 8, 3 * 1024 * 1024);
+    let proximo = 0, sobe = 0;
+    const proximoL = ()=>{
+      $('#situacao').textContent = 'Enviando fotos ' + sobe + '/' + totalFotos + '…';
+    };
+    proximoL();
+    const trabalhadores = Array.from({length: Math.min(3, lotes.length)}, ()=>
+      (async function(){
+        while(proximo < lotes.length){
+          const i = proximo++;
+          const fotosLote = lotes[i];
+          try{
+            const r = await fetch('/api/vistoria', {
+              method:'POST', headers:{'Content-Type':'application/json'},
+              cache:'no-store',
+              body: JSON.stringify({ token, acao:'fotos', lote: lote, fotos: fotosLote })
+            });
+            const j = await r.json().catch(()=>({}));
+            if(r.ok && j && Array.isArray(j.caminhos)){
+              fotosLote.forEach((f, k) => { if(j.caminhos[k]) mapa[f] = j.caminhos[k]; });
+            }
+          }catch(e){ /* sem conexão nesse lote: a foto segue no commit */ }
+          sobe += fotosLote.length;
+          proximoL();
+        }
+      })()
+    );
+    await Promise.all(trabalhadores);
+    return mapa;
+  }
+
+  /* Fallback para servidor com o código antigo no ar: um POST por
+     veículo, na sequência — exatamente como antes. */
+  async function enviarSequencial(acao, locIds, ok, falhas){
+    for(const locId of locIds){
+      const fs = (fotos[locId]||[]).filter(Boolean);
+      const c = campos[locId] || {};
+      const corpo = acao === 'liberar'
+        ? { fotos: fs, veiculo: c.veiculo||'', obs: c.obs||'' }
+        : { fotos: fs, veiculo: c.veiculo||'', estado: c.estado||'loja', obs: c.obs||'' };
+      const r = await fetch('/api/vistoria', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        cache:'no-store',
+        body: JSON.stringify(Object.assign({ token, acao, locacaoId: String(locId) }, corpo))
+      });
+      const j = await r.json().catch(()=>({}));
+      if(r.ok || (r.status === 409 && (j.erro === 'ja_liberada' || j.erro === 'ja_devolvida'))){
+        ok++;
+        delete fotos[locId]; delete campos[locId];
+      } else {
+        falhas.push(j.mensagem || 'não gravou');
+      }
+    }
+    return { ok: ok, falhas: falhas };
+  }
+
+  /* Uma comanda, um botão: fase 1 sobe as fotos em paralelo (staging);
+     fase 2 registra TODA a comanda num único commit — o relógio do lote
+     vale para todos os veículos, então a cronometragem não escorrega
+     entre o primeiro e o último patinete. 409 "já liberada"/"já
+     devolvida" por item conta como feito — é outro celular na comanda. */
   async function enviarGrupo(acao, locIds){
     if(postando) return;
     locIds = (locIds||[]).map(String).filter(Boolean);
@@ -694,25 +774,50 @@
       if(!validar(acao, locId, fs)) return;
     }
     postando = true; travar();
+    const lote = 'l' + Date.now().toString(36) + Math.floor(Math.random()*1e8).toString(36);
+    const loteHora = Date.now();
     let ok = 0; const falhas = [];
     try{
-      for(const locId of locIds){
-        const fs = (fotos[locId]||[]).filter(Boolean);
-        const c = campos[locId] || {};
-        const corpo = acao === 'liberar'
-          ? { fotos: fs, veiculo: c.veiculo||'', obs: c.obs||'' }
-          : { fotos: fs, veiculo: c.veiculo||'', estado: c.estado||'loja', obs: c.obs||'' };
-        const r = await fetch('/api/vistoria', {
-          method:'POST', headers:{'Content-Type':'application/json'},
-          cache:'no-store',
-          body: JSON.stringify(Object.assign({ token, acao, locacaoId: String(locId) }, corpo))
-        });
-        const j = await r.json().catch(()=>({}));
-        if(r.ok || (r.status === 409 && (j.erro === 'ja_liberada' || j.erro === 'ja_devolvida'))){
-          ok++;
-          delete fotos[locId]; delete campos[locId];
-        } else {
-          falhas.push(j.mensagem || 'não gravou');
+      const itens = locIds.map(locId => ({
+        locId: locId,
+        fs: (fotos[locId]||[]).filter(Boolean),
+        c: campos[locId] || {}
+      }));
+      const totalFotos = itens.reduce((s,it)=>s+it.fs.length,0);
+      const mapa = totalFotos ? await subirFotos(itens, lote, totalFotos) : {};
+      $('#situacao').textContent = 'Registrando a comanda (' + locIds.length + ' veículo' + (locIds.length>1?'s':'') + ')…';
+      const r = await fetch('/api/vistoria', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        cache:'no-store',
+        body: JSON.stringify({
+          token, acao, lote: lote, loteHora: loteHora,
+          itens: itens.map(it => ({
+            locacaoId: String(it.locId),
+            veiculo: it.c.veiculo||'',
+            fotos: it.fs.map(f => mapa[f] || f),
+            obs: it.c.obs||'',
+            estado: it.c.estado||'loja'
+          }))
+        })
+      });
+      const j = await r.json().catch(()=>({}));
+      if(r.status === 400 && j.erro === 'acao_invalida'){
+        /* deploy antigo no ar: o caminho de sempre, um veículo por vez */
+        const seque = await enviarSequencial(acao, locIds, 0, []);
+        ok = seque.ok; falhas.push.apply(falhas, seque.falhas);
+      } else {
+        const porId = {};
+        (j.resultados || []).forEach(r2 => { porId[String(r2.locacaoId)] = r2; });
+        for(const locId of locIds){
+          const rst = porId[locId];
+          if(rst && (rst.ok || rst.erro === 'ja_liberada' || rst.erro === 'ja_devolvida')){
+            ok++;
+            delete fotos[locId]; delete campos[locId];
+          } else if(rst && rst.mensagem){
+            falhas.push(rst.mensagem);
+          } else {
+            falhas.push('sem resposta do servidor');
+          }
         }
       }
     }catch(e){
