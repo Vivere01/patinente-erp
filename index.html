@@ -982,9 +982,16 @@ const Nuvem = {
            espera crescente (1,5 s → 3 s → 6 s… até 30 s). Quando a rede
            volta, o que ficou no aparelho sobe para a nuvem sem ninguém
            precisar mexer em nada — é o que mantém o painel e o app de
-           vistoria na mesma página. */
-        console.error(e);
-        marcarSync('erro');
+           vistoria na mesma página. Se o documento ficou grande demais
+           para o limite do servidor (~4,5 MB), o aviso muda para o caso
+           concreto em vez de disfarçar de "sem conexão". */
+        console.error('gravação falhou', e);
+        const texto = String((e && (e.mensagem || (e.det && e.det.mensagem))) || (e && e.message) || e);
+        if(e && (e.codigo === 413 || /payload too large|body size/i.test(texto))){
+          marcarSync('grande', texto + ' — abra Configurações ▸ Armazenamento Neon ▸ Excluir dados antigos');
+        }else{
+          marcarSync('erro', (e && e.codigo ? 'código ' + e.codigo + ' · ' : '') + texto);
+        }
         guardarRascunho();
         this._tentativas++;
         const espera = Math.min(30000, 1500 * Math.pow(2, Math.min(this._tentativas, 5)));
@@ -1015,15 +1022,7 @@ const Nuvem = {
   mesclar(docNuvem){
     const nuvem = docNuvem && docNuvem.veiculos ? docNuvem : null;
     if(!nuvem) return false;   /* sem documento da nuvem para adotar */
-    let devolvidos = 0;
-    Object.keys(DB).forEach(chave=>{
-      const local = DB[chave];
-      if(!Array.isArray(local)) return;
-      const alvo = Array.isArray(nuvem[chave]) ? nuvem[chave] : [];
-      const naNuvem = new Set(alvo.map(x=> String((x && x.id) || '')));
-      const novos = local.filter(x=> x && x.id && !naNuvem.has(String(x.id)));
-      if(novos.length){ nuvem[chave] = alvo.concat(novos); devolvidos += novos.length; }
-    });
+    const devolvidos = fundirNovos(DB, nuvem);
     DB = nuvem;
     aplicarMigracoes();
     repintarTela();
@@ -1079,7 +1078,7 @@ const Nuvem = {
       marcarSync('ok');
       if(typeof toast==='function') toast('Dados atualizados por outro aparelho.');
     }catch(e){
-      marcarSync('erro');
+      marcarSync('erro', e && e.codigo ? 'código ' + e.codigo + ' · ' + String(e.message||e) : String((e && e.message) || e));
     }
   },
 
@@ -1104,6 +1103,41 @@ function lerRascunho(){
 }
 function limparRascunho(){ try{ localStorage.removeItem('mobilidade_rascunho'); }catch(e){} }
 
+/* Fusão de registros: o que existe só na fonte (id novo, ainda sem
+   equivalente no destino) entra no destino; o que já existe fica na
+   versão do destino — que é a autoridade. Devolve quantos entraram.
+   Serve para o conflito (mesclar) e para o rascunho subindo no arranque. */
+function fundirNovos(docFonte, docDestino){
+  if(!docFonte || !docDestino || typeof docFonte !== 'object' || typeof docDestino !== 'object') return 0;
+  let entraram = 0;
+  Object.keys(docFonte).forEach(chave=>{
+    const fonte = docFonte[chave];
+    if(!Array.isArray(fonte)) return;
+    const alvo = Array.isArray(docDestino[chave]) ? docDestino[chave] : [];
+    const noDestino = new Set(alvo.map(x=> String((x && x.id) || '')));
+    const novos = fonte.filter(x=> x && x.id && !noDestino.has(String(x.id)));
+    if(novos.length){ docDestino[chave] = alvo.concat(novos); entraram += novos.length; }
+  });
+  return entraram;
+}
+
+/* O trabalho que ainda não chegou à nuvem sobe sozinho no arranque —
+   sem pergunta, sem botão: junta no documento carregado o que só
+   existia neste aparelho (a nuvem segue dona do que já existe nela) e
+   grava na sequência. O rascunho só sai do aparelho quando a nuvem
+   confirmar; se a rede falhar, na próxima abertura ele entra de novo. */
+async function restaurarRascunho(r){
+  const antes = fundirNovos(r.doc, DB);
+  aplicarMigracoes();
+  repintarTela();
+  if(antes){ Nuvem.sujo = true; await Nuvem.gravar(); }
+  limparRascunho();
+  if(typeof toast==='function') toast(antes
+    ? 'Trabalho guardado da última falha de internet entrou e foi enviado à nuvem ('+antes+' registro(s)).'
+    : 'Nada a recuperar: a nuvem já tinha tudo.');
+  repintarTela();
+}
+
 /* Depois que os dados vêm de fora (outro aparelho, conflito de versão,
    restauração de backup), repinta o painel e a aba que estiver aberta —
    o resto volta sozinho quando o usuário trocar de aba. */
@@ -1119,18 +1153,20 @@ function repintarTela(){
   if(nome && typeof window[nome]==='function') window[nome]();
 }
 
-function marcarSync(estado){
+function marcarSync(estado, motivo){
   const el = document.getElementById('syncChip'); if(!el) return;
   const mapa = {
     ok:       ['salvo na nuvem','ok'],
     salvando: ['salvando…','salvando'],
     conflito: ['recarregado','salvando'],
     erro:     ['SEM CONEXÃO — trabalho guardado no aparelho','erro'],
+    grande:   ['DOCUMENTO GRANDE — não sobe; veja o aviso','erro'],
     offline:  ['modo local','erro']
   };
   const m = mapa[estado] || mapa.ok;
   el.textContent = m[0];
   el.className = 'syncchip ' + m[1];
+  el.title = motivo ? ('Diagnóstico do último envio: ' + motivo) : '';
 }
 
 /* Depois de cada deploy, quem está com a página aberta há horas continua no
@@ -5096,30 +5132,30 @@ $('#btnRetencao') && ($('#btnRetencao').onclick = async ()=>{
   if(!confirm('Tem certeza? Isso é irreversível e libera espaço no plano Neon.')) return;
   const out = $('#retResultado'); out.textContent = 'Excluindo…';
   try{
+    /* todo o expurgo pelo servidor: onde o POST do balcão estoura o
+       limite de tamanho, retirar do documento aqui não pode depender de
+       o aparelho conseguir subir o documento inteiro de volta */
+    if(limparDoc) alvos.doc = true;
     let removidos = null, usoDepois = null;
-    if(alvos.eventos || alvos.snapshots || alvos.fotos || alvos.assinaturas){
+    if(alvos.eventos || alvos.snapshots || alvos.fotos || alvos.assinaturas || alvos.doc){
       const r = await Nuvem.chamar('/admin/banco', { method:'POST',
         body:{ acao:'retencao', dias:dias, alvos:alvos, confirmar:true } });
       removidos = r.removidos; usoDepois = r.uso;
       if(usoDepois) pintarUso(usoDepois);
     }
-    let docN = 0;
+    const docN = (removidos && removidos.doc) || 0;
     if(limparDoc){
-      const corte = Date.now() - dias*86400000;
-      const antes = (DB.locacoes||[]).length;
-      DB.locacoes = (DB.locacoes||[]).filter(l=>{
-        const fim = l.fimReal || l.inicio || 0;
-        const fechada = (l.status==='finalizada' || l.status==='estornada');
-        return !(fechada && fim && fim < corte);
-      });
-      docN = antes - (DB.locacoes||[]).length;
-      if(Array.isArray(DB.auditoria) && DB.auditoria.length > 2000){
-        DB.auditoria = DB.auditoria.filter(a=> (a.ts||0) >= corte).slice(-2000);
+      /* o servidor já retirou do documento: adota a versão expurgada,
+         preservando o que foi criado aqui e ainda não subiu */
+      const e2 = await Nuvem.chamar('/estado');
+      if(e2 && e2.doc && e2.doc.veiculos){
+        fundirNovos(DB, e2.doc);
+        Nuvem.versao = e2.versao;
+        DB = e2.doc;
+        aplicarMigracoes();
       }
-      if(Array.isArray(DB.inventarios)){
-        DB.inventarios = DB.inventarios.filter(i=> (i.ts||0) >= corte);
-      }
-      log('retencao_historico', 'doc: '+docN+' locações finalizadas com +'+dias+' dias removidas deste documento');
+      repintarTela();
+      log('retencao_historico', 'doc: '+docN+' locacoes finalizadas com +'+dias+' dias removidas deste documento');
       persist();
     } else {
       log('retencao_historico', 'banco: '+JSON.stringify(removidos)+' com +'+dias+' dias');
@@ -5700,20 +5736,6 @@ function telaSemConfig(det){
     '<p class="muted" style="font-size:12.5px">Passo a passo completo: README do repositório.</p></div>', {fixo:true});
 }
 
-function perguntarRascunho(r){
-  const ov = abrirModal('<header><h3>Trabalho não enviado</h3></header>'+
-    '<div class="body"><div class="fnota">Este aparelho tem alterações de '+dtFmt(r.ts)+
-    ' que não chegaram ao servidor — provavelmente a internet caiu.</div>'+
-    '<p>Enviar agora? Isso substitui o que está no servidor pelo que ficou guardado aqui.</p></div>'+
-    '<footer><button class="btn sec" id="rDescartar">Descartar</button>'+
-    '<button class="btn" id="rEnviar">Enviar para o servidor</button></footer>', {fixo:true});
-  ov.querySelector('#rDescartar').onclick = ()=>{ limparRascunho(); fecharModal(ov); depoisDoCarregamento(); };
-  ov.querySelector('#rEnviar').onclick = async ()=>{
-    DB = r.doc; aplicarMigracoes(); Nuvem.sujo = true; await Nuvem.gravar(); limparRascunho();
-    fecharModal(ov); renderPainel(); toast('Enviado.'); depoisDoCarregamento();
-  };
-}
-
 async function carregarTudo(){
   try{
     const doc = await Nuvem.carregar();
@@ -5733,8 +5755,11 @@ async function carregarTudo(){
   aplicarMarca(); atualizarChip(); renderPainel();
   $('#fMes').value = mesKey(Date.now());
   $('#fCaixaDia').value = hojeKey();
+  /* automático: sobe o que sobrou de falha de rede numa chamada que não
+     pede nada a ninguém — sem modal, sem botão (o fundo dela continua):
+     a página pode ser usada enquanto sobe */
   const r = lerRascunho();
-  if(r && r.doc && r.doc.veiculos){ perguntarRascunho(r); return { ok:true, rascunho:true }; }
+  if(r && r.doc && r.doc.veiculos){ restaurarRascunho(r); }
   return { ok:true };
 }
 
@@ -5766,7 +5791,7 @@ async function carregarTudo(){
   if(!sess) return telaLogin();
   SESSAO = { email: sess.email, papel:null, nome:sess.email };
   const c = await carregarTudo();
-  if(!c || !c.ok || c.rascunho) return;
+  if(!c || !c.ok) return;
   if(!resolverSessao()){ SESSAO = null; return telaLogin(); }
   atualizarChip(); irPara('painel');
 })();

@@ -152,12 +152,17 @@ async function limpar(){
   return { ok: true, acao: 'limpar', fotos: fotos.rowCount, assinaturas: assin.rowCount };
 }
 
-/* Quanto cada tabela ocupa — o ADM vê onde o plano Neon está gastando. */
+/* Quanto cada tabela ocupa — o ADM vê onde o plano Neon está gastando.
+   O documento (estado.doc) entra na lista: é ele que estoura o limite
+   de ~4,5 MB do POST da Vercel quando o histórico cresce. */
 async function uso(){
   const r = await sql(
     "select 'estado' as tabela, pg_total_relation_size('public.estado')::bigint as bytes," +
     "       (select count(*)::bigint from public.estado) as linhas," +
     "       (select max(atualizado_em) from public.estado) as mais_recente " +
+    "union all " +
+    "select 'documento (estado.doc)', (select octet_length(doc::text) from public.estado where id = 1)::bigint," +
+    "       1::bigint, (select max(atualizado_em) from public.estado) " +
     "union all " +
     "select 'eventos', pg_total_relation_size('public.eventos')::bigint," +
     "       (select count(*)::bigint from public.eventos)," +
@@ -224,6 +229,41 @@ async function retencao(parametros, quem){
   const quer = (nome) => alvos[nome] !== false;
   const removidos = { eventos: 0, snapshots: 0, fotos: 0, assinaturas: 0 };
 
+  if(alvos.doc === true){
+    /* As locações finalizadas antigas saem do DOCUMENTO aqui no servidor:
+       onde o POST do balcão estoura o limite de tamanho, o expurgo ainda
+       assim reduz o documento e a sincronização volta a caber. */
+    const linha = (await sql('select doc, versao from public.estado where id = 1')).rows[0];
+    if(linha && linha.doc){
+      const doc = linha.doc;
+      const corte = Date.now() - dias * 86400000;
+      const antes = Array.isArray(doc.locacoes) ? doc.locacoes.length : 0;
+      doc.locacoes = (doc.locacoes || []).filter(l=>{
+        const fim = l.fimReal || l.inicio || 0;
+        const fechada = (l.status === 'finalizada' || l.status === 'estornada');
+        return !(fechada && fim && fim < corte);
+      });
+      if(Array.isArray(doc.auditoria) && doc.auditoria.length > 2000){
+        doc.auditoria = doc.auditoria.filter(a => (a.ts || 0) >= corte).slice(-2000);
+      }
+      if(Array.isArray(doc.inventarios)){
+        doc.inventarios = doc.inventarios.filter(i => (i.ts || 0) >= corte);
+      }
+      if(antes !== (doc.locacoes || []).length || Array.isArray(doc.auditoria) && doc.auditoria.length > 2000){
+        const w = await sql('select ok, versao, doc from public.salvar_estado($1, $2, $3)',
+          [JSON.stringify(doc), Number(linha.versao) || 0, 'retencao (adm)']);
+        if(w.rows[0] && (w.rows[0].ok === true || Number(w.rows[0].ok) === 1)){
+          removidos.doc = antes - (doc.locacoes || []).length;
+        }else{
+          removidos.doc = 0;
+          const e = new Error('Conflito ao regravar o documento expurgado; tente de novo.');
+          e.codigo = 'conflito_doc';
+          throw e;
+        }
+      }
+    }
+  }
+
   if(quer('eventos')){
     const r = await sql('select public.limpar_eventos($1) as n', [Math.floor(dias)]);
     removidos.eventos = Number((r.rows[0] || {}).n || 0);
@@ -247,7 +287,8 @@ async function retencao(parametros, quem){
       [String((quem && quem.email) || 'administrador').slice(0, 120), 'retencao_historico',
        ('Excluiu histórico com mais de ' + Math.floor(dias) + ' dias: ' +
         removidos.eventos + ' eventos, ' + removidos.snapshots + ' snapshots, ' +
-        removidos.fotos + ' fotos, ' + removidos.assinaturas + ' assinaturas.').slice(0, 2000),
+        removidos.fotos + ' fotos, ' + removidos.assinaturas + ' assinaturas' +
+        (removidos.doc ? ', ' + removidos.doc + ' locações antigas do documento' : '') + '.').slice(0, 2000),
        JSON.stringify({ dias: Math.floor(dias), removidos: removidos })]);
   }catch(e){ /* a trilha é melhor esforço: o expurgo já valeu */ }
 
