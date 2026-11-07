@@ -842,6 +842,10 @@ const Nuvem = {
   fila: null,
   salvando: false,
   pendente: false,
+  sujo: false,        /* tem alteração local que ainda não chegou à nuvem */
+  _tentativas: 0,     /* tentativas seguidas de gravação que a rede recusou */
+  _retimer: null,     /* agendamento da tentativa automática de nova gravação */
+  _conflitos: 0,      /* conflitos (409) seguidos — limita o re-envio automático */
   _sondagem: null,
 
   token(){
@@ -928,8 +932,14 @@ const Nuvem = {
     return (d.doc && d.doc.veiculos) ? d.doc : null;
   },
 
-  /* grava em no máximo 1 chamada por segundo, juntando alterações seguidas */
+  /* grava em no máximo 1 chamada por segundo, juntando alterações seguidas.
+     Qualquer alteração marca o documento como sujo e mesmo que a gravação
+     só confirme depois: enquanto a nuvem não confirmar, o sistema continua
+     tentando sozinho, para o que o balcão cria aparecer no celular da
+     vistoria sem ninguém precisar recarregar nada. */
   agendar(){
+    this.sujo = true;
+    clearTimeout(this._retimer);
     if(!this.online) return;
     clearTimeout(this.fila);
     this.fila = setTimeout(()=> this.gravar(), 600);
@@ -938,25 +948,48 @@ const Nuvem = {
   async gravar(){
     if(!this.online) return;
     if(this.salvando){ this.pendente = true; return; }
+    if(!this.sujo) return;
     this.salvando = true;
+    clearTimeout(this._retimer);
     marcarSync('salvando');
     try{
       const r = await this.chamar('/estado', { method:'POST', body:{
         doc: DB, versao: this.versao, por: (typeof usuarioAtual==='function'? usuarioAtual() : 'sistema')
       }});
       this.versao = r.versao;
+      /* confirmado pela nuvem: balcão e celular da vistoria agora veem o
+         mesmo documento — limpa a marca de pendente e o rascunho que ficou
+         de algum pedido anterior falhado */
+      this.sujo = false;
+      this._tentativas = 0;
+      this._conflitos = 0;
+      if(typeof limparRascunho === 'function') limparRascunho();
       if(r.ok === false) this.assumir(r);
       else marcarSync('ok');
     }catch(e){
       /* o 409 do lock otimista NÃO é erro de rede: chamar() lança, então
          ele chega aqui. Assume a versão do servidor, como manda o contrato. */
       if(e && e.codigo === 409 && e.det){
+        /* outro aparelho salvou antes: adota a versão da nuvem, mas devolve
+           ao documento os registros que só existiam neste aparelho — a
+           locação paga no balcão não desaparece por causa do conflito —
+           e tenta gravar de novo (no máximo 3 vezes para não brigar). */
         this.versao = Number(e.det.versao) || this.versao;
-        this.assumir(e.det);
+        if(this._conflitos < 3 && this.mesclar(e.det.doc)) this.agendar();
+        else this.assumir(e.det);
       }else{
+        /* falha de rede: guarda rascunho e continua tentando sozinho, com
+           espera crescente (1,5 s → 3 s → 6 s… até 30 s). Quando a rede
+           volta, o que ficou no aparelho sobe para a nuvem sem ninguém
+           precisar mexer em nada — é o que mantém o painel e o app de
+           vistoria na mesma página. */
         console.error(e);
         marcarSync('erro');
         guardarRascunho();
+        this._tentativas++;
+        const espera = Math.min(30000, 1500 * Math.pow(2, Math.min(this._tentativas, 5)));
+        clearTimeout(this._retimer);
+        this._retimer = setTimeout(()=> this.gravar(), espera);
       }
     }finally{
       this.salvando = false;
@@ -973,6 +1006,31 @@ const Nuvem = {
       if(typeof toast==='function') toast('Outro aparelho salvou antes — recarreguei a versão da nuvem.');
     }
     marcarSync('conflito');
+  },
+
+  /* Conflito sem perder cadastro: a nuvem ganha nas alterações de coisas
+     que já existem lá, mas o que foi criado aqui e ainda não subiu — como
+     a locação paga no balcão — volta ao documento antes de gravar de novo.
+     Devolve true quando sobrou algo para mandar de novo. */
+  mesclar(docNuvem){
+    const nuvem = docNuvem && docNuvem.veiculos ? docNuvem : null;
+    if(!nuvem) return false;   /* sem documento da nuvem para adotar */
+    let devolvidos = 0;
+    Object.keys(DB).forEach(chave=>{
+      const local = DB[chave];
+      if(!Array.isArray(local)) return;
+      const alvo = Array.isArray(nuvem[chave]) ? nuvem[chave] : [];
+      const naNuvem = new Set(alvo.map(x=> String((x && x.id) || '')));
+      const novos = local.filter(x=> x && x.id && !naNuvem.has(String(x.id)));
+      if(novos.length){ nuvem[chave] = alvo.concat(novos); devolvidos += novos.length; }
+    });
+    DB = nuvem;
+    aplicarMigracoes();
+    repintarTela();
+    if(typeof toast==='function') toast(devolvidos
+      ? 'Outro aparelho salvou antes — mantive ' + devolvidos + ' registro(s) criado(s) aqui e salvei de novo.'
+      : 'Outro aparelho salvou antes — recarreguei a versão da nuvem.');
+    return true;
   },
 
   async evento(acao, detalhe, payload){
@@ -1003,7 +1061,14 @@ const Nuvem = {
     try{
       const s = await this.chamar('/estado?versao=1');
       if(s && s.deploy && typeof notarDeploy === 'function') notarDeploy(s.deploy);
-      if(!s || s.versao === this.versao) return;
+      /* antes de aceitar a versão da nuvem, manda o que ficou pendente
+         aqui: recarregar por cima de alteração não enviada apagaria o
+         trabalho do balcão sem que ele tenha chegado ao app de vistoria */
+      if(this.sujo && !this.salvando){
+        await this.gravar();
+        if(this.sujo) return;   /* a rede ainda falhou: segue com o aviso, sem perder nada */
+      }
+      if(!s || s.versao === this.versao){ marcarSync(this.sujo ? 'erro' : 'ok'); return; }
       const d = await this.chamar('/estado');
       if(!d || d.versao === this.versao) return;
       if(!(d.doc && d.doc.veiculos)) return;
@@ -5181,6 +5246,7 @@ async function garantirRegistroDaConta(d, senha){
   DB.usuarios.push({ id:uid('usuario'), nome:d.usuario.nome||email, email, papel:'administrador',
     salt, hash: await hashSenha(senha, salt), ativo:true, criadoEm:Date.now() });
   log('usuario_criado', email+' (conta da loja)');
+  Nuvem.sujo = true;
   await Nuvem.gravar();
 }
 
@@ -5643,7 +5709,7 @@ function perguntarRascunho(r){
     '<button class="btn" id="rEnviar">Enviar para o servidor</button></footer>', {fixo:true});
   ov.querySelector('#rDescartar').onclick = ()=>{ limparRascunho(); fecharModal(ov); depoisDoCarregamento(); };
   ov.querySelector('#rEnviar').onclick = async ()=>{
-    DB = r.doc; aplicarMigracoes(); await Nuvem.gravar(); limparRascunho();
+    DB = r.doc; aplicarMigracoes(); Nuvem.sujo = true; await Nuvem.gravar(); limparRascunho();
     fecharModal(ov); renderPainel(); toast('Enviado.'); depoisDoCarregamento();
   };
 }

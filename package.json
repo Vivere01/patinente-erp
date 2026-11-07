@@ -8,6 +8,7 @@
     "schema:sync": "node scripts/gerar-schema.js",
     "test": "node scripts/testar.js",
     "test:carga": "node scripts/testar-carga.js",
+    "test:e2e": "node scripts/testar-e2e.js",
     "verificar": "node scripts/verificar-ar.js",
     "dev": "vercel dev"
   },
