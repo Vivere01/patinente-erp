@@ -953,9 +953,26 @@ const Nuvem = {
     clearTimeout(this._retimer);
     marcarSync('salvando');
     try{
-      const r = await this.chamar('/estado', { method:'POST', body:{
-        doc: DB, versao: this.versao, por: (typeof usuarioAtual==='function'? usuarioAtual() : 'sistema')
-      }});
+      const por = (typeof usuarioAtual==='function'? usuarioAtual() : 'sistema');
+      const montar = ()=> JSON.stringify({ doc: DB, versao: this.versao, por });
+      /* miniaturas de foto nunca sobem no documento: a imagem vive na
+         tabela de fotos (caminho) — o preview ao vivo fica só na memória */
+      if(typeof enxugarThumbs === 'function') enxugarThumbs();
+      let corpo = montar();
+      /* O servidor recusa corpos acima de ~4,5 MB (limite da Vercel).
+         Se o documento passou disso, o envio primeiro tira do documento
+         o que tem arquivo próprio — a imagem e o texto de cada contrato,
+         que moram na tabela de assinaturas — e só então sobe. Automático:
+         ninguém clica em nada, nem na primeira nem depois. */
+      if(corpo.length > LIMITE_DOC && typeof enxugarDocumento === 'function'){
+        await enxugarDocumento();
+        corpo = montar();
+      }
+      if(corpo.length > LIMITE_DOC)
+        marcarSync('grande', 'documento com ~' + (corpo.length/1048576).toFixed(1) +
+          ' MB, acima do limite — abra Configurações ▸ Excluir dados antigos');
+      const r = await this.chamar('/estado', { method:'POST', body: corpo,
+        headers:{ 'Content-Type':'application/json' } });
       this.versao = r.versao;
       /* confirmado pela nuvem: balcão e celular da vistoria agora veem o
          mesmo documento — limpa a marca de pendente e o rascunho que ficou
@@ -1102,6 +1119,117 @@ function lerRascunho(){
   try{ const r = localStorage.getItem('mobilidade_rascunho'); return r ? JSON.parse(r) : null; }catch(e){ return null; }
 }
 function limparRascunho(){ try{ localStorage.removeItem('mobilidade_rascunho'); }catch(e){} }
+
+/* =====================================================================
+  PESO DO DOCUMENTO — imagem de assinatura, texto do contrato e
+  miniatura de foto pesam dezenas de KB cada um, e o envio inteiro tem
+  teto (~4,5 MB). O arquivo de verdade mora nas tabelas (assinaturas e
+  fotos); no documento sobra só a referência. O enxugo é automático e
+  tem retorno garantido: só retira do documento o que o servidor já
+  confirmou que está arquivado.
+  ===================================================================== */
+const LIMITE_DOC = 4000000;   /* margem abaixo do limite de ~4,5 MB do POST */
+
+/* Devolve a assinatura da comanda: cópia no documento, ou busca pela
+   endpoint de assinaturas (documento enxuto). */
+async function dadosAssinaturaDe(g){
+  const d = { contrato: (typeof g.contrato === 'string' ? g.contrato : ''),
+              assinatura: (typeof g.assinatura === 'string' ? g.assinatura : '') };
+  if(!d.contrato || !d.assinatura){          /* algo ficou só no arquivo */
+    /* imagem/texto na tabela via token — inclusive tokens gerados no
+       enxugo para registros antigos que nunca tiveram token */
+    if(g.assinaturaToken && (g.assinaturaRef || g.contratoRef)){
+      try{
+        const a = await Nuvem.statusAssinatura(g.assinaturaToken);
+        if(a){ if(!d.assinatura && a.assinatura) d.assinatura = a.assinatura;
+               if(!d.contrato && a.contrato) d.contrato = a.contrato; }
+      }catch(e){ console.error('assinatura', e); }
+    }
+  }
+  return d;
+}
+
+/* Arquiva no servidor (tabela de assinaturas) o texto do contrato e a
+   imagem da assinatura de uma comanda. Só devolve true quando o
+   servidor confirmou: assim ninguém perde dado ao tirar a cópia do
+   documento. */
+async function arquivarAssinaturaNoBanco(x){
+  const temTexto = typeof x.contrato === 'string' && x.contrato.length >= 50;
+  const temImagem = typeof x.assinatura === 'string' && x.assinatura.indexOf('data:image/') === 0;
+  if(!x || !x.assinaturaToken || (!temTexto && !temImagem)) return false;
+  try{
+    const corpo = {
+      token: x.assinaturaToken,
+      contrato: temTexto
+        ? x.contrato
+        : 'Contrato ' + x.assinaturaToken + ' arquivado em ' + dtFmt(Date.now()) + '.',
+      aceite: true, canal: x.assinaturaCanal || 'balcão',
+      assinadoEm: x.assinadoEm || Date.now()
+    };
+    if(temImagem) corpo.assinatura = x.assinatura;
+    const r = await Nuvem.chamar('/assinaturas', { method:'POST', body: corpo });
+    return !!(r && r.ok);
+  }catch(e){ console.error('arquivo da assinatura', e); return false; }
+}
+
+/* Miniaturas de foto saem do documento a gravação inteira: a imagem
+   mora na tabela de fotos (id + caminho); as telas que mostram fotos
+   buscam o link assinado pelo caminho. É o mesmo padrão que já existia
+   nas fotos de manutenção. */
+function enxugarThumbs(){
+  let n = 0;
+  ['locacoes','manutencoes'].forEach(chave=>{
+    (DB[chave]||[]).forEach(x=>{
+      ['fotosSaida','fotosEntrada','fotos'].forEach(campo=>{
+        if(Array.isArray(x[campo])) x[campo].forEach(f=>{
+          if(f && f.thumb){ delete f.thumb; n++; }
+        });
+      });
+    });
+  });
+  (DB.grupos||[]).forEach(g=>{
+    if(g && g.docFoto && g.docFoto.thumb){ delete g.docFoto.thumb; n++; }
+  });
+  return n;
+}
+
+/* Enxuga o documento movendo o que tem arquivo próprio (imagem e texto
+   do contrato) para a tabela de assinaturas. Uno só. Por chamada, no máximo 120:
+   se ainda estiver grande, a próxima tentativa de envio continua de
+   onde parou — as já movidas são puladas. */
+async function enxugarDocumento(){
+  const alvos = [];
+  (DB.grupos||[]).concat(DB.locacoes||[]).forEach(x=>{
+    if(!x) return;
+    const querImagem = !x.assinaturaRef && typeof x.assinatura === 'string'
+                       && x.assinatura.indexOf('data:image/') === 0;
+    const querTexto = !x.contratoRef && typeof x.contrato === 'string' && x.contrato.length > 2048;
+    if(x.id && (querImagem || querTexto)) alvos.push(x);
+  });
+  alvos.length = Math.min(120, alvos.length);
+  let movidas = 0;
+  for(const x of alvos){
+    /* registro de antes do link de assinatura: token gerado no arquivo */
+    if(!x.assinaturaToken){
+      x.assinaturaToken = ('ARCH' + String(x.id).replace(/[^A-Za-z0-9]/g, '').toUpperCase()
+                           + String(Math.abs((x.assinadoEm || x.pagoEm || 0) % 100000))).slice(0, 40);
+    }
+    if(await arquivarAssinaturaNoBanco(x)){
+      if(x.assinatura){ delete x.assinatura; x.assinaturaRef = true; }
+      if(x.contrato){ delete x.contrato; x.contratoRef = true; }
+      movidas++;
+    }
+  }
+  /* último recurso do teto: a trilha local acima de 2000 sai — a de
+     verdade, imutável, é a tabela de eventos no servidor */
+  if(movidas && JSON.stringify(DB).length > LIMITE_DOC
+     && Array.isArray(DB.auditoria) && DB.auditoria.length > 2000){
+    DB.auditoria = DB.auditoria.slice(-2000);
+  }
+  if(movidas) log('assinatura_arquivada',
+    movidas + ' contrato(s)/assinatura(s) arquivados(s) na tabela, fora do documento');
+  return movidas;
+}
 
 /* Fusão de registros: o que existe só na fonte (id novo, ainda sem
    equivalente no destino) entra no destino; o que já existe fica na
@@ -1876,6 +2004,7 @@ function painelFotos(alvoId, lista, legendas){
 function ligarFotos(alvoId, lista, legendas, aoMudar){
   const box = document.getElementById(alvoId);
   if(!box) return;
+  /* binding: refazer/remover e capturar em cada slot */
   box.querySelectorAll('.fotoslot').forEach(slot=>{
     const i = +slot.dataset.i;
     slot.onclick = e=>{
@@ -1883,10 +2012,26 @@ function ligarFotos(alvoId, lista, legendas, aoMudar){
       capturarFoto(legendas[i], async dataUrl=>{
         const id = 'f'+uid('foto')+'_'+Date.now();
         const caminho = await Fotos.salvar(id, dataUrl);
+        /* thumb:dataUrl é só para o preview ao vivo; o que vai para o
+           documento é id + caminho — a imagem mora na tabela de fotos */
         lista[i] = { id, caminho, legenda:legendas[i], thumb:dataUrl, ts:Date.now() };
         aoMudar();
       });
     };
+  });
+  /* slot registrado em documento enxuto (só caminho, sem thumb): busca
+     o link assinado e mostra — o mesmo padrão das fotos de manutenção */
+  box.querySelectorAll('.fotoslot').forEach(slot=>{
+    const i = +slot.dataset.i;
+    const f = lista[i];
+    if(f && !f.thumb && f.caminho && f.id && !slot.querySelector('img')){
+      Fotos.obter(f.id, f.caminho).then(u=>{
+        if(!u || lista[i] !== f || !slot.isConnected) return;
+        const img = document.createElement('img');
+        img.src = u; img.alt = legendas[i] || '';
+        slot.insertBefore(img, slot.firstChild);
+      });
+    }
   });
 }
 function capturarFoto(legenda, cb){
@@ -2825,6 +2970,11 @@ async function avancarWizard(){
     W.pagamento = $('#wPgto').value;
     if(W._pad && !W._pad.vazio()) W.assinatura = W._pad.dados();
     if(!W.assinatura) return toast('O cliente precisa assinar o contrato.');
+    /* a imagem vai direto para o arquivo dela (tabela de assinaturas):
+       o documento guardará só a referência pelo token */
+    arquivarAssinaturaNoBanco({ assinaturaToken: W._token, assinatura: W.assinatura,
+      assinaturaCanal: 'balcão', assinadoEm: Date.now(), contrato: W._texto, id: W._token })
+      .then(ok=>{ if(ok) console.log('assinatura arquivada', W._token); });
     concluirLocacao();
   }
 }
@@ -2954,14 +3104,19 @@ function getGrupo(id){ return DB.grupos.find(g=>g.id===id); }
 function locsDoGrupo(gid){ return DB.locacoes.filter(l=>l.grupoId===gid); }
 function ativasDoGrupo(gid){ return locsDoGrupo(gid).filter(l=>l.status==='ativa'); }
 
-window.imprimirContrato = function(grupoId){
+window.imprimirContrato = async function(grupoId){
   const g = getGrupo(grupoId); if(!g) return;
+  /* texto e imagem podem estar no documento (como sempre) ou só na
+     tabela de assinaturas, desde que o documento começou a ficar enxuto */
+  const d = await dadosAssinaturaDe(g);
+  const assinatura = d.assinatura;
+  const contrato = d.contrato || g.contrato || '';
   $('#printarea').innerHTML =
     '<div style="text-align:center;margin-bottom:18px"><h2 style="font-size:16px">'+esc(DB.empresa.nome||'')+'</h2>'+
     '<div style="font-size:11px">'+esc(DB.empresa.cnpj||'')+' · '+esc(DB.empresa.telefone||'')+'</div></div>'+
-    '<pre style="white-space:pre-wrap;font-family:inherit;font-size:11.5px;line-height:1.55">'+esc(g.contrato)+'</pre>'+
+    '<pre style="white-space:pre-wrap;font-family:inherit;font-size:11.5px;line-height:1.55">'+esc(contrato)+'</pre>'+
     '<div style="margin-top:26px">'+
-      (g.assinatura ? '<img src="'+g.assinatura+'" style="height:80px;display:block">' : '')+
+      (assinatura ? '<img src="'+assinatura+'" style="height:80px;display:block">' : '')+
       '<div style="border-top:1px solid #000;width:300px;padding-top:5px;font-size:11px">'+esc(g.clienteNome)+' — CPF '+esc(g.clienteCpf)+'</div>'+
     '</div>'+
     '<div style="margin-top:24px;border:1px solid #999;padding:9px;font-size:9.5px;color:#333;line-height:1.5">'+

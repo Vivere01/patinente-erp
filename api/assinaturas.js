@@ -26,6 +26,17 @@ module.exports = async (req, res) => {
 
     const cliente = b.cliente || {};
     const horas = Math.min(48, Math.max(1, Number(b.validadeHoras) || 6));
+    const assinatura = String(b.assinatura || '');
+
+    /* O balcão também pode arquivar a assinatura (canal balcão): mesma
+       validação da rota do celular. É o que tira a cópia da imagem do
+       documento operacional — a tabela de assinaturas é o arquivo dela. */
+    if(assinatura){
+      if(!/^data:image\/(png|jpeg);base64,/.test(assinatura) || assinatura.length > 400000)
+        return erro(res, 400, 'assinatura_invalida', 'Assinatura inválida.');
+      if(b.aceite !== true && b.aceite !== 'true')
+        return erro(res, 400, 'aceite_obrigatorio', 'É preciso aceitar o contrato antes de assinar.');
+    }
 
     const existe = await sql('select status, assinatura from public.assinaturas where token = $1', [token]);
 
@@ -44,6 +55,16 @@ module.exports = async (req, res) => {
         [token, String(cliente.nome || '').slice(0,160), String(cliente.cpf || '').slice(0,20),
          String(b.contrato), b.resumo ? JSON.stringify(b.resumo) : null,
          b.empresa ? JSON.stringify(b.empresa) : null, String(horas)]);
+    }
+
+    if(assinatura){
+      /* não sobrescreve uma assinatura já arquivada: o arquivo é imutável */
+      await sql(`update public.assinaturas
+                    set status='assinada', assinatura=$2, canal=$3,
+                        assinado_em=coalesce($4::timestamptz, now()), atualizado_em=now()
+                  where token=$1 and (status <> 'assinada' or assinatura is null or assinatura = '')`,
+        [token, assinatura, String(b.canal || 'balcão').slice(0, 20),
+         b.assinadoEm ? new Date(Number(b.assinadoEm) || Date.now()) : null]);
     }
 
     const r = await sql('select status, assinado_em, expira_em from public.assinaturas where token = $1', [token]);

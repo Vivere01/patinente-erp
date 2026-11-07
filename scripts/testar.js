@@ -441,6 +441,21 @@ function testarFechamentoESync(){
      corpo('renderPainel').indexOf('renderCaixa()') >= 0 &&
      corpo('renderPainel').indexOf('renderRelatorios()') >= 0,
      'repintarTela repinta o painel e com ele o caixa do dia e os relatórios');
+
+  /* --- documento grande demais: enxuga sozinho antes de subir --- */
+  ok(/LIMITE_DOC = 4000000/.test(html) && /await enxugarDocumento\(\)/.test(html) &&
+     /delete x\.assinatura;/.test(html) && /assinaturaRef = true/.test(html) &&
+     /contratoRef = true/.test(html),
+     'documento acima do limite da Vercel enxuga sozinho: assinatura e texto do contrato viram referência');
+  ok(/dadosAssinaturaDe\(/.test(html) && /statusAssinatura\(g\.assinaturaToken\)/.test(html),
+     'a impressão do contrato busca texto e imagem no arquivo quando o documento ficou enxuto');
+  ok(/typeof enxugarThumbs === 'function'/.test(html) && (/delete f\.thumb/.test(html)),
+     'miniatura de foto não sobe no documento: imagem fica na tabela de fotos');
+  ok(/arquivarAssinaturaNoBanco\(\{ assinaturaToken: W\._token/.test(html),
+     'assinar pelo balcão também arquiva a imagem na hora — o documento não volta a engordar');
+  const asig = fs.readFileSync(path.join(__dirname, '..', 'api', 'assinaturas.js'), 'utf8');
+  ok(/set status='assinada', assinatura=\$2, canal=\$3/.test(asig),
+     'a API de assinaturas arquiva a imagem pelo balcão com a mesma validação do celular');
 }
 
 /* ------------------------------------------------------------------ H */
