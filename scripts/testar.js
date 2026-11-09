@@ -892,8 +892,8 @@ function testarVistoria(){
      'a API exige o código escaneado da etiqueta e confere com o cartão');
   ok(!/lacreSaida|lacreEntrada|lacreEsperado/.test(api),
      'liberação e chegada não gravam mais nenhum campo de lacre');
-  ok(api.indexOf('String(l.id) === String(locId)') >= 0 && api.indexOf('mesmaLoc') >= 0,
-     'a API acha a locação mesmo com o id chegando como texto do cartão');
+  ok(api.indexOf('String(l.id) === String(locId)') >= 0 && api.indexOf('const loc = locacaoAlvo(db, locId, acao)') >= 0,
+     'a API acha a locação mesmo com o id chegando como texto do cartão (e escolhe o registro em operação)');
   ok(pagina.indexOf('locacaoId: String(locId)') >= 0,
      'a página manda o id do cartão como ele é (texto)');
 
@@ -926,6 +926,23 @@ function testarVistoria(){
   ok(pagina.indexOf('foi escaneado em dois veículos da comanda') >= 0,
      'a mesma etiqueta em dois cartões da comanda é recusada antes de enviar');
   ok(vercel.rewrites.some(r => r.source === '/vistoria/:token'), 'o link /vistoria/{token} chega na página');
+
+  /* --- doc vem com dois registros do mesmo id: a operação de hoje não trava --- */
+  ok(api.indexOf('function locacaoAlvo(db, locId, acao)') >= 0 &&
+     api.indexOf("iguais.find(l => l.status === statusDaAcao)") >= 0 &&
+     api.indexOf("const loc = locacaoAlvo(db, conferido.loc ? conferido.loc.id : null, acao)") >= 0,
+     'a vistoria escolhe o registro em operação para liberar/chegar, mesmo com id duplicado no doc');
+  ok(api.indexOf('statusEstada') >= 0 && api.indexOf("return { erro: 'ja_liberada', statusEstada") >= 0,
+     'o servidor responde com a situação real do registro (estornado nunca vira "liberada")');
+  ok(pagina.indexOf("rst.erro === 'ja_liberada' && rst.statusEstada === 'ativa'") >= 0 &&
+     pagina.indexOf("rst.erro === 'ja_devolvida' && rst.statusEstada === 'devolvida'") >= 0,
+     'o celular só canta vitória quando o registro realmente mudou de estado');
+  ok(/function deduplicarLocacoes\(\)/.test(html) && /pendente: 5, ativa: 4/.test(html) &&
+     html.indexOf("if(aplicarMigracoes()) Nuvem.agendar()") >= 0 &&
+     html.indexOf("if(aplicarMigracoes()){ this.sujo = true; await this.gravar(); }") >= 0,
+     'o painel cura o doc duplicado sozinho (pendente vence) e devolve a cura à nuvem no arranque e na sondagem');
+  ok(html.indexOf('const loc = (fila ? iguais.find(l=>l.status===\'pendente\') : null)') >= 0,
+     'o Excluir da fila acerta o pendente quando o id vem em dobra no doc');
 }
 
 /* ------------------------------------------------------------------ L */

@@ -1090,7 +1090,11 @@ const Nuvem = {
       if(!(d.doc && d.doc.veiculos)) return;
       this.versao = d.versao;
       DB = d.doc;
-      if(typeof aplicarMigracoes==='function') aplicarMigracoes();
+      if(typeof aplicarMigracoes==='function'){
+        /* doc duplicado veio da nuvem: cura e devolve a cura ao servidor —
+           sem isso o id em dobra volta a travar a fila do celular */
+        if(aplicarMigracoes()){ this.sujo = true; await this.gravar(); }
+      }
       if(typeof repintarTela==='function') repintarTela();
       marcarSync('ok');
       if(typeof toast==='function') toast('Dados atualizados por outro aparelho.');
@@ -1256,9 +1260,9 @@ function fundirNovos(docFonte, docDestino){
    confirmar; se a rede falhar, na próxima abertura ele entra de novo. */
 async function restaurarRascunho(r){
   const antes = fundirNovos(r.doc, DB);
-  aplicarMigracoes();
+  const curado = aplicarMigracoes() || 0;
   repintarTela();
-  if(antes){ Nuvem.sujo = true; await Nuvem.gravar(); }
+  if(antes || curado){ Nuvem.sujo = true; await Nuvem.gravar(); }
   limparRascunho();
   if(typeof toast==='function') toast(antes
     ? 'Trabalho guardado da última falha de internet entrou e foi enviado à nuvem ('+antes+' registro(s)).'
@@ -1471,7 +1475,35 @@ const CATEGORIAS = ['Aluguel','Folha e salários','Energia','Água','Internet e 
   'Limpeza','Retirada dos sócios','Outros'];
 
 let DB = dbPadrao();   /* preenchido pelo servidor no arranque */
+/* =====================================================================
+   REGISTROS DUPLICADOS NO MESMO ID — o bug de produção de 11/2026: um
+   estorno antigo ficou no documento junto do pendente de agora; o
+   `.find` simples acha o estornado e a operação de hoje trava
+   ("já liberada" infinita no celular, Excluir da fila sem efeito).
+   A cura é automática: em cada id, fica o registro em operação
+   (pendente > ativa > devolvida > finalizada > estornada). Devolve
+   quantos duplicados saíram, para quem chamar manda a cura à nuvem.
+   ===================================================================== */
+function deduplicarLocacoes(){
+  if(!Array.isArray(DB.locacoes)) return 0;
+  const peso = { pendente: 5, ativa: 4, devolvida: 3, finalizada: 2, estornada: 0 };
+  const teto = DB.locacoes.length;
+  const melhor = new Map();
+  DB.locacoes.forEach(x=>{
+    if(!x || x.id === undefined) return;
+    const k = String(x.id);
+    const atual = melhor.get(k);
+    if(!atual || (peso[x.status] || 2) > (peso[atual.status] || 2)) melhor.set(k, x);
+  });
+  if(melhor.size === teto) return 0;
+  DB.locacoes = DB.locacoes.filter(x =>
+    x && x.id !== undefined && melhor.get(String(x.id)) === x);
+  return teto - DB.locacoes.length;
+}
+
 function aplicarMigracoes(){
+  const duplicadas = deduplicarLocacoes();
+  if(duplicadas) log('doc_curado', duplicadas + ' registro(s) duplicado(s) de locação saíram do documento — ficou o(s) em operação');
   if(!DB.tipos || !DB.tipos.length) DB.tipos = JSON.parse(JSON.stringify(TIPOS_PADRAO));
   if(!DB.pecas || !DB.pecas.length) DB.pecas = JSON.parse(JSON.stringify(PECAS_PADRAO));
   if(!DB.seq.peca) DB.seq.peca = 100;
@@ -1519,6 +1551,7 @@ function aplicarMigracoes(){
     const nome = String(u.nome||'').trim();
     u.email = String(u.email || (nome.indexOf('@')>0 ? nome : '') || '').trim().toLowerCase();
   });
+  return duplicadas;   /* >0: quem carregou deve mandar a cura para a nuvem */
 }
 function persist(){ Store.save(DB); }
 
@@ -3154,7 +3187,13 @@ window.estornarLocacao = function(locId, opcoes){
   const fila = !!(opcoes && opcoes.fila);
   /* o id pode chegar como texto (botão da fila) ou número (histórico):
      a comparação sem tipo não deixa o clique virar um no-op silencioso */
-  const loc = DB.locacoes.find(l=>String(l.id)===String(locId)); if(!loc || estornada(loc)) return;
+  /* o doc pode ter dois registros do mesmo id (estorno antigo junto do
+     pendente de agora): o .find simples acha o estornado e o botão
+     morre sem dizer nada. Na fila, o alvo é o pendente. */
+  const iguais = DB.locacoes.filter(l=>String(l.id)===String(locId));
+  const loc = (fila ? iguais.find(l=>l.status==='pendente') : null)
+           || iguais.find(l=>!estornada(l)) || iguais[0];
+  if(!loc || estornada(loc)) return;
   if(fila && loc.status !== 'pendente') return;
   if(!fila && !exigirAdministrador('estornar uma locação')) return;
   const valor = totalLoc(loc);
@@ -5895,7 +5934,7 @@ async function carregarTudo(){
   try{
     const doc = await Nuvem.carregar();
     if(doc) DB = doc;
-    aplicarMigracoes();
+    if(aplicarMigracoes()) Nuvem.agendar();   /* o doc veio curado: sobe a versão limpa */
     Nuvem.escutar();
     marcarSync('ok');
   }catch(e){

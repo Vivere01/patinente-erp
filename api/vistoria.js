@@ -307,13 +307,29 @@ function msgDe(codigo){
 
 /* Confere 1 item contra o documento. Devolve { erro } ou { loc } —
    sem tocar em nada: a mutação dentro do lock é outra função. */
+/* O documento pode ter dois registros do mesmo id — um estorno antigo
+   ficou no doc junto do pendente de agora (aparelho antigo sincronizou).
+   O .find simples acha o estornado e a locação nova nunca sai da fila
+   ("já liberada" para sempre). O registro certo é o que está em
+   operação para a ação pedida: pendente na liberação, ativa na chegada. */
+function locacaoAlvo(db, locId, acao){
+  const iguais = (db.locacoes || []).filter(l => String(l.id) === String(locId));
+  if(!iguais.length) return null;
+  const statusDaAcao = acao === 'chegada' ? 'ativa' : 'pendente';
+  return iguais.find(l => l.status === statusDaAcao) ||
+         iguais.find(l => l.status !== 'estornada') || iguais[0];
+}
+
+/* Confere 1 item contra o documento. Devolve { erro } ou { loc } —
+   sem tocar em nada: a mutação dentro do lock é outra função. */
 function conferirItem(db, it, acao, exigirFoto){
   const locId = it.locId;
-  const mesmaLoc = l => !!l && String(l.id) === String(locId);
-  const loc = (db.locacoes || []).find(mesmaLoc);
+  const loc = locacaoAlvo(db, locId, acao);
   if(!loc) return { erro: 'locacao_nao_encontrada' };
-  if(acao === 'liberar' && loc.status !== 'pendente') return { erro: 'ja_liberada' };
-  if(acao === 'chegada' && loc.status !== 'ativa') return { erro: 'ja_devolvida' };
+  if(acao === 'liberar' && loc.status !== 'pendente')
+    return { erro: 'ja_liberada', statusEstada: String(loc.status || '') };
+  if(acao === 'chegada' && loc.status !== 'ativa')
+    return { erro: 'ja_devolvida', statusEstada: String(loc.status || '') };
 
   const lido = codigoLido(it.veiculo);
   const esperadoCodigo = codigoDoVeiculo(db, loc);
@@ -341,7 +357,9 @@ function conferirItem(db, it, acao, exigirFoto){
 /* Aplica 1 item já conferido no documento dentro do lock.
    Devolve null quando o estado mudou por baixo (o chamador registra). */
 function aplicarItem(db, it, conferido, acao, horaBase, quem){
-  const loc = (db.locacoes || []).find(l => l.id === conferido.loc.id);
+  /* o mesmo escolhedor da conferência: mutar o registro que a conferência
+     viu em operação — não o primeiro id que aparecer no doc */
+  const loc = locacaoAlvo(db, conferido.loc ? conferido.loc.id : null, acao);
   if(!loc) return false;
   if(acao === 'liberar' && loc.status !== 'pendente') return false;
   if(acao === 'chegada' && loc.status !== 'ativa') return false;
@@ -477,7 +495,8 @@ module.exports = async (req, res) => {
       }
       const c = conferirItem(dbInicial, it, acao, exigirFoto);
       if(c.erro){
-        resultados.push({ locacaoId: String(it.locId), ok: false, erro: c.erro, mensagem: msgDe(c.erro) });
+        resultados.push({ locacaoId: String(it.locId), ok: false, erro: c.erro,
+                          statusEstada: String(c.statusEstada || ''), mensagem: msgDe(c.erro) });
         continue;
       }
       it.loc = c.loc; it.lido = c.lido;
@@ -496,6 +515,9 @@ module.exports = async (req, res) => {
         if(foi === false){
           it.motivo = (acao === 'liberar' && it.loc.status === 'ativa') ? 'ja_liberada'
             : (acao === 'chegada' && it.loc.status === 'devolvida') ? 'ja_devolvida' : 'veiculo_indisponivel';
+          /* a situação real no banco vai na resposta: o celular só conta
+             "já liberada" como feito quando o registro mesmo foi liberado */
+          it.statusEstada = String((it.loc && it.loc.status) || '');
         } else { aplicados++; }
       }
       /* nada valeu a gravação: nem versiona o documento */
@@ -507,7 +529,9 @@ module.exports = async (req, res) => {
         resultados.push({ locacaoId: String(it.locId), ok: true });
       else {
         const erroItem = it.motivo || 'conflito';
-        resultados.push({ locacaoId: String(it.locId), ok: false, erro: erroItem, mensagem: msgDe(erroItem) });
+        resultados.push({ locacaoId: String(it.locId), ok: false, erro: erroItem,
+                          statusEstada: String(it.statusEstada || ''),
+                          mensagem: msgDe(erroItem) });
       }
     }
 

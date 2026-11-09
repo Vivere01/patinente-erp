@@ -810,7 +810,12 @@
         (j.resultados || []).forEach(r2 => { porId[String(r2.locacaoId)] = r2; });
         for(const locId of locIds){
           const rst = porId[locId];
-          if(rst && (rst.ok || rst.erro === 'ja_liberada' || rst.erro === 'ja_devolvida')){
+          /* "já liberada" só pode contar como feito quando o registro
+             realmente está na rua — estornado não é liberada; o doc
+             duplicado cantava vitória sem gravar nada */
+          if(rst && (rst.ok ||
+                     (rst.erro === 'ja_liberada' && rst.statusEstada === 'ativa') ||
+                     (rst.erro === 'ja_devolvida' && rst.statusEstada === 'devolvida'))){
             ok++;
             delete fotos[locId]; delete campos[locId];
           } else if(rst && rst.mensagem){
