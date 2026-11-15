@@ -81,6 +81,12 @@
   .btn:disabled{opacity:.45;cursor:not-allowed}
   .btn.sec{background:#fff;color:var(--text);border:1px solid var(--line);flex:none;min-width:0}
   .btn.mini{padding:8px 13px;font-size:12.5px;border-radius:9px;background:#fff;border:1px solid var(--line);flex:none}
+  /* horário limite no cartão "Na rua": amarelo no prazo, vermelho atrasado */
+  .limite{margin-top:11px;border-radius:12px;padding:10px 13px;font-size:12.5px;
+    background:#fff8e6;border:1px solid #f2dfae;color:#6b5310;
+    display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .limite b{font-size:17px;letter-spacing:.3px}
+  .limite.atrasado{background:#ffecee;border-color:#f6c6cc;color:#8b1a24}
   .aviso{background:#fff8e6;border:1px solid #f2dfae;border-radius:12px;padding:11px 13px;font-size:12.5px;color:#6b5310}
   .aviso.erro{background:#ffecee;border-color:#f6c6cc;color:#8b1a24}
   .aviso.bom{background:#e9f9f1;border-color:#b6e8d1;color:#0a5c3b}
@@ -576,6 +582,11 @@
     const ls = g.locs, l0 = ls[0], unicas = ls.length === 1;
     const exigirFoto = dados.exigirFoto !== false;
     gruposNaTela[g.chave] = ls.map(l=>l.locacaoId);
+    /* horário limite de devolução: o fim previsto de maior valor da
+       comanda (no lote, todos os patinetes saíram juntos, mas a comanda
+       pode ter pacotes de duração diferente) */
+    const limite = ls.reduce((m,l)=>Math.max(m, Number(l.fimPrevisto)||0), 0);
+    const atrasado = limite ? Date.now() > limite : false;
     return '<div class="card">'+
       '<div class="cab"><div>'+
         (unicas
@@ -584,13 +595,20 @@
             '<div class="tipo">comanda · '+ls.length+' veículos</div>')+
       '</div>'+
       '<div style="text-align:right">'+
-        (ls.some(l=>l.atrasado) ? '<span class="chip">atrasado</span>' : '<span class="chip verde">no prazo</span>')+
+        (limite
+          ? '<span class="chip'+(atrasado?'':' verde')+'">'+(atrasado?'atrasado':'no prazo')+'</span>'
+          : '<span class="chip verde">no prazo</span>')+
       '</div></div>'+
+      (limite
+        ? '<div class="limite'+(atrasado?' atrasado':'')+'">'+
+            '<span>'+(atrasado ? '⏰ Passou do limite — devolver' : '⏱ Devolver até')+'</span>'+
+            '<b>'+hhmm(limite)+'</b>'+
+          '</div>'
+        : '')+
       '<div class="linhas">'+
         '<div class="l"><span>Cliente</span><b>'+esc(l0.clienteNome)+'</b></div>'+
         (unicas
-          ? '<div class="l"><span>Devolução prevista</span><b>'+(l0.fimPrevisto?hhmm(l0.fimPrevisto):'—')+'</b></div>'+
-            '<div class="l"><span>Saiu</span><b>'+(l0.inicio?hhmm(l0.inicio):'—')+' · '+esc(l0.tarifaLabel||'')+'</b></div>'
+          ? '<div class="l"><span>Saiu</span><b>'+(l0.inicio?hhmm(l0.inicio):'—')+' · '+esc(l0.tarifaLabel||'')+'</b></div>'
           : '')+
       '</div>'+
       ls.map(l=>secaoChegada(l, !unicas)).join('')+
