@@ -1439,8 +1439,8 @@ function testarOperacaoEnxuta(){
      'as colunas continuam sendo alimentadas pelos mesmos ids');
   ok(pagina.indexOf('dados.caixaAberto !== false') >= 0 && /Entregues/.test(pagina),
      'a coluna Entregues some quando o caixa do dia está fechado');
-  ok(pagina.indexOf('@media (min-width:900px)') >= 0 && pagina.indexOf('scroll-snap-type') >= 0,
-     'no celular as colunas correm na horizontal; no desktop as três abrem juntas');
+  ok(pagina.indexOf('@media (min-width:900px)') >= 0 && /data-aba="colVistoriar"/.test(pagina),
+     'no celular a navegação é por abas; no desktop as três colunas abrem juntas');
 
   /* --- a API entrega o estado do caixa --- */
   ok(extrairFuncao(api,'payload').indexOf('caixaAberto') >= 0 &&

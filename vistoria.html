@@ -27,29 +27,39 @@
   h3:first-of-type{margin-top:6px}
   h3 .qtd,.colh .qtd{font-size:11.5px;font-weight:700;background:#fff;border:1px solid var(--line);
     border-radius:20px;padding:2px 9px;color:var(--muted)}
-  /* Kanban: no celular as colunas correm na horizontal (uma por vez, com
-     encaixe), no computador as três cabem lado a lado */
-  .kanban{display:flex;gap:12px;overflow-x:auto;scroll-snap-type:x mandatory;
-    -webkit-overflow-scrolling:touch;margin:6px -16px 0;padding:0 16px 10px}
-  .kanban::-webkit-scrollbar{height:8px}
-  .kanban::-webkit-scrollbar-thumb{background:#d5d5d5;border-radius:8px}
-  .col{flex:0 0 min(88vw,330px);scroll-snap-align:start;display:flex;flex-direction:column;min-width:0}
+  /* No celular: abas em cima, uma coluna por vez, rolagem só vertical —
+     o gesto horizontal do kanban atrapalhava quem opera com uma mão.
+     No computador (>=900px) o kanban segue com as três colunas lado a lado,
+     exatamente como antes. */
+  .abas{display:flex;gap:8px;margin:12px 0 0;position:sticky;top:56px;z-index:6}
+  .abas button{flex:1;min-width:0;background:#fff;border:1px solid var(--line);
+    border-radius:12px;padding:10px 4px;font-size:10px;text-transform:uppercase;
+    letter-spacing:.4px;color:var(--muted);display:flex;flex-direction:column;
+    align-items:center;gap:2px;line-height:1.2;font-weight:700}
+  .abas button b{font-size:14px;color:var(--text);font-weight:800}
+  .abas button.on{background:var(--ink);border-color:var(--ink);color:#b5b5b5}
+  .abas button.on b{color:#fff}
+  .kanban{display:block}
+  .col{display:none}
+  .col.on{display:flex;flex-direction:column}
+  @media (min-width:900px){
+    .abas{display:none}
+    .kanban{display:flex;gap:12px;overflow:visible;margin:6px 0 0}
+    .col{flex:1 1 0;display:flex;flex-direction:column;min-width:0}
+  }
   .colh{display:flex;align-items:center;justify-content:space-between;gap:8px;background:var(--ink);
     color:#fff;border-radius:14px;padding:11px 13px}
   .colh b{font-size:12px;text-transform:uppercase;letter-spacing:.6px}
   .colc{display:flex;flex-direction:column;gap:12px;margin-top:11px}
   .colc .card{margin-bottom:0}
-  @media (min-width:900px){
-    .kanban{margin:6px 0 0;padding:0 0 10px;overflow:visible}
-    .col{flex:1 1 0}
-  }
   .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px;margin-bottom:14px;
     box-shadow:0 2px 14px rgba(16,24,40,.06)}
   .vazio{background:#fff;border:1px dashed var(--line);border-radius:14px;padding:22px 16px;
     text-align:center;color:var(--muted);font-size:13.5px}
-  .barra{display:flex;gap:10px;align-items:center;justify-content:space-between;
+  .barra{display:flex;gap:8px;align-items:center;justify-content:space-between;
     background:#fff;border:1px solid var(--line);border-radius:12px;padding:9px 13px;font-size:12.5px;
     color:var(--muted);position:sticky;top:8px;z-index:5}
+  .barra #situacao{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1 1 auto}
   .cab{display:flex;gap:12px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap}
   .cod{font-size:17px;font-weight:800;letter-spacing:.2px}
   .tipo{font-size:12.5px;color:var(--muted);margin-top:1px}
@@ -80,7 +90,7 @@
   .btn{background:linear-gradient(135deg,var(--brand),var(--brand-2));color:var(--ink);flex:1;min-width:180px}
   .btn:disabled{opacity:.45;cursor:not-allowed}
   .btn.sec{background:#fff;color:var(--text);border:1px solid var(--line);flex:none;min-width:0}
-  .btn.mini{padding:8px 13px;font-size:12.5px;border-radius:9px;background:#fff;border:1px solid var(--line);flex:none}
+  .btn.mini{padding:8px 13px;font-size:12.5px;border-radius:9px;background:#fff;border:1px solid var(--line);flex:none;min-width:0}
   /* horário limite no cartão "Na rua": amarelo no prazo, vermelho atrasado */
   .limite{margin-top:11px;border-radius:12px;padding:10px 13px;font-size:12.5px;
     background:#fff8e6;border:1px solid #f2dfae;color:#6b5310;
@@ -124,6 +134,15 @@
     color:#fff;font-size:14px}
   .acende{animation:acende .9s ease 2}
   @keyframes acende{0%,100%{box-shadow:0 0 0 0 rgba(255,229,0,0)}50%{box-shadow:0 0 0 6px rgba(255,229,0,.9)}}
+  /* celular: cabeçalho mais compacto e leitura confortável ao ar livre */
+  @media (max-width:899px){
+    header{padding:12px 16px 10px}
+    header .sub{font-size:11px;margin-top:4px}
+    .cod{font-size:19px}
+    .linhas .l{font-size:14.5px;padding:5px 0}
+    .slot{min-height:112px}
+    .limite b{font-size:19px}
+  }
 </style>
 </head>
 <body>
@@ -143,6 +162,12 @@
   </div>
 
   <div id="avisoGeral" class="escondido" style="margin-top:12px"></div>
+
+  <div class="abas" id="abas" role="tablist">
+    <button type="button" class="on" data-aba="colVistoriar" role="tab"><b>A vistoriar</b><span class="qtd" id="qtdPendAba">0</span></button>
+    <button type="button" data-aba="colRua" role="tab"><b>Na rua</b><span class="qtd" id="qtdRuaAba">0</span></button>
+    <button type="button" data-aba="colEntregues" role="tab"><b>Entregues</b><span class="qtd" id="qtdHojeAba">0</span></button>
+  </div>
 
   <div class="kanban" id="kanban">
     <section class="col" id="colVistoriar">
@@ -347,13 +372,33 @@
     }
   }
 
+  /* ---------------- abas do celular (kanban só existe >=900px) ---------------- */
+  function abaDaColuna(id){
+    document.querySelectorAll('#abas button').forEach(b=>{
+      const on = b.dataset.aba === id;
+      b.classList.toggle('on', on);
+    });
+    document.querySelectorAll('#kanban .col').forEach(c=>{
+      c.classList.toggle('on', c.id === id);
+    });
+  }
+  document.querySelectorAll('#abas button').forEach(b=>{
+    b.addEventListener('click', ()=> abaDaColuna(b.dataset.aba));
+  });
+
   function acender(locId){
     const cards = document.querySelectorAll('[data-card]');
     for(let i=0;i<cards.length;i++){
       if(String(cards[i].dataset.card) === String(locId)){
-        cards[i].scrollIntoView({behavior:'smooth', block:'center'});
-        cards[i].classList.add('acende');
-        setTimeout(()=>cards[i].classList.remove('acende'), 2000);
+        /* o card pode estar em outra aba (ex.: escaneou do topo e a locação
+           já está na rua): abre a aba dele antes de piscar */
+        const col = cards[i].closest('.col');
+        if(col && !col.classList.contains('on')) abaDaColuna(col.id);
+        setTimeout(()=>{
+          cards[i].scrollIntoView({behavior:'smooth', block:'center'});
+          cards[i].classList.add('acende');
+          setTimeout(()=>cards[i].classList.remove('acende'), 2000);
+        }, 80);
         return;
       }
     }
@@ -624,6 +669,7 @@
     const pend = dados.pendentes || [];
     const gruposPend = grupoDe(pend);
     $('#qtdPend').textContent = pend.length;
+    $('#qtdPendAba').textContent = pend.length;
     gruposNaTela = {};
     $('#fila').innerHTML = gruposPend.length
       ? gruposPend.map(cardComandaLiberar).join('')
@@ -632,6 +678,7 @@
     const rua = dados.naRua || [];
     const gruposRua = grupoDe(rua);
     $('#qtdRua').textContent = rua.length;
+    $('#qtdRuaAba').textContent = rua.length;
     $('#rua').innerHTML = gruposRua.length
       ? gruposRua.map(cardComandaChegada).join('')
       : '<div class="vazio">Nenhum veículo na rua.</div>';
@@ -641,6 +688,7 @@
     const caixaAberto = dados.caixaAberto !== false;
     const entregues = caixaAberto ? (dados.chegadas || []) : [];
     $('#qtdHoje').textContent = entregues.length;
+    $('#qtdHojeAba').textContent = entregues.length;
     $('#hoje').innerHTML = entregues.length
       ? '<div class="card"><div class="linhas" style="border-top:0;padding-top:0;margin-top:0">'+
           entregues.map(x=>
@@ -947,6 +995,7 @@
   }, 8000);
   document.addEventListener('visibilitychange', ()=>{ if(!document.hidden && !sujo) buscar(); });
 
+  abaDaColuna('colVistoriar');
   buscar();
 })();
 </script>
