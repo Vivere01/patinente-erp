@@ -2106,6 +2106,9 @@ window.abrirDevolucao = function(locId){
   if(remExCk) remExCk.onchange = ()=>{
     remEx = remExCk.checked;
     ov.querySelector('#dRemExBox').style.display = remEx ? '' : 'none';
+    /* o motivo é obrigatório: ao marcar, leva o cursor para o campo e o
+       traz à vista — sem isso a atendente rola o modal e não o encontra */
+    if(remEx){ const campo = ov.querySelector('#dRemExMotivo'); if(campo) campo.focus(); }
     pintaTotais();
   };
 
@@ -2147,8 +2150,17 @@ window.abrirDevolucao = function(locId){
   pintaDanos(); pintaTotais();
   ov.querySelector('#dCancel').onclick = ()=> fecharModal(ov);
   ov.querySelector('#dOk').onclick = ()=>{
-    const motivoRem = remEx ? ov.querySelector('#dRemExMotivo').value.trim() : '';
-    if(remEx && motivoRem.length<3) return toast('Descreva o motivo da remoção da multa.');
+    /* A justificativa escrita em "Observações da entrada" também vale como
+       motivo da remoção: é a mesma atendente, no mesmo fechamento, e a
+       remoção não pode ser recusada só porque o motivo ficou no outro campo. */
+    const motivoRem = remEx
+      ? (ov.querySelector('#dRemExMotivo').value.trim() || ov.querySelector('#dObs').value.trim())
+      : '';
+    if(remEx && motivoRem.length<3){
+      const campo = ov.querySelector('#dRemExMotivo');
+      if(campo) campo.focus();
+      return toast('Descreva o motivo da remoção da multa.');
+    }
     const fim = Date.now();
     const ex2 = calcExcedente(loc, fim);
     loc.fimReal = fim;
