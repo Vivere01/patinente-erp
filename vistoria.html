@@ -113,6 +113,18 @@
   .vsec{border:1px solid var(--line);border-radius:12px;padding:11px;margin-top:11px;background:#fbfcfe}
   .vcab{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;margin-bottom:2px}
   .vcab b{font-size:15px}
+  /* saída simplificada: uma linha por veículo, toque na linha para marcar */
+  .saiu{display:flex;align-items:center;gap:12px;border:1.6px solid var(--line);border-radius:12px;
+    padding:12px 13px;margin-top:9px;background:#fff;cursor:pointer;
+    transition:border-color .12s,background .12s}
+  .saiu input{width:24px;height:24px;flex:none;accent-color:var(--ok);margin:0}
+  .saiu .saiuinfo{flex:1;min-width:0}
+  .saiu .saiuinfo b{display:block;font-size:15.5px}
+  .saiu .saiuinfo span{display:block;font-size:12px;color:var(--muted)}
+  .saiu .saiust{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;
+    color:var(--muted);border:1px solid var(--line);border-radius:20px;padding:3px 9px;flex:none}
+  .saiu.on{border-color:var(--ok);background:#e9f9f1}
+  .saiu.on .saiust{background:var(--ok);border-color:var(--ok);color:#fff}
   .scanst{font-size:12.5px;font-weight:700;color:var(--muted)}
   .scanst.ok{color:var(--ok)} .scanst.erro{color:var(--danger)}
   .visor{position:fixed;inset:0;background:#0b0b0b;z-index:70;display:flex;flex-direction:column}
@@ -185,7 +197,7 @@
   </div>
 </main>
 
-<div class="rodape">Link público da vistoria. Escaneie a etiqueta do patinete, fotografe e marque o horário — a cobrança é fechada antes da saída, no balcão.</div>
+<div class="rodape">Link público da vistoria. Na saída, marque os veículos que estão saindo com o cliente. Na chegada, escaneie a etiqueta e fotografe — a cobrança é fechada antes da saída, no balcão.</div>
 <input type="file" id="arquivo" accept="image/*" capture="environment" class="escondido">
 
 <script>
@@ -214,6 +226,7 @@
   let dados = null, sujo = false, postando = false, carregando = false;
   const fotos = {};     /* locacaoId -> [foto, foto, foto] */
   const campos = {};    /* locacaoId -> { veiculo, obs, estado, scanErro } */
+  const marcados = {};  /* locacaoId -> true: marcado como "saiu com o cliente" */
   const LEG = ['Frente','Lateral','Detalhe'];
 
   function aviso(txt, tipo){
@@ -238,8 +251,15 @@
     if(deployVisto !== sha) $('#bannerVersao').classList.remove('escondido');
   }
   function travar(){
-    document.querySelectorAll('.btn').forEach(b=>{ if(b.id!=='btnAtualizar') b.disabled = postando; });
+    document.querySelectorAll('.btn').forEach(b=>{
+      if(b.id === 'btnAtualizar') return;
+      b.disabled = postando || b.dataset.off === '1';
+    });
   }
+
+  /* saída simplificada: o servidor diz se esta loja libera a comanda só
+     pela marcação dos veículos (sem foto e sem leitura de etiqueta) */
+  const simplesModo = ()=> !!(dados && dados.liberacaoSimples);
 
   /* ---------------- leitor da etiqueta do patinete ---------------- */
   let visorLeitor = null, visorTimer = null, visorModo = null, zxingP = null;
@@ -570,6 +590,16 @@
   }
 
   function secaoLiberar(l, mostraCab){
+    /* saída simplificada: sem foto, sem escanear — só a marcação */
+    if(simplesModo()){
+      const rotulo = l.codigo || ((l.tipoNome || 'Modelo') + ' · a definir');
+      const on = !!marcados[l.locacaoId];
+      return '<label class="saiu'+(on?' on':'')+'">'+
+        '<input type="checkbox" data-saiu="'+esc(l.locacaoId)+'"'+(on?' checked':'')+'>'+
+        '<span class="saiuinfo"><b>'+esc(rotulo)+'</b>'+
+          '<span>'+esc(l.tipoNome||'Modelo')+(l.tarifaLabel?' · '+esc(l.tarifaLabel):'')+'</span></span>'+
+        '<span class="saiust">'+(on?'saiu':'não saiu')+'</span></label>';
+    }
     const c = campos[l.locacaoId] || (campos[l.locacaoId] = { veiculo:'', obs:'' });
     const rotulo = l.codigo || ((l.tipoNome || 'Modelo') + ' · a definir');
     return '<div class="vsec" data-card="'+esc(l.locacaoId)+'">'+
@@ -599,8 +629,10 @@
 
   function cardComandaLiberar(g){
     const ls = g.locs, l0 = ls[0], unicas = ls.length === 1;
+    const simples = simplesModo();
     const exigirFoto = dados.exigirFoto !== false;
     const total = ls.reduce((s,l)=>s+(Number(l.valorBase)||0),0);
+    const nMarc = simples ? ls.filter(l=>marcados[l.locacaoId]).length : ls.length;
     gruposNaTela[g.chave] = ls.map(l=>l.locacaoId);
     return '<div class="card">'+
       '<div class="cab"><div>'+
@@ -618,8 +650,15 @@
           : '<div class="l"><span>Pacotes</span><b>'+esc(ls.map(l=>l.tarifaLabel).filter((v,i,a)=>a.indexOf(v)===i).join(' + '))+' · '+brl(total)+'</b></div>')+
       '</div>'+
       ls.map(l=>secaoLiberar(l, !unicas)).join('')+
-      '<div class="acoes"><button class="btn" data-liberar-grupo="'+esc(g.chave)+'">Vistoriado e liberar'+(unicas?'':' ('+ls.length+' veículos)')+'</button></div>'+
-      (exigirFoto ? '<div class="tipo" style="margin-top:8px">Ao menos uma foto por veículo é obrigatória.</div>' : '')+
+      '<div class="acoes"><button class="btn" data-liberar-grupo="'+esc(g.chave)+'"'+
+        (simples && !nMarc ? ' data-off="1" disabled' : '')+'>'+
+        (simples
+          ? (nMarc ? 'Confirmar saída ('+nMarc+' veículo'+(nMarc>1?'s':'')+')' : 'Marque os veículos que estão saindo')
+          : 'Vistoriado e liberar'+(unicas?'':' ('+ls.length+' veículos)'))+
+      '</button></div>'+
+      (simples
+        ? '<div class="tipo" style="margin-top:8px">Sem foto e sem escanear: marque os veículos que estão saindo com o cliente.</div>'
+        : (exigirFoto ? '<div class="tipo" style="margin-top:8px">Ao menos uma foto por veículo é obrigatória.</div>' : ''))+
     '</div>';
   }
 
@@ -665,6 +704,9 @@
   function render(){
     if(!dados) return;
     $('#empresa').textContent = dados.empresa && dados.empresa.nome ? dados.empresa.nome : 'VeeLo Way';
+    /* na saída simplificada o topo não escaneia: a chegada tem o botão
+       dentro do próprio cartão de cada veículo */
+    $('#btnScanTopo').style.display = simplesModo() ? 'none' : '';
 
     const pend = dados.pendentes || [];
     const gruposPend = grupoDe(pend);
@@ -804,7 +846,7 @@
       const j = await r.json().catch(()=>({}));
       if(r.ok || (r.status === 409 && (j.erro === 'ja_liberada' || j.erro === 'ja_devolvida'))){
         ok++;
-        delete fotos[locId]; delete campos[locId];
+        delete fotos[locId]; delete campos[locId]; delete marcados[locId];
       } else {
         falhas.push(j.mensagem || 'não gravou');
       }
@@ -822,22 +864,25 @@
     locIds = (locIds||[]).map(String).filter(Boolean);
     if(!locIds.length) return;
     /* a mesma etiqueta escaneada em dois cartões da comanda: o servidor
-       recusaria o segundo — avisa antes, nomeando o código */
-    const vistos = {};
-    for(const locId of locIds){
-      const v = ((campos[locId]||{}).veiculo||'').toUpperCase();
-      if(!v) continue;
-      if(vistos[v]){
-        aviso('O código <b>' + esc(v) + '</b> foi escaneado em dois veículos da comanda. Cada veículo precisa da <b>própria etiqueta</b>.', 'erro');
-        toast('Etiqueta repetida: ' + v);
-        acender(locId);
-        return;
+       recusaria o segundo — avisa antes, nomeando o código. Na saída
+       simplificada não há leitura, então só a marcação é conferida. */
+    if(!simplesModo()){
+      const vistos = {};
+      for(const locId of locIds){
+        const v = ((campos[locId]||{}).veiculo||'').toUpperCase();
+        if(!v) continue;
+        if(vistos[v]){
+          aviso('O código <b>' + esc(v) + '</b> foi escaneado em dois veículos da comanda. Cada veículo precisa da <b>própria etiqueta</b>.', 'erro');
+          toast('Etiqueta repetida: ' + v);
+          acender(locId);
+          return;
+        }
+        vistos[v] = locId;
       }
-      vistos[v] = locId;
-    }
-    for(const locId of locIds){
-      const fs = (fotos[locId]||[]).filter(Boolean);
-      if(!validar(acao, locId, fs)) return;
+      for(const locId of locIds){
+        const fs = (fotos[locId]||[]).filter(Boolean);
+        if(!validar(acao, locId, fs)) return;
+      }
     }
     postando = true; travar();
     const lote = 'l' + Date.now().toString(36) + Math.floor(Math.random()*1e8).toString(36);
@@ -883,7 +928,7 @@
                      (rst.erro === 'ja_liberada' && rst.statusEstada === 'ativa') ||
                      (rst.erro === 'ja_devolvida' && rst.statusEstada === 'devolvida'))){
             ok++;
-            delete fotos[locId]; delete campos[locId];
+            delete fotos[locId]; delete campos[locId]; delete marcados[locId];
           } else if(rst && rst.mensagem){
             falhas.push(rst.mensagem);
           } else {
@@ -920,6 +965,8 @@
   }
 
   function validar(acao, locId, fotosEnviadas){
+    /* saída simplificada: a marcação do veículo é a única conferência */
+    if(acao === 'liberar' && simplesModo()) return true;
     const rotulo = rotuloDaLoc(locId);
     if(dados.exigirFoto !== false && !fotosEnviadas.length){
       aviso('Falta a <b>foto da vistoria</b> de <b>' + esc(rotulo) + '</b>. Toque nos quadros de foto do cartão dele.', 'erro');
@@ -957,7 +1004,13 @@
       abrirVisor({ tipo:'cartao', loc:id, codigo:codigoDaLoc(id) });
     }
     if(bl){
-      enviarGrupo('liberar', gruposNaTela[bl.dataset.liberarGrupo]);
+      const ids = gruposNaTela[bl.dataset.liberarGrupo] || [];
+      const alvo = simplesModo() ? ids.filter(id => marcados[id]) : ids;
+      if(!alvo.length){
+        if(simplesModo()) aviso('Marque pelo menos um veículo que está saindo.', 'erro');
+        return;
+      }
+      enviarGrupo('liberar', alvo);
     }
     if(bc){
       enviarGrupo('chegada', gruposNaTela[bc.dataset.chegadaGrupo]);
@@ -974,6 +1027,13 @@
   });
   document.addEventListener('change', e=>{
     const el = e.target;
+    /* saída simplificada: marcou/desmarcou o veículo que sai */
+    if(el.dataset && el.dataset.saiu){
+      const id = el.dataset.saiu;
+      if(el.checked) marcados[id] = true; else delete marcados[id];
+      render();
+      return;
+    }
     if(!el.dataset || !el.dataset.campo || !el.dataset.loc) return;
     const id = el.dataset.loc;
     const c = campos[id] || (campos[id] = { veiculo:'', obs:'', estado:'loja' });
