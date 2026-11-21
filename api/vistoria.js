@@ -50,12 +50,13 @@ const ITENS_POR_LOTE = 50;      /* locações por comanda */
 const BYTES_POR_POST = 4 * 1024 * 1024;
 const JANELA_LOTE_MS = 15 * 60000; /* loteHora válido até 15 min atrás */
 
-/* Saída simplificada (esta branch): o vistoriador só marca na comanda
-   quais veículos estão saindo com o cliente — sem foto e sem ler a
-   etiqueta. A unidade livre do modelo reservado é escolhida aqui no
-   servidor, na hora de gravar. A chegada continua fotográfica.
-   Para voltar ao fluxo completo (foto + QR na saída), mude para false. */
-const LIBERACAO_SIMPLES = true;
+/* Vistoria simplificada (esta branch): na saída o vistoriador só marca
+   quais veículos estão saindo com o cliente; na devolução, só confirma
+   quem voltou e o estado. Sem foto e sem ler etiqueta nas duas pontas.
+   Na saída, a unidade livre do modelo reservado é escolhida aqui no
+   servidor; na volta, vale a unidade já amarrada pela saída.
+   Para voltar ao fluxo completo (foto + QR), mude para false. */
+const VISTORIA_SIMPLES = true;
 
 function exigirBanco(res){
   if(temBanco()) return true;
@@ -197,8 +198,8 @@ function payload(db, agora){
     deploy: (process.env.VERCEL_GIT_COMMIT_SHA || '').slice(0, 7) || null,
     empresa: { nome: (db.empresa && db.empresa.nome) || 'Locadora' },
     exigirFoto: cfg.exigirFoto !== false,
-    /* esta branch libera a comanda só com a marcação dos veículos que saem */
-    liberacaoSimples: LIBERACAO_SIMPLES,
+    /* esta branch faz saída e devolução só com a marcação dos veículos */
+    vistoriaSimples: VISTORIA_SIMPLES,
     toleranciaMin: Number(cfg.toleranciaMin) || 0,
     /* a coluna "Entregues" do Kanban existe só enquanto o caixa do dia
        está aberto: fechou, as entregas do dia vão para o histórico */
@@ -356,9 +357,9 @@ function conferirItem(db, it, acao, exigirFoto, simples){
     return { erro: 'ja_devolvida', statusEstada: String(loc.status || '') };
 
   const esperadoCodigo = codigoDoVeiculo(db, loc);
-  /* na saída simplificada ninguém lê etiqueta: vale a unidade já amarrada
-     na locação (reserva antiga) e, sem vínculo, o servidor escolhe uma
-     livre do modelo na hora de aplicar */
+  /* na vistoria simplificada ninguém lê etiqueta: vale a unidade já
+     amarrada na locação (reserva antiga ou saída já feita) e, sem
+     vínculo na saída, o servidor escolhe uma livre do modelo */
   const lido = codigoLido(it.veiculo) || (simples ? String(esperadoCodigo || '') : '');
   if(!lido && !simples) return { erro: 'veiculo_nao_escaneado' };
   const semVinculo = acao === 'liberar' && !loc.veiculoCodigo && !esperadoCodigo;
@@ -394,8 +395,8 @@ function aplicarItem(db, it, conferido, acao, horaBase, quem, simples){
   if(acao === 'chegada' && loc.status !== 'ativa') return false;
 
   let lido = codigoLido(it.veiculo);
-  /* reserva antiga com unidade amarrada: a saída simplificada usa a
-     própria unidade, sem exigir leitura */
+  /* reserva antiga com unidade amarrada ou devolução de uma saída já
+     feita: a vistoria simplificada usa a própria unidade, sem leitura */
   if(!lido && simples) lido = String(codigoDoVeiculo(db, loc) || '').trim();
   const semVinculo = acao === 'liberar' && !loc.veiculoCodigo && !codigoDoVeiculo(db, loc);
 
@@ -505,9 +506,9 @@ module.exports = async (req, res) => {
     }));
 
     const exigirFoto = dbInicial.config ? dbInicial.config.exigirFoto !== false : true;
-    /* na saída simplificada não há foto nem leitura de etiqueta por item;
-       a chegada continua exatamente como antes */
-    const simples = LIBERACAO_SIMPLES && acao === 'liberar';
+    /* na vistoria simplificada não há foto nem leitura de etiqueta por
+       item: vale a marcação na saída e a confirmação na devolução */
+    const simples = VISTORIA_SIMPLES;
 
     /* O relógio do lote vem do celular no instante do botão: reduz o
        escorrego da cronometragem quando a comanda sobe em vários POSTs.
@@ -576,9 +577,9 @@ module.exports = async (req, res) => {
       if(lock.inviavel)
         return json(res, 409, { ok: false, resultados: resultados,
           erro: 'veiculo_indisponivel',
-          mensagem: simples
+          mensagem: simples && acao === 'liberar'
             ? 'Acabaram as unidades prontas do modelo reservado. Confira a loja e tente de novo.'
-            : 'A unidade escaneada deixou de estar livre. Escolha outra unidade pronta do modelo reservado.' });
+            : 'A unidade mudou de estado enquanto a vistoria era enviada. Atualize a fila e tente de novo.' });
       return json(res, 409, { ok: false, resultados: resultados, erro: 'conflito',
         mensagem: 'Outro aparelho salvou ao mesmo tempo. Atualize a tela e tente de novo.' });
     }
