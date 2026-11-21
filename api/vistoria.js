@@ -50,6 +50,13 @@ const ITENS_POR_LOTE = 50;      /* locações por comanda */
 const BYTES_POR_POST = 4 * 1024 * 1024;
 const JANELA_LOTE_MS = 15 * 60000; /* loteHora válido até 15 min atrás */
 
+/* Saída simplificada (esta branch): o vistoriador só marca na comanda
+   quais veículos estão saindo com o cliente — sem foto e sem ler a
+   etiqueta. A unidade livre do modelo reservado é escolhida aqui no
+   servidor, na hora de gravar. A chegada continua fotográfica.
+   Para voltar ao fluxo completo (foto + QR na saída), mude para false. */
+const LIBERACAO_SIMPLES = true;
+
 function exigirBanco(res){
   if(temBanco()) return true;
   erro(res, 503, 'banco_nao_configurado', 'POSTGRES_URL não definida. Conecte o Postgres no painel da Vercel.');
@@ -190,6 +197,8 @@ function payload(db, agora){
     deploy: (process.env.VERCEL_GIT_COMMIT_SHA || '').slice(0, 7) || null,
     empresa: { nome: (db.empresa && db.empresa.nome) || 'Locadora' },
     exigirFoto: cfg.exigirFoto !== false,
+    /* esta branch libera a comanda só com a marcação dos veículos que saem */
+    liberacaoSimples: LIBERACAO_SIMPLES,
     toleranciaMin: Number(cfg.toleranciaMin) || 0,
     /* a coluna "Entregues" do Kanban existe só enquanto o caixa do dia
        está aberto: fechou, as entregas do dia vão para o histórico */
@@ -234,6 +243,21 @@ function veiculoPorCodigo(db, codigo){
   const alvo = String(codigo == null ? '' : codigo).trim().toUpperCase();
   if(!alvo) return null;
   return ((db || {}).veiculos || []).find(v => String(v.codigo || '').toUpperCase() === alvo) || null;
+}
+
+/* Saída simplificada: escolhe a unidade pronta do modelo reservado.
+   Fica fora quem está preso a outra locação (pendente ou na rua) ou já
+   saiu da loja. Ordem por código deixa a escolha previsível. */
+function veiculoLivreDoTipo(db, tipoId){
+  const ocupados = new Set();
+  for(const l of ((db || {}).locacoes || [])){
+    if((l.status === 'ativa' || l.status === 'pendente') && l.veiculoId != null)
+      ocupados.add(String(l.veiculoId));
+  }
+  return ((db || {}).veiculos || [])
+    .filter(v => v.status === 'loja' && String(v.tipoId) === String(tipoId) &&
+                 !ocupados.has(String(v.id)))
+    .sort((a, b) => String(a.codigo || '').localeCompare(String(b.codigo || '')))[0] || null;
 }
 
 /* =====================================================================
@@ -322,7 +346,7 @@ function locacaoAlvo(db, locId, acao){
 
 /* Confere 1 item contra o documento. Devolve { erro } ou { loc } —
    sem tocar em nada: a mutação dentro do lock é outra função. */
-function conferirItem(db, it, acao, exigirFoto){
+function conferirItem(db, it, acao, exigirFoto, simples){
   const locId = it.locId;
   const loc = locacaoAlvo(db, locId, acao);
   if(!loc) return { erro: 'locacao_nao_encontrada' };
@@ -331,32 +355,37 @@ function conferirItem(db, it, acao, exigirFoto){
   if(acao === 'chegada' && loc.status !== 'ativa')
     return { erro: 'ja_devolvida', statusEstada: String(loc.status || '') };
 
-  const lido = codigoLido(it.veiculo);
   const esperadoCodigo = codigoDoVeiculo(db, loc);
-  if(!lido) return { erro: 'veiculo_nao_escaneado' };
+  /* na saída simplificada ninguém lê etiqueta: vale a unidade já amarrada
+     na locação (reserva antiga) e, sem vínculo, o servidor escolhe uma
+     livre do modelo na hora de aplicar */
+  const lido = codigoLido(it.veiculo) || (simples ? String(esperadoCodigo || '') : '');
+  if(!lido && !simples) return { erro: 'veiculo_nao_escaneado' };
   const semVinculo = acao === 'liberar' && !loc.veiculoCodigo && !esperadoCodigo;
 
-  if(!semVinculo && lido.toUpperCase() !== String(esperadoCodigo).toUpperCase())
-    return { erro: 'veiculo_incorreto', recebido: lido, esperado: String(esperadoCodigo || '') };
+  if(lido){
+    if(!semVinculo && lido.toUpperCase() !== String(esperadoCodigo).toUpperCase())
+      return { erro: 'veiculo_incorreto', recebido: lido, esperado: String(esperadoCodigo || '') };
 
-  if(semVinculo){
-    const v = veiculoPorCodigo(db, lido);
-    if(!v) return { erro: 'veiculo_nao_encontrado' };
-    if(String(v.tipoId) !== String(loc.tipoId)) return { erro: 'veiculo_incorreto' };
-    if(v.status !== 'loja') return { erro: 'veiculo_indisponivel' };
-    const preso = (db.locacoes || []).some(l => l.id !== loc.id &&
-      (l.status === 'ativa' || l.status === 'pendente') &&
-      l.veiculoId != null && String(l.veiculoId) === String(v.id));
-    if(preso) return { erro: 'veiculo_indisponivel' };
+    if(semVinculo){
+      const v = veiculoPorCodigo(db, lido);
+      if(!v) return { erro: 'veiculo_nao_encontrado' };
+      if(String(v.tipoId) !== String(loc.tipoId)) return { erro: 'veiculo_incorreto' };
+      if(v.status !== 'loja') return { erro: 'veiculo_indisponivel' };
+      const preso = (db.locacoes || []).some(l => l.id !== loc.id &&
+        (l.status === 'ativa' || l.status === 'pendente') &&
+        l.veiculoId != null && String(l.veiculoId) === String(v.id));
+      if(preso) return { erro: 'veiculo_indisponivel' };
+    }
   }
 
-  if(exigirFoto && !(it.usoFotos || []).length) return { erro: 'foto_obrigatoria' };
+  if(exigirFoto && !simples && !(it.usoFotos || []).length) return { erro: 'foto_obrigatoria' };
   return { loc: loc, lido: lido };
 }
 
 /* Aplica 1 item já conferido no documento dentro do lock.
    Devolve null quando o estado mudou por baixo (o chamador registra). */
-function aplicarItem(db, it, conferido, acao, horaBase, quem){
+function aplicarItem(db, it, conferido, acao, horaBase, quem, simples){
   /* o mesmo escolhedor da conferência: mutar o registro que a conferência
      viu em operação — não o primeiro id que aparecer no doc */
   const loc = locacaoAlvo(db, conferido.loc ? conferido.loc.id : null, acao);
@@ -364,11 +393,16 @@ function aplicarItem(db, it, conferido, acao, horaBase, quem){
   if(acao === 'liberar' && loc.status !== 'pendente') return false;
   if(acao === 'chegada' && loc.status !== 'ativa') return false;
 
-  const lido = codigoLido(it.veiculo);
+  let lido = codigoLido(it.veiculo);
+  /* reserva antiga com unidade amarrada: a saída simplificada usa a
+     própria unidade, sem exigir leitura */
+  if(!lido && simples) lido = String(codigoDoVeiculo(db, loc) || '').trim();
   const semVinculo = acao === 'liberar' && !loc.veiculoCodigo && !codigoDoVeiculo(db, loc);
 
   if(semVinculo){
-    const v = veiculoPorCodigo(db, lido);
+    /* sem leitura, escolhe agora uma unidade pronta do modelo reservado */
+    let v = lido ? veiculoPorCodigo(db, lido) : null;
+    if(!v && simples && !lido) v = veiculoLivreDoTipo(db, loc.tipoId);
     if(!v || String(v.tipoId) !== String(loc.tipoId) || v.status !== 'loja') return false;
     const preso = (db.locacoes || []).some(l => l.id !== loc.id &&
       (l.status === 'ativa' || l.status === 'pendente') &&
@@ -471,6 +505,9 @@ module.exports = async (req, res) => {
     }));
 
     const exigirFoto = dbInicial.config ? dbInicial.config.exigirFoto !== false : true;
+    /* na saída simplificada não há foto nem leitura de etiqueta por item;
+       a chegada continua exatamente como antes */
+    const simples = LIBERACAO_SIMPLES && acao === 'liberar';
 
     /* O relógio do lote vem do celular no instante do botão: reduz o
        escorrego da cronometragem quando a comanda sobe em vários POSTs.
@@ -493,7 +530,7 @@ module.exports = async (req, res) => {
                           erro: 'locacao_invalida', mensagem: msgDe('locacao_nao_encontrada') });
         continue;
       }
-      const c = conferirItem(dbInicial, it, acao, exigirFoto);
+      const c = conferirItem(dbInicial, it, acao, exigirFoto, simples);
       if(c.erro){
         resultados.push({ locacaoId: String(it.locId), ok: false, erro: c.erro,
                           statusEstada: String(c.statusEstada || ''), mensagem: msgDe(c.erro) });
@@ -511,7 +548,7 @@ module.exports = async (req, res) => {
       let aplicados = 0;
       for(const it of aplicaveis){ it.motivo = null; }
       for(const it of aplicaveis){
-        const foi = aplicarItem(db, it, { loc: it.loc }, acao, horaBase, quem);
+        const foi = aplicarItem(db, it, { loc: it.loc }, acao, horaBase, quem, simples);
         if(foi === false){
           it.motivo = (acao === 'liberar' && it.loc.status === 'ativa') ? 'ja_liberada'
             : (acao === 'chegada' && it.loc.status === 'devolvida') ? 'ja_devolvida' : 'veiculo_indisponivel';
@@ -539,7 +576,9 @@ module.exports = async (req, res) => {
       if(lock.inviavel)
         return json(res, 409, { ok: false, resultados: resultados,
           erro: 'veiculo_indisponivel',
-          mensagem: 'A unidade escaneada deixou de estar livre. Escolha outra unidade pronta do modelo reservado.' });
+          mensagem: simples
+            ? 'Acabaram as unidades prontas do modelo reservado. Confira a loja e tente de novo.'
+            : 'A unidade escaneada deixou de estar livre. Escolha outra unidade pronta do modelo reservado.' });
       return json(res, 409, { ok: false, resultados: resultados, erro: 'conflito',
         mensagem: 'Outro aparelho salvou ao mesmo tempo. Atualize a tela e tente de novo.' });
     }

@@ -943,6 +943,64 @@ function testarVistoria(){
      'o painel cura o doc duplicado sozinho (pendente vence) e devolve a cura à nuvem no arranque e na sondagem');
   ok(html.indexOf('const loc = (fila ? iguais.find(l=>l.status===\'pendente\') : null)') >= 0,
      'o Excluir da fila acerta o pendente quando o id vem em dobra no doc');
+
+  /* --- saída simplificada: marca quais veículos saem, sem foto e sem etiqueta --- */
+  ok(/const LIBERACAO_SIMPLES = true;/.test(api),
+     'esta branch liga a saída simplificada (foto e etiqueta continuam na chegada)');
+  ok(api.indexOf('liberacaoSimples: LIBERACAO_SIMPLES') >= 0,
+     'o payload avisa o celular que a saída é só marcação');
+  ok(api.indexOf('function veiculoLivreDoTipo(') >= 0 &&
+     api.indexOf('veiculoLivreDoTipo(db, loc.tipoId)') >= 0,
+     'sem leitura, o servidor escolhe a unidade livre do modelo reservado');
+  ok(api.indexOf('if(exigirFoto && !simples && !(it.usoFotos || []).length)') >= 0,
+     'a foto continua obrigatória na chegada e deixa de ser na saída simplificada');
+  const secaoLiberar = extrairFuncao(pagina, 'secaoLiberar');
+  ok(secaoLiberar.indexOf('if(simplesModo())') >= 0 && secaoLiberar.indexOf('data-saiu') >= 0,
+     'no modo simples o cartão da saída vira um check por veículo');
+  const cardLib = extrairFuncao(pagina, 'cardComandaLiberar');
+  ok(cardLib.indexOf('Confirmar saída') >= 0 && cardLib.indexOf('data-off="1"') >= 0,
+     'o botão só habilita depois de marcar pelo menos um veículo');
+  ok(pagina.indexOf('ids.filter(id => marcados[id])') >= 0,
+     'só os veículos marcados sobem para a API');
+  ok(pagina.indexOf("$('#btnScanTopo').style.display = simplesModo() ? 'none' : ''") >= 0,
+     'o escanear do topo some na saída simplificada');
+
+  /* a mesma API, sem foto e sem código: cada item pega uma unidade livre */
+  const ctxS = vm.createContext({ console });
+  vm.runInContext([
+    'codigoLido','codigoDoVeiculo','veiculoPorCodigo','veiculoLivreDoTipo',
+    'locacaoAlvo','conferirItem','aplicarItem'
+  ].map(n => extrairFuncao(api, n)).join('\n') +
+    '\nfunction registroDaFoto(f){ return f; }\n' +
+    'globalThis.V = { conferirItem, aplicarItem };', ctxS);
+  const dbS = {
+    veiculos: [
+      { id:'v1', codigo:'PAT-001', tipoId:'pat', status:'loja' },
+      { id:'v2', codigo:'PAT-002', tipoId:'pat', status:'loja' }
+    ],
+    locacoes: [1,2,3].map(n => ({
+      id:'L'+n, grupoId:'g1', tipoId:'pat', tipoNome:'Patinete', status:'pendente',
+      veiculoId:null, veiculoCodigo:'', duracaoMin:30
+    })),
+    grupos: [{ id:'g1' }]
+  };
+  const c1 = ctxS.V.conferirItem(dbS, { locId:'L1' }, 'liberar', true, true);
+  ok(c1.loc && !c1.erro, 'sem foto e sem código, o item da saída simplificada é aceito');
+  const a1 = ctxS.V.aplicarItem(dbS, { locId:'L1' }, c1, 'liberar', 5000, 'vistoriador', true);
+  ok(a1 === true && dbS.locacoes[0].veiculoCodigo === 'PAT-001' &&
+     dbS.locacoes[0].status === 'ativa',
+     'o servidor amarra a primeira unidade pronta e o relógio começa');
+  const c2 = ctxS.V.conferirItem(dbS, { locId:'L2' }, 'liberar', true, true);
+  const a2 = ctxS.V.aplicarItem(dbS, { locId:'L2' }, c2, 'liberar', 5000, 'vistoriador', true);
+  ok(a2 === true && dbS.locacoes[1].veiculoCodigo === 'PAT-002',
+     'cada item da comanda pega uma unidade diferente (PAT-002)');
+  const c3 = ctxS.V.conferirItem(dbS, { locId:'L3' }, 'liberar', true, true);
+  const a3 = ctxS.V.aplicarItem(dbS, { locId:'L3' }, c3, 'liberar', 5000, 'vistoriador', true);
+  ok(a3 === false,
+     'sem unidade pronta do modelo o servidor recusa em vez de liberar sem veículo');
+  const c4 = ctxS.V.conferirItem(dbS, { locId:'L3' }, 'liberar', true, false);
+  ok(c4.erro === 'veiculo_nao_escaneado',
+     'desligando LIBERACAO_SIMPLES a saída volta a exigir a etiqueta');
 }
 
 /* ------------------------------------------------------------------ L */
