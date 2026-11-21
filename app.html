@@ -1481,7 +1481,7 @@ function ligaPassoCliente(){
   if(W.clienteId){ const c=getCliente(W.clienteId); if(c){ cpf.value=c.cpf; nome.value=c.nome; tel.value=c.telefone||''; email.value=c.email||''; } }
   else if(W.novoCliente){ cpf.value=W.novoCliente.cpf; nome.value=W.novoCliente.nome; tel.value=W.novoCliente.telefone; email.value=W.novoCliente.email; }
   $('#wObs').value = W.obs||'';
-  cpf.oninput = ()=>{
+  const buscarClienteCpf = ()=>{
     cpf.value = maskCPF(cpf.value);
     const d = soDigitos(cpf.value);
     if(d.length===11){
@@ -1493,10 +1493,14 @@ function ligaPassoCliente(){
       } else {
         W.clienteId=null;
         $('#wCliAviso').innerHTML='<div style="background:var(--brand-bg);color:var(--brand);padding:9px 12px;border-radius:8px;margin-bottom:11px;font-size:13px">Cliente novo — preencha os dados abaixo.</div>';
-        nome.focus();
       }
     } else { $('#wCliAviso').innerHTML=''; }
   };
+  cpf.oninput = buscarClienteCpf;
+  cpf.onchange = buscarClienteCpf;
+  cpf.onblur = buscarClienteCpf;
+  cpf.onkeyup = buscarClienteCpf;
+  cpf.oncompositionend = buscarClienteCpf;
   tel.oninput = ()=> tel.value = maskTel(tel.value);
 }
 
