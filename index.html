@@ -3434,6 +3434,9 @@ window.abrirDevolucao = function(locId){
   if(remExCk) remExCk.onchange = ()=>{
     remEx = remExCk.checked;
     ov.querySelector('#dRemExBox').style.display = remEx ? '' : 'none';
+    /* o motivo é obrigatório: ao marcar, leva o cursor para o campo e o
+       traz à vista — sem isso a atendente rola o modal e não o encontra */
+    if(remEx){ const campo = ov.querySelector('#dRemExMotivo'); if(campo) campo.focus(); }
     pintaTotais();
   };
 
@@ -3475,8 +3478,17 @@ window.abrirDevolucao = function(locId){
   pintaDanos(); pintaTotais();
   ov.querySelector('#dCancel').onclick = ()=> fecharModal(ov);
   ov.querySelector('#dOk').onclick = ()=>{
-    const motivoRem = remEx ? ov.querySelector('#dRemExMotivo').value.trim() : '';
-    if(remEx && motivoRem.length<3) return toast('Descreva o motivo da remoção da multa.');
+    /* A justificativa escrita em "Observações da entrada" também vale como
+       motivo da remoção: é a mesma atendente, no mesmo fechamento, e a
+       remoção não pode ser recusada só porque o motivo ficou no outro campo. */
+    const motivoRem = remEx
+      ? (ov.querySelector('#dRemExMotivo').value.trim() || ov.querySelector('#dObs').value.trim())
+      : '';
+    if(remEx && motivoRem.length<3){
+      const campo = ov.querySelector('#dRemExMotivo');
+      if(campo) campo.focus();
+      return toast('Descreva o motivo da remoção da multa.');
+    }
     /* o relógio parou na chegada da vistoria; sem chegada registrada,
        para agora, na hora da confirmação do balcão */
     const fim = loc.fimReal || Date.now();
@@ -4296,6 +4308,15 @@ window.editarVeiculo = function(id){
     '<button class="btn sec" id="c">Cancelar</button><button class="btn" id="s">Salvar</button></footer>');
   ov.querySelector('#c').onclick=()=>fecharModal(ov);
   ligaNovoTipo(ov, 'v');
+  /* veículo com locação aberta: o status vem da locação, não do formulário */
+  if(locDoVeiculo(id)){
+    const selSt = ov.querySelector('#vStatus');
+    if(selSt){
+      selSt.disabled = true;
+      selSt.parentNode.insertAdjacentHTML('beforeend',
+        '<div class="muted" style="font-size:12px;margin-top:5px">Em locação agora. Registre a entrada do veículo para mudar o status.</div>');
+    }
+  }
   ov.querySelector('#d').onclick=()=>{
     if(v.status==='rua') return toast('Não é possível excluir um veículo que está na rua.');
     if(!confirm('Excluir '+v.codigo+'? O histórico de locações é mantido.')) return;
@@ -4310,7 +4331,10 @@ window.editarVeiculo = function(id){
     v.tipoId = r.tipoId;
     v.placa  = ov.querySelector('#vPlaca').value.trim();
     const eraManut = v.status==='manutencao';
-    if(v.status!=='rua') v.status = ov.querySelector('#vStatus').value;
+    /* "na rua" só fica travado enquanto a locação está aberta. Sem locação
+       (estorno, registro antigo), o veículo preso na rua pode ser corrigido
+       à mão — antes era impossível mudar o status e até excluir. */
+    if(!locDoVeiculo(id)) v.status = ov.querySelector('#vStatus').value;
     if(r.criado){ log('tipo_novo', r.criado.nome); renderConfig(); }
     const virouManut = v.status==='manutencao' && !eraManut;
     persist(); fecharModal(ov); renderFrota(); renderPainel();
