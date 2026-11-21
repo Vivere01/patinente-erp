@@ -1104,6 +1104,7 @@ function testarPagamentoPorVeiculo(){
 function testarTiposDeVeiculo(){
   console.log('\nN. Tipos de veículo — marca/modelo novo com preço próprio');
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  const app = fs.readFileSync(path.join(__dirname, '..', 'app.html'), 'utf8');
   const corpo = f => extrairFuncao(html, f);
 
   /* --- o formulário da frota --- */
@@ -1225,6 +1226,68 @@ function testarTiposDeVeiculo(){
      'criar e excluir tipo ficam na auditoria, em português');
   ok(html.indexOf('if(!DB.tipos || !DB.tipos.length) DB.tipos') > 0,
      'base sem tipo nenhum recebe os dois de fábrica no arranque');
+
+  /* --- veículo preso em "Na rua" sem locação aberta pode ser corrigido ---
+     O status 'rua' é escrito pela locação. Se a locação sumiu (estorno,
+     registro antigo), o veículo ficava preso: editar não mudava o status e
+     excluir também era recusado. Com locação aberta o travamento continua. */
+  const ev = (()=>{
+    const i = html.indexOf('window.editarVeiculo = function');
+    if(i < 0) return '';
+    let p = 0;
+    for(let k = html.indexOf('{', i); k < html.length; k++){
+      if(html[k] === '{') p++;
+      else if(html[k] === '}'){ p--; if(p === 0) return html.slice(i, k+1); }
+    }
+    return '';
+  })();
+  const simEditar = (comLocacao) => {
+    const r = { nota:false, toasts:[] };
+    const st = { value:'loja', disabled:false,
+                 parentNode:{ insertAdjacentHTML(){ r.nota = true; } } };
+    const btn = { c:{}, d:{}, s:{} };
+    const ov = { querySelector: sel => {
+      if(sel === '#vStatus') return st;
+      if(sel === '#c') return btn.c;
+      if(sel === '#d') return btn.d;
+      if(sel === '#s') return btn.s;
+      return { value: sel === '#vCod' ? 'MOTO-03' : (sel === '#vTipo' ? 1 : '') };
+    } };
+    const ctx = vm.createContext({
+      console,
+      DB: { veiculos:[{ id:1, codigo:'MOTO-03', tipoId:1, placa:'', status:'rua' }],
+            locacoes: comLocacao ? [{ id:'L1', status:'ativa', veiculoId:1 }] : [] },
+      esc: s => String(s==null?'':s),
+      abrirModal: () => ov,
+      formVeiculo: () => '',
+      ligaNovoTipo: () => {},
+      lerNovoTipo: () => ({ tipoId:1 }),
+      fecharModal: () => {},
+      persist: () => {},
+      renderFrota: () => {},
+      renderPainel: () => {},
+      renderConfig: () => {},
+      abrirManutencao: () => {},
+      toast: m => r.toasts.push(m)
+    });
+    vm.runInContext('this.window = this;\n' +
+                    extrairFuncao(html, 'getVeiculo') + '\n' +
+                    extrairFuncao(html, 'locDoVeiculo') + '\n' + ev +
+                    '\nthis.T = { editar: editarVeiculo, DB };', ctx);
+    ctx.T.editar(1);
+    btn.s.onclick();
+    return { v: ctx.T.DB.veiculos[0], st, r };
+  };
+  const solto = simEditar(false);
+  ok(solto.v.status === 'loja',
+     'veículo "na rua" sem locação aberta volta para a loja ao salvar o cadastro');
+  ok(!solto.st.disabled && !solto.r.nota, 'sem locação o select de status fica livre');
+  const emUso = simEditar(true);
+  ok(emUso.v.status === 'rua' && emUso.st.disabled && emUso.r.nota,
+     'com locação aberta o status é travado no formulário e o caminho da entrada é indicado');
+  ok(app.indexOf("if(!locDoVeiculo(id)) v.status") > 0 &&
+     app.indexOf('Registre a entrada do veículo para mudar o status') > 0,
+     'o app offline segue a mesma regra');
 }
 
 /* ------------------------------------------------------------------ O */

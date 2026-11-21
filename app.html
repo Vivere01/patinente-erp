@@ -2255,6 +2255,15 @@ window.editarVeiculo = function(id){
     '<footer><button class="btn danger" id="d">Excluir</button><div style="flex:1"></div>'+
     '<button class="btn sec" id="c">Cancelar</button><button class="btn" id="s">Salvar</button></footer>');
   ov.querySelector('#c').onclick=()=>fecharModal(ov);
+  /* veículo com locação aberta: o status vem da locação, não do formulário */
+  if(locDoVeiculo(id)){
+    const selSt = ov.querySelector('#vStatus');
+    if(selSt){
+      selSt.disabled = true;
+      selSt.parentNode.insertAdjacentHTML('beforeend',
+        '<div class="muted" style="font-size:12px;margin-top:5px">Em locação agora. Registre a entrada do veículo para mudar o status.</div>');
+    }
+  }
   ov.querySelector('#d').onclick=()=>{
     if(v.status==='rua') return toast('Não é possível excluir um veículo que está na rua.');
     if(!confirm('Excluir '+v.codigo+'? O histórico de locações é mantido.')) return;
@@ -2266,7 +2275,10 @@ window.editarVeiculo = function(id){
     v.tipoId = ov.querySelector('#vTipo').value;
     v.placa  = ov.querySelector('#vPlaca').value.trim();
     const eraManut = v.status==='manutencao';
-    if(v.status!=='rua') v.status = ov.querySelector('#vStatus').value;
+    /* "na rua" só fica travado enquanto a locação está aberta. Sem locação
+       (estorno, registro antigo), o veículo preso na rua pode ser corrigido
+       à mão — antes era impossível mudar o status e até excluir. */
+    if(!locDoVeiculo(id)) v.status = ov.querySelector('#vStatus').value;
     const virouManut = v.status==='manutencao' && !eraManut;
     persist(); fecharModal(ov); renderFrota(); renderPainel();
     /* escolheu Manutenção: na hora abre o registro de peças + foto */
