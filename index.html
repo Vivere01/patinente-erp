@@ -2417,7 +2417,10 @@ function ligaPassoCliente(){
   if(rem) rem.onclick = ()=>{ W.docFoto = null; pintaFotoDoc(); };
   pintaFotoDoc();
 
-  cpf.oninput = ()=>{
+  /* Busca automática: dispara em qualquer evento de digitação ou saída do
+     campo — alguns navegadores/aparelhos não disparam "input" em toda
+     digitação, então change/blur/keyup/compositionend servem de rede. */
+  const buscarClienteCpf = ()=>{
     cpf.value = maskCPF(cpf.value);
     const d = soDigitos(cpf.value);
     if(d.length===11){
@@ -2430,11 +2433,15 @@ function ligaPassoCliente(){
       } else {
         W.clienteId=null; W._docFotoCliente=null;
         $('#wCliAviso').innerHTML='<div style="background:var(--brand-bg);color:var(--brand-fg);padding:9px 12px;border-radius:8px;margin-bottom:11px;font-size:13px">Cliente novo — preencha os dados abaixo.</div>';
-        nome.focus();
       }
     } else { $('#wCliAviso').innerHTML=''; }
     pintaFotoDoc();
   };
+  cpf.oninput = buscarClienteCpf;
+  cpf.onchange = buscarClienteCpf;
+  cpf.onblur = buscarClienteCpf;
+  cpf.onkeyup = buscarClienteCpf;
+  cpf.oncompositionend = buscarClienteCpf;
   tel.oninput = ()=> tel.value = maskTel(tel.value);
 }
 
