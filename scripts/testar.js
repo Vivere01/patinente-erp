@@ -914,8 +914,9 @@ function testarVistoria(){
      'tem botão de escanear dentro do cartão e no topo da tela');
   ok(pagina.indexOf('Digitar o código') >= 0,
      'sem câmera dá para digitar o código da etiqueta');
-  ok(pagina.indexOf('veiculo: c.veiculo') >= 0 && !/lacre/i.test(pagina),
-     'a saída não tem campo de lacre: manda o código escaneado');
+  ok(pagina.indexOf("const veiculo = simplesModo() ? '' : (c.veiculo||'')") >= 0 &&
+     !/lacre/i.test(pagina),
+     'a saída não tem campo de lacre: manda o código escaneado (vazio no modo simples)');
   ok((pagina.match(/blocoScan\(l\.locacaoId, l\.codigo/g)||[]).length === 2,
      'os dois cartões (saída e chegada) identificam o patinete pelo QR');
   ok(pagina.indexOf('semCodigo.length === 1') >= 0,
@@ -944,16 +945,16 @@ function testarVistoria(){
   ok(html.indexOf('const loc = (fila ? iguais.find(l=>l.status===\'pendente\') : null)') >= 0,
      'o Excluir da fila acerta o pendente quando o id vem em dobra no doc');
 
-  /* --- saída simplificada: marca quais veículos saem, sem foto e sem etiqueta --- */
-  ok(/const LIBERACAO_SIMPLES = true;/.test(api),
-     'esta branch liga a saída simplificada (foto e etiqueta continuam na chegada)');
-  ok(api.indexOf('liberacaoSimples: LIBERACAO_SIMPLES') >= 0,
-     'o payload avisa o celular que a saída é só marcação');
+  /* --- vistoria simplificada: saída e devolução só por marcação --- */
+  ok(/const VISTORIA_SIMPLES = true;/.test(api),
+     'esta branch liga a vistoria simplificada (saída e devolução)');
+  ok(api.indexOf('vistoriaSimples: VISTORIA_SIMPLES') >= 0,
+     'o payload avisa o celular que saída e devolução são só marcação');
   ok(api.indexOf('function veiculoLivreDoTipo(') >= 0 &&
      api.indexOf('veiculoLivreDoTipo(db, loc.tipoId)') >= 0,
      'sem leitura, o servidor escolhe a unidade livre do modelo reservado');
   ok(api.indexOf('if(exigirFoto && !simples && !(it.usoFotos || []).length)') >= 0,
-     'a foto continua obrigatória na chegada e deixa de ser na saída simplificada');
+     'a foto deixa de ser obrigatória na vistoria simplificada (volta no fluxo completo)');
   const secaoLiberar = extrairFuncao(pagina, 'secaoLiberar');
   ok(secaoLiberar.indexOf('if(simplesModo())') >= 0 && secaoLiberar.indexOf('data-saiu') >= 0,
      'no modo simples o cartão da saída vira um check por veículo');
@@ -961,9 +962,17 @@ function testarVistoria(){
   ok(cardLib.indexOf('Confirmar saída') >= 0 && cardLib.indexOf('data-off="1"') >= 0,
      'o botão só habilita depois de marcar pelo menos um veículo');
   ok(pagina.indexOf('ids.filter(id => marcados[id])') >= 0,
-     'só os veículos marcados sobem para a API');
+     'só os veículos marcados na saída sobem para a API');
+  const secaoChegada = extrairFuncao(pagina, 'secaoChegada');
+  ok(secaoChegada.indexOf('if(simplesModo())') >= 0 && secaoChegada.indexOf('data-voltou') >= 0,
+     'no modo simples o cartão da devolução vira um check por veículo, com estado e observações');
+  const cardCheg = extrairFuncao(pagina, 'cardComandaChegada');
+  ok(cardCheg.indexOf('Confirmar devolução') >= 0 && cardCheg.indexOf('data-off="1"') >= 0,
+     'a devolução só habilita depois de marcar pelo menos um veículo que voltou');
+  ok(pagina.indexOf('ids.filter(id => voltou[id])') >= 0,
+     'só os veículos marcados na devolução sobem para a API');
   ok(pagina.indexOf("$('#btnScanTopo').style.display = simplesModo() ? 'none' : ''") >= 0,
-     'o escanear do topo some na saída simplificada');
+     'o escanear do topo some na vistoria simplificada');
 
   /* a mesma API, sem foto e sem código: cada item pega uma unidade livre */
   const ctxS = vm.createContext({ console });
@@ -981,7 +990,10 @@ function testarVistoria(){
     locacoes: [1,2,3].map(n => ({
       id:'L'+n, grupoId:'g1', tipoId:'pat', tipoNome:'Patinete', status:'pendente',
       veiculoId:null, veiculoCodigo:'', duracaoMin:30
-    })),
+    })).concat([{
+      id:'L4', grupoId:'g1', tipoId:'pat', tipoNome:'Patinete', status:'ativa',
+      veiculoId:'v9', veiculoCodigo:'PAT-009', duracaoMin:30
+    }]),
     grupos: [{ id:'g1' }]
   };
   const c1 = ctxS.V.conferirItem(dbS, { locId:'L1' }, 'liberar', true, true);
@@ -1000,7 +1012,25 @@ function testarVistoria(){
      'sem unidade pronta do modelo o servidor recusa em vez de liberar sem veículo');
   const c4 = ctxS.V.conferirItem(dbS, { locId:'L3' }, 'liberar', true, false);
   ok(c4.erro === 'veiculo_nao_escaneado',
-     'desligando LIBERACAO_SIMPLES a saída volta a exigir a etiqueta');
+     'desligando VISTORIA_SIMPLES a saída volta a exigir a etiqueta');
+
+  /* devolução: sem foto e sem ler etiqueta, vale a unidade já amarrada */
+  const c5 = ctxS.V.conferirItem(dbS, { locId:'L1' }, 'chegada', true, true);
+  ok(c5.loc && !c5.erro, 'sem foto e sem código, a devolução simplificada é aceita');
+  const a5 = ctxS.V.aplicarItem(dbS, { locId:'L1', estado:'loja' }, c5,
+                               'chegada', 9000, 'vistoriador', true);
+  ok(a5 === true && dbS.locacoes[0].status === 'devolvida' &&
+     dbS.veiculos[0].status === 'loja',
+     'a devolução usa a unidade da saída e devolve o veículo para a loja');
+  const c6 = ctxS.V.conferirItem(dbS, { locId:'L2' }, 'chegada', true, true);
+  const a6 = ctxS.V.aplicarItem(dbS, { locId:'L2', estado:'manutencao' }, c6,
+                               'chegada', 9000, 'vistoriador', true);
+  ok(a6 === true && dbS.locacoes[1].status === 'devolvida' &&
+     dbS.veiculos[1].status === 'manutencao',
+     'com avaria, a devolução manda o veículo para a manutenção');
+  const c7 = ctxS.V.conferirItem(dbS, { locId:'L4' }, 'chegada', true, false);
+  ok(c7.erro === 'veiculo_nao_escaneado',
+     'desligando VISTORIA_SIMPLES a devolução volta a exigir a etiqueta');
 }
 
 /* ------------------------------------------------------------------ L */
